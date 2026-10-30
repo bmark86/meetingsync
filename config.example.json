@@ -1,0 +1,29 @@
+{
+  "watch_dir": "~/Meetings/MacWhisper",
+  "my_name": "Mark",
+  "my_speaker_label": "",
+
+  "include_transcript": false,
+  "use_summary_as_context": false,
+  "orphan_summary_action": "note",
+  "transcript_extensions": [],
+  "summary_extensions": [],
+  "title_format": "{date} – {title}",
+  "notify": true,
+
+  "llm": {
+    "base_url": "http://localhost:1234/v1",
+    "model": "gemma-4-31b",
+    "temperature": 0.2,
+    "max_chunk_chars": 60000,
+    "structured_output": true
+  },
+
+  "notion": {
+    "token_keychain_service": "meetingsync-notion",
+    "notes_data_source_id": "00000000-0000-0000-0000-000000000000",
+    "tasks_data_source_id": "00000000-0000-0000-0000-000000000000",
+    "projects_data_source_id": "00000000-0000-0000-0000-000000000000",
+    "create_tasks_for": "me"
+  }
+}

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Startet meetingsync beim Login und hält es am Laufen.
+  DEINNAME durch deinen macOS-Benutzernamen ersetzen, dann:
+    cp de.borukhov.meetingsync.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/de.borukhov.meetingsync.plist
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>de.borukhov.meetingsync</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/DEINNAME/bin/meetingsync</string>
+    <string>-config</string>
+    <string>/Users/DEINNAME/.config/meetingsync/config.json</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
+
+  <key>StandardOutPath</key>
+  <string>/Users/DEINNAME/Library/Logs/meetingsync.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/DEINNAME/Library/Logs/meetingsync.log</string>
+</dict>
+</plist>
