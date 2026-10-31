@@ -57,8 +57,10 @@ security add-generic-password -a "$USER" -s meetingsync-notion -w
 
 ```bash
 mkdir -p ~/.config/meetingsync
-cp config.example.json ~/.config/meetingsync/config.json
+cp config.example.yaml ~/.config/meetingsync/config.yaml
 ```
+
+Eine bestehende `config.json` funktioniert weiterhin. Liegen beide Dateien im Ordner, hat `config.yaml` Vorrang.
 
 Anpassen musst du nur zwei Dinge:
 
