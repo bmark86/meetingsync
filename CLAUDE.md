@@ -1,6 +1,6 @@
 # meetingsync
 
-Go-Tool (macOS, nur stdlib, `go 1.22`): MacWhisper-Export → lokales LLM (LM Studio, Gemma) → Meeting-Notiz in Notion (Notes, Tasks, Projects). Läuft dauerhaft per launchd. Details und Konfiguration: `README.md`.
+Go-Tool (macOS, stdlib plus `go.yaml.in/yaml/v3`, `go 1.22`): MacWhisper-Export → lokales LLM (LM Studio, Gemma) → Meeting-Notiz in Notion (Notes, Tasks, Projects). Läuft dauerhaft per launchd. Details und Konfiguration: `README.md`.
 
 ## Ablauf
 
@@ -25,8 +25,8 @@ Exportordner pollen (10 s), Datei muss `stable_seconds` unverändert sein → Tr
 ## Regeln
 
 - Datenschutz: Rohtranskript verlässt den Mac nicht, nur die fertige Notiz geht nach Notion (Transkript nur mit `include_transcript`).
-- Notion-Token nie ins Repo: `NOTION_TOKEN` → Keychain (`meetingsync-notion`) → `notion.token`. Echte `config.json` liegt unter `~/.config/meetingsync/`.
-- Nur stdlib, keine neuen Dependencies ohne Rückfrage.
+- Notion-Token nie ins Repo: `NOTION_TOKEN` → Keychain (`meetingsync-notion`) → `notion.token`. Echte `config.yaml` (oder `config.json`) liegt unter `~/.config/meetingsync/`.
+- Nur stdlib, einzige Ausnahme `go.yaml.in/yaml/v3`; keine weiteren Dependencies ohne Rückfrage.
 - Code-Kommentare, Logs und Notion-Inhalte sind deutsch.
 
 ## Agenten-Team
