@@ -2,7 +2,8 @@
 
 | ID | Title | Status | Date |
 | --- | --- | --- | --- |
-| T1 | YAML config | done (not committed) | 2026-10-31 |
+| T1 | YAML config | done (bf32c03) | 2026-10-31 |
+| T2 | Commented example config | done | 2026-10-31 |
 
 ## Open follow-ups
 
