@@ -67,7 +67,7 @@ func (n *Notion) do(ctx context.Context, method, path string, in, out any, idemp
 		}
 		resp, err := n.http.Do(req)
 		if err != nil {
-			if idempotent && attempt < 3 && sleepCtx(ctx, backoff(attempt)) {
+			if idempotent && attempt < 3 && sleepFn(ctx, backoff(attempt)) {
 				continue
 			}
 			return transient(fmt.Errorf("Notion nicht erreichbar: %w", err))
@@ -77,7 +77,7 @@ func (n *Notion) do(ctx context.Context, method, path string, in, out any, idemp
 
 		if resp.StatusCode == http.StatusTooManyRequests ||
 			(idempotent && resp.StatusCode >= 500) {
-			if attempt < 4 && sleepCtx(ctx, retryAfter(resp, attempt)) {
+			if attempt < 4 && sleepFn(ctx, retryAfter(resp, attempt)) {
 				continue
 			}
 		}
@@ -281,6 +281,9 @@ func retryAfter(resp *http.Response, attempt int) time.Duration {
 	}
 	return backoff(attempt)
 }
+
+// sleepFn ist die Warte-Funktion von do; nur Tests tauschen sie aus.
+var sleepFn = sleepCtx
 
 func sleepCtx(ctx context.Context, d time.Duration) bool {
 	t := time.NewTimer(d)
