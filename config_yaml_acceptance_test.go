@@ -2,7 +2,6 @@ package main
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -155,17 +154,13 @@ func TestAC7_YAMLErrorFormat(t *testing.T) {
 
 // AC-8: Binary loggt den Pfad nach erfolgreichem Laden; kein Netz, kein echtes HOME.
 func TestAC8_BinaryLogsConfigPath(t *testing.T) {
-	bin := filepath.Join(t.TempDir(), "meetingsync")
-	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
-		t.Fatalf("build: %v\n%s", err, out)
-	}
 	home := t.TempDir()
-	env := []string{"HOME=" + home, "PATH=" + os.Getenv("PATH")} // ohne NOTION_TOKEN
+	// ohne NOTION_TOKEN; Proxy-Schutz gegen echtes Netz
+	env := append([]string{"HOME=" + home, "PATH=" + os.Getenv("PATH")}, goldenProxyEnv...)
 	run := func(args ...string) string {
-		cmd := exec.Command(bin, args...)
-		cmd.Env = env
-		out, _ := cmd.CombinedOutput() // -check ohne Token endet mit Exit 1, ohne Netzzugriff
-		return string(out)
+		// -check ohne Token endet mit Exit 1, ohne Netzzugriff
+		stdout, stderr, _ := goldenRunCLI(t, env, args...)
+		return stdout + stderr
 	}
 	body := "watch_dir: " + filepath.Join(home, "w") + "\nllm:\n  model: m\nnotion:\n  token_keychain_service: \"\"\n  notes_data_source_id: n\n"
 
