@@ -11,6 +11,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - R-M0-04: Dependabot for gomod and github-actions (weekly).
 - R-M0-04: `SECURITY.md` (private reporting, answer within 14 days).
 - R-M0-05: golden test harness (fake Notion and LM Studio, request/file/ledger/log recording, normalization, -update), first scenario G01; ADR 0003.
+- R-M0-06: 20 golden flow scenarios G02–G16c in `golden_flow_test.go` (summary modes, pairs, JSON, chunking, Notion limits with multibyte text, project matching, `create_tasks_for`).
+- R-M0-07: 9 golden CLI/error scenarios G09–G12c in `golden_cli_test.go` (`-dry-run`, `-check`, backoff to `_fehler`, LLM errors incl. schema fallback, empty file). Total coverage ca. 76 %.
 
 ### Changed
 - R-M0-03: 12 lint findings fixed, no behavior change.

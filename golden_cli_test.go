@@ -2,7 +2,8 @@ package main
 
 // Golden-Szenarien für CLI und Fehlerpfade (R-M0-07): G09 (-dry-run -file),
 // G10a-d (-check), G11 (vorübergehender Fehler bis _fehler), G12a/b
-// (dauerhafte Fehler bis _fehler). Harness und Normalisierung: golden_test.go.
+// (dauerhafte Fehler bis _fehler), G12c (Schema-Fallback). Harness und
+// Normalisierung: golden_test.go.
 // Die Pass-Szenarien (G11, G12) laufen mit simuliertem now, ohne echte Wartezeit.
 
 import (
@@ -95,7 +96,11 @@ func init() {
 			name:   "G10d",
 			config: cfg,
 			llm:    goldenCLIModels("gemma-test"),
-			args:   []string{"-config", "{{config}}", "-check"},
+			notion: map[string][]fakeReply{
+				"GET /v1/data_sources/notes-ds": {{Status: 404, Body: gfNotFound("notes-ds")}},
+				"GET /v1/databases/notes-ds":    {{Status: 404, Body: gfNotFound("notes-ds")}},
+			},
+			args: []string{"-config", "{{config}}", "-check"},
 		},
 		goldenScenario{
 			// 503 bei LM Studio: Wartezeit 1, 2, 4 min, beim 4. Versuch → _fehler.
@@ -116,6 +121,19 @@ func init() {
 			llm:    llm400,
 			notion: goldenNotionDefault(),
 			passes: goldenCLIPasses(time.Minute, time.Minute, 2*time.Minute),
+		},
+		goldenScenario{
+			// 400 bei structured_output=true: Schema-Fallback (Schema im Prompt,
+			// ohne response_format), zweiter Request liefert die Notiz.
+			name:   "G12c",
+			config: cfg,
+			files:  srt,
+			llm: map[string][]fakeReply{"POST /v1/chat/completions": {
+				{Status: 400, Body: `{"error":"response_format json_schema wird nicht unterstützt"}`},
+				{Body: goldenChat(goldenCLINote(), "stop")},
+			}},
+			notion: goldenNotionDefault(),
+			passes: goldenCLIPasses(),
 		},
 		goldenScenario{
 			// Datei nur mit Leerraum: "Datei ist leer", LLM wird nicht gefragt.

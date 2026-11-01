@@ -1,0 +1,8 @@
+Neu: Notizen Planung.md → Zusammenfassung
+Neu: Sirius Sync.srt → Transkript
+→ Sirius Sync.srt (Transkript, 0 KB)
+   LLM läuft (317 Zeichen, Modell gemma-test) …
+   LLM fertig nach <dur>: "Planung Q4"
+   ✓ Notion: 2026-10-01 – Planung Q4 (1 To-dos für dich) https://www.notion.so/page-1
+   📦 Sirius Sync.srt → <tmp>/watch/_archiv/2026-10/Sirius Sync.srt
+   📦 Notizen Planung.md → <tmp>/watch/_archiv/2026-10/Notizen Planung.md

@@ -1,0 +1,4 @@
+_archiv/
+011240676343de1f9956eaa8e1a3c21725b9bd1268fccd9e9b27c34aa0a820ea  _archiv/.meetingsync-ledger.jsonl (normalized)
+_archiv/2026-10/
+278d5c4b9892a60bfb34b541169def072842ee8b41ad2e0acd1557f398bcace2  2026-09-30T22:47:00Z  _archiv/2026-10/Planung Q4.srt

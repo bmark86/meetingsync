@@ -1,0 +1,5 @@
+_archiv/
+4e8d8838acec595dd092b674086f591e3528e97bda010bf0cb52438663e0bdc6  _archiv/.meetingsync-ledger.jsonl (normalized)
+_archiv/2026-10/
+2f66b078d79552912dfd8607479382c049aea581d3e1e34a9d726f861d3dd6cd  2026-09-30T22:51:00Z  _archiv/2026-10/Notizen Planung.md
+278d5c4b9892a60bfb34b541169def072842ee8b41ad2e0acd1557f398bcace2  2026-09-30T22:47:00Z  _archiv/2026-10/Sirius Sync.srt
