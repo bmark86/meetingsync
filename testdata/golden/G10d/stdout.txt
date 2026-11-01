@@ -1,0 +1,5 @@
+Konfiguration: <tmp>/config.yaml
+Ordner:   <tmp>/watch
+Archiv:   <tmp>/watch/_archiv
+Fehler:   <tmp>/watch/_fehler
+✗ Notion: Notes-Datenbank nicht lesbar: Notion HTTP 404 object_not_found: kein Fake-Skript für GET /v1/data_sources/notes-ds – Token gültig? Ist die Integration mit der Datenbank verbunden?

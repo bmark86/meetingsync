@@ -1,0 +1,10 @@
+Neu: Sirius Sync.srt → Transkript
+→ Sirius Sync.srt (Transkript, 0 KB)
+   LLM läuft (317 Zeichen, Modell gemma-test) …
+   ✗ LM Studio HTTP 400: {"error":"bad request"} (Versuch 1/3)
+→ Sirius Sync.srt (Transkript, 0 KB)
+   LLM läuft (317 Zeichen, Modell gemma-test) …
+   ✗ LM Studio HTTP 400: {"error":"bad request"} (Versuch 2/3)
+→ Sirius Sync.srt (Transkript, 0 KB)
+   LLM läuft (317 Zeichen, Modell gemma-test) …
+   ✗ LM Studio HTTP 400: {"error":"bad request"} – gebe auf, Dateien → <tmp>/watch/_fehler

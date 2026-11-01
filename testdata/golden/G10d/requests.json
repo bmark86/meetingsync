@@ -1,0 +1,24 @@
+[
+  {
+    "server": "notion",
+    "method": "GET",
+    "path": "/v1/data_sources/notes-ds",
+    "headers": {
+      "Accept-Encoding": "gzip",
+      "Authorization": "Bearer <token>",
+      "Notion-Version": "2025-09-03",
+      "User-Agent": "Go-http-client/1.1"
+    }
+  },
+  {
+    "server": "notion",
+    "method": "GET",
+    "path": "/v1/databases/notes-ds",
+    "headers": {
+      "Accept-Encoding": "gzip",
+      "Authorization": "Bearer <token>",
+      "Notion-Version": "2025-09-03",
+      "User-Agent": "Go-http-client/1.1"
+    }
+  }
+]
