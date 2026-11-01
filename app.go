@@ -684,8 +684,31 @@ func moveFile(src, dir string) (string, error) {
 
 // --- Protokoll gegen Doppelverarbeitung ---------------------------------------
 
+// Status eines Ledger-Eintrags (ADR 0004). Pro Hash gilt die letzte Zeile.
+// Leerer Status (Zeilen von v1.0.0, Add ohne Status) bedeutet fertig.
+const (
+	StatusBegonnen  = "begonnen"  // Verarbeitung gestartet, Notion-Seite evtl. angelegt
+	StatusFertig    = "fertig"    // Notiz angelegt
+	StatusVerworfen = "verworfen" // nach _fehler verschoben, darf neu laufen
+)
+
 type LedgerEntry struct {
-	Hash    string    `json:"hash"`
+	Hash    string
+	Status  string
+	File    string
+	ModTime time.Time
+	URL     string
+	At      time.Time
+}
+
+// ledgerLine ist das Zeilenformat auf Platte. Fertige Zeilen tragen den Hash
+// in "hash" und keinen Status, byte-gleich zu v1.0.0. Alle anderen Zeilen
+// tragen ihn in "sha256": v1.0.0 wertet jede Zeile mit "hash" als verarbeitet
+// und würde sonst eine begonnene Datei ohne Notiz archivieren.
+type ledgerLine struct {
+	Hash    string    `json:"hash,omitempty"`
+	SHA256  string    `json:"sha256,omitempty"`
+	Status  string    `json:"status,omitempty"`
 	File    string    `json:"file"`
 	ModTime time.Time `json:"mtime"`
 	URL     string    `json:"url"`
@@ -696,7 +719,15 @@ type Ledger struct {
 	path    string
 	persist bool
 	byHash  map[string]LedgerEntry
-	mtimes  []time.Time
+}
+
+// put übernimmt e als letzten Stand für e.Hash.
+func (l *Ledger) put(e LedgerEntry) LedgerEntry {
+	if e.Status == "" {
+		e.Status = StatusFertig
+	}
+	l.byHash[e.Hash] = e
+	return e
 }
 
 func LoadLedger(path string, persist bool) (*Ledger, error) {
@@ -712,31 +743,52 @@ func LoadLedger(path string, persist bool) (*Ledger, error) {
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 64*1024), 1<<20)
 	for sc.Scan() {
-		var e LedgerEntry
-		if json.Unmarshal(sc.Bytes(), &e) == nil && e.Hash != "" {
-			l.byHash[e.Hash] = e
-			l.mtimes = append(l.mtimes, e.ModTime)
+		var ln ledgerLine
+		if json.Unmarshal(sc.Bytes(), &ln) != nil {
+			continue
 		}
+		hash := ln.Hash
+		if hash == "" {
+			hash = ln.SHA256
+		}
+		if hash == "" {
+			continue
+		}
+		l.put(LedgerEntry{Hash: hash, Status: ln.Status, File: ln.File, ModTime: ln.ModTime, URL: ln.URL, At: ln.At})
 	}
 	return l, sc.Err()
 }
 
-func (l *Ledger) Has(hash string) bool { _, ok := l.byHash[hash]; return ok }
+// Has meldet, ob der letzte Eintrag zu hash fertig ist.
+func (l *Ledger) Has(hash string) bool { return l.byHash[hash].Status == StatusFertig }
 
+// HasNear meldet, ob ein fertiger Eintrag eine mtime im Fenster um t hat.
 func (l *Ledger) HasNear(t time.Time, window time.Duration) bool {
-	for _, m := range l.mtimes {
-		if absDur(m.Sub(t)) <= window {
+	for _, e := range l.byHash {
+		if e.Status == StatusFertig && absDur(e.ModTime.Sub(t)) <= window {
 			return true
 		}
 	}
 	return false
 }
 
+// Add übernimmt e sofort in den Speicher und hängt danach eine Zeile an die
+// Datei an (mit fsync). Fehler von Write, Sync und Close kommen zurück; der
+// Eintrag im Speicher bleibt dann trotzdem stehen.
 func (l *Ledger) Add(e LedgerEntry) error {
-	l.byHash[e.Hash] = e
-	l.mtimes = append(l.mtimes, e.ModTime)
+	e = l.put(e)
 	if !l.persist {
 		return nil
+	}
+	ln := ledgerLine{File: e.File, ModTime: e.ModTime, URL: e.URL, At: e.At}
+	if e.Status == StatusFertig {
+		ln.Hash = e.Hash
+	} else {
+		ln.SHA256, ln.Status = e.Hash, e.Status
+	}
+	b, err := json.Marshal(ln)
+	if err != nil {
+		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(l.path), 0o755); err != nil {
 		return err
@@ -745,9 +797,13 @@ func (l *Ledger) Add(e LedgerEntry) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = f.Close() }() // TODO R-M1-01: Close-Fehler beim Ledger-Schreiben behandeln
-	b, _ := json.Marshal(e)
 	_, err = f.Write(append(b, '\n'))
+	if err == nil {
+		err = f.Sync()
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
 	return err
 }
 
