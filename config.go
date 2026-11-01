@@ -7,7 +7,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -40,6 +42,10 @@ type Config struct {
 	Notion NotionConfig `json:"notion" yaml:"notion"`
 
 	loc *time.Location
+
+	// warnings sammelt Hinweise aus dem Laden (unbekannte Schlüssel, geklemmte
+	// Werte). Sie enthalten nie Werte aus der Datei; main schreibt sie ins Log.
+	warnings []string
 }
 
 type LLMConfig struct {
@@ -177,15 +183,73 @@ func LoadConfig(path string) (*Config, error) {
 			// Datei enthalten (etwa Tokens). Nur die Zeilennummern bleiben.
 			return nil, errors.New(yamlErrorMessage(path, err))
 		}
+		var raw map[string]any
+		if yaml.Unmarshal(data, &raw) == nil {
+			cfg.warnUnknownKeys(raw, false)
+		}
 	default:
 		if err := json.Unmarshal(data, cfg); err != nil {
 			return nil, fmt.Errorf("ungültiges JSON in %s: %w", path, err)
+		}
+		var raw map[string]any
+		if json.Unmarshal(data, &raw) == nil {
+			cfg.warnUnknownKeys(raw, true)
 		}
 	}
 	if err := cfg.finalize(); err != nil {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+// warnUnknownKeys meldet Schlüssel, die in der Datei stehen, aber nicht zu
+// Config gehören (Tippfehler wirken sonst nicht). Nur der Schlüsselpfad kommt
+// in die Meldung, nie ein Wert. JSON ordnet Schlüssel ohne Beachtung der
+// Groß-/Kleinschreibung zu, YAML exakt.
+func (c *Config) warnUnknownKeys(raw map[string]any, caseInsensitive bool) {
+	var found []string
+	collectUnknown(raw, reflect.TypeOf(*c), "", caseInsensitive, &found)
+	sort.Strings(found)
+	for _, k := range found {
+		c.warnings = append(c.warnings, fmt.Sprintf("Konfiguration: unbekannter Schlüssel %q wird ignoriert", k))
+	}
+}
+
+// collectUnknown prüft nur Struct-Felder rekursiv, keine *Struct. Kommen in M2
+// Pointer-Felder hinzu, muss die Rekursion angepasst werden.
+func collectUnknown(raw map[string]any, t reflect.Type, prefix string, ci bool, out *[]string) {
+	tag := "yaml"
+	if ci {
+		tag = "json"
+	}
+	fields := map[string]reflect.Type{}
+	for i := 0; i < t.NumField(); i++ {
+		name, _, _ := strings.Cut(t.Field(i).Tag.Get(tag), ",")
+		if name != "" && name != "-" {
+			fields[name] = t.Field(i).Type
+		}
+	}
+	for k, v := range raw {
+		var ft reflect.Type
+		var ok bool
+		if ci {
+			for name, typ := range fields {
+				if strings.EqualFold(name, k) {
+					ft, ok = typ, true
+					break
+				}
+			}
+		} else {
+			ft, ok = fields[k]
+		}
+		if !ok {
+			*out = append(*out, prefix+k)
+			continue
+		}
+		if sub, isMap := v.(map[string]any); isMap && ft.Kind() == reflect.Struct {
+			collectUnknown(sub, ft, prefix+k+".", ci, out)
+		}
+	}
 }
 
 func (c *Config) finalize() error {
@@ -215,13 +279,20 @@ func (c *Config) finalize() error {
 		return fmt.Errorf("create_tasks_for muss me, all oder none sein, nicht %q", c.Notion.CreateTasksFor)
 	}
 	if c.PollIntervalSeconds < 2 {
+		c.warnClamp("poll_interval_seconds", c.PollIntervalSeconds, 2)
 		c.PollIntervalSeconds = 2
 	}
 	if c.MaxAttempts < 1 {
+		c.warnClamp("max_attempts", c.MaxAttempts, 1)
 		c.MaxAttempts = 1
 	}
 	if c.LLM.MaxChunkChars < 5000 {
+		c.warnClamp("llm.max_chunk_chars", c.LLM.MaxChunkChars, 5000)
 		c.LLM.MaxChunkChars = 5000
+	}
+	if c.LLM.TimeoutMinutes < 1 {
+		c.warnClamp("llm.timeout_minutes", c.LLM.TimeoutMinutes, 1)
+		c.LLM.TimeoutMinutes = 1
 	}
 	if strings.TrimSpace(c.LLM.Model) == "" {
 		return errors.New("llm.model fehlt – trag den Modell-Identifier aus LM Studio ein (siehe README)")
@@ -235,6 +306,10 @@ func (c *Config) finalize() error {
 	}
 	c.loc = loc
 	return nil
+}
+
+func (c *Config) warnClamp(key string, was, now int) {
+	c.warnings = append(c.warnings, fmt.Sprintf("Konfiguration: %s=%d ist zu klein, verwende %d", key, was, now))
 }
 
 // NotionToken sucht den Token in dieser Reihenfolge:

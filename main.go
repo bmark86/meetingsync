@@ -35,6 +35,9 @@ func main() {
 		logger.Fatalf("Konfiguration: %v", err)
 	}
 	logger.Printf("Konfiguration: %s", *cfgPath)
+	for _, w := range cfg.warnings {
+		logger.Print(w)
+	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
