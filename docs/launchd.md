@@ -1,71 +1,71 @@
-# Dauerbetrieb mit launchd
+# Running as a service with launchd
 
-## Was ist eine plist?
+## What is a plist?
 
-- "Property List": das Konfigurationsformat von macOS (XML).
-- `de.borukhov.meetingsync.plist` (im Repo) beschreibt einen Hintergrunddienst:
+- "Property list": the configuration format of macOS (XML).
+- `de.borukhov.meetingsync.plist` (in the repo) describes a background service:
 
-| Key | Wert | Bedeutung |
+| Key | Value | Meaning |
 | --- | --- | --- |
-| `Label` | `de.borukhov.meetingsync` | Name des Dienstes |
-| `ProgramArguments` | `~/bin/meetingsync -config ~/.config/meetingsync/config.yaml` | Was gestartet wird (in der plist mit ausgeschriebenem Pfad `/Users/DEINNAME/...`) |
-| `RunAtLoad` | `true` | Start bei der Anmeldung |
-| `KeepAlive` | `true` | Bei Absturz/Beenden neu starten |
-| `ProcessType` | `Background` | Niedrige Priorität |
-| `StandardOutPath`, `StandardErrorPath` | `~/Library/Logs/meetingsync.log` | Ziel für Log (stdout und stderr in dieselbe Datei) |
+| `Label` | `de.borukhov.meetingsync` | Name of the service |
+| `ProgramArguments` | `~/bin/meetingsync -config ~/.config/meetingsync/config.yaml` | What is started (the plist has the full path `/Users/DEINNAME/...`, where `DEINNAME` is a placeholder for your user name) |
+| `RunAtLoad` | `true` | Start at login |
+| `KeepAlive` | `true` | Restart after a crash or exit |
+| `ProcessType` | `Background` | Low priority |
+| `StandardOutPath`, `StandardErrorPath` | `~/Library/Logs/meetingsync.log` | Where the log goes (stdout and stderr in the same file) |
 
-## Wofür?
+## Why use it?
 
-- meetingsync soll dauerhaft laufen und den Exportordner alle 10 s prüfen (`poll_interval_seconds`, Default 10), ohne dass ein Terminal offen ist.
-- macOS verwaltet Hintergrunddienste mit **launchd** (Startprozess des Systems, vergleichbar mit systemd).
-- Welche Dienste es gibt, erfährt launchd über plists.
+- meetingsync should run all the time and check the export folder every 10 s (`poll_interval_seconds`, default 10). No terminal should need to stay open.
+- macOS manages background services with **launchd** (the system's start process, like systemd).
+- launchd learns about services from plists.
 
-## Warum `~/Library/LaunchAgents`?
+## Why `~/Library/LaunchAgents`?
 
-| Ort | Läuft als | Wann | Admin-Rechte |
+| Place | Runs as | When | Admin rights |
 | --- | --- | --- | --- |
-| `~/Library/LaunchAgents` | du | solange du angemeldet bist | nein |
-| `/Library/LaunchAgents` | jeder angemeldete Nutzer | bei Anmeldung des jeweiligen Nutzers | ja |
-| `/Library/LaunchDaemons` | root | ohne Anmeldung | ja |
+| `~/Library/LaunchAgents` | you | while you are logged in | no |
+| `/Library/LaunchAgents` | every logged-in user | when that user logs in | yes |
+| `/Library/LaunchDaemons` | root | without a login | yes |
 
-Für meetingsync passt der erste: Der Dienst braucht dein Benutzerkonto für den Schlüsselbund (Notion-Token, Service `meetingsync-notion`) und für Mac-Mitteilungen (`osascript`). Admin-Rechte sind nicht nötig.
+The first one fits meetingsync. The service needs your user account for the Keychain (Notion token, service `meetingsync-notion`) and for Mac notifications (`osascript`). Admin rights are not needed.
 
-## plist und launchctl sind zweierlei
+## plist and launchctl are two different things
 
-- In `~/Library/LaunchAgents` liegt nur die **plist** (die Beschreibung).
-- `launchctl` ist der **Befehl**, um mit launchd zu sprechen.
+- `~/Library/LaunchAgents` holds only the **plist** (the description).
+- `launchctl` is the **command** that talks to launchd.
 
-Befehle laut README (Abschnitt "6. Dauerbetrieb") und plist-Kommentar:
+Commands as in the README (section "6. Running all the time", the service section) and the plist comment:
 
-| Zweck | Befehl |
+| Purpose | Command |
 | --- | --- |
-| Einrichten und sofort starten | `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/de.borukhov.meetingsync.plist` |
-| Stoppen und abmelden | `launchctl bootout gui/$(id -u)/de.borukhov.meetingsync` |
-| Läuft er? | `launchctl list \| grep meetingsync` |
-| Log verfolgen | `tail -f ~/Library/Logs/meetingsync.log` |
+| Set up and start now | `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/de.borukhov.meetingsync.plist` |
+| Stop and remove | `launchctl bootout gui/$(id -u)/de.borukhov.meetingsync` |
+| Is it running? | `launchctl list \| grep meetingsync` |
+| Follow the log | `tail -f ~/Library/Logs/meetingsync.log` |
 
-Hinweis: `launchctl load` / `unload` sind die ältere Schreibweise. Dieses Repo nutzt `bootstrap` / `bootout`.
+Note: `launchctl load` / `unload` are the older way to write this. This repo uses `bootstrap` / `bootout`.
 
-## Alternative: manuell im Terminal
+## Alternative: by hand in the terminal
 
-`meetingsync` direkt starten. Läuft, bis das Terminal geschlossen oder der Mac neu gestartet wird. Danach startet nichts von selbst.
+Start `meetingsync` directly. It runs until you close the terminal or restart the Mac. After that nothing starts by itself.
 
-## Aktueller Plan
+## Current plan
 
-- Ab 2026-11-01 testet Mark eine Woche lang manuell. Der Dienst ist **nicht** eingerichtet.
-- Läuft das ohne Probleme, wird der Dienst eingerichtet:
-  1. Binary bauen: `go build -o ~/bin/meetingsync .`
-  2. plist kopieren nach `~/Library/LaunchAgents/`, dabei `DEINNAME` ersetzen. `-config` zeigt auf `~/.config/meetingsync/config.yaml` (so steht es schon in der Vorlage).
+- From 2026-11-01 Mark tests by hand for one week. The service is **not** set up.
+- If this works without problems, the service is set up:
+  1. Build the binary: `go build -o ~/bin/meetingsync .`
+  2. Copy the plist to `~/Library/LaunchAgents/` and replace `DEINNAME`. `-config` points to `~/.config/meetingsync/config.yaml` (the template already says this).
   3. `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/de.borukhov.meetingsync.plist`
-  4. Log prüfen: `tail -f ~/Library/Logs/meetingsync.log`
+  4. Check the log: `tail -f ~/Library/Logs/meetingsync.log`
 
-## Hinweis für den manuellen Test
+## Note for the manual test
 
-| Aufruf | Verhalten |
+| Call | Behavior |
 | --- | --- |
-| ohne Optionen | Sofort ein Durchlauf, danach alle 10 s. Verarbeitet **alles** im Watch-Ordner (aktuell 52 Meetings, grob 5-8 Stunden LLM-Zeit, 52 Notizen). Fertige Dateien wandern nach `_archiv/JJJJ-MM`, der Hash kommt ins Ledger. |
-| `-once` | Genau ein Durchlauf, dann Ende. Verarbeitet ebenfalls alles Vorhandene (Archiv und Ledger wie oben), nur ohne Dauerlauf. Instabile Dateien (jünger als `stable_seconds`) und Dateien in Retry-Wartezeit werden übersprungen und nicht erneut versucht. |
-| `-file <datei>` | Legt eine Notiz an. Die Datei **bleibt liegen** und kommt **nicht** ins Ledger. |
-| `-dry-run` | Nichts wird geschrieben oder verschoben, Ergebnis nur ausgegeben. |
+| no options | One run right away, then every 10 s. Processes **everything** in the watch folder (now 52 meetings, about 5-8 hours of LLM time, 52 notes). Finished files move to `_archiv/JJJJ-MM` (archive folder by year and month), the hash goes into the ledger. |
+| `-once` | Exactly one run, then exit. Also processes everything that is there (archive and ledger as above), just without running continuously. Unstable files (younger than `stable_seconds`) and files waiting for a retry are skipped and not tried again. |
+| `-file <file>` | Creates one note. The file **stays in place** and does **not** go into the ledger. |
+| `-dry-run` | Nothing is written or moved. The result is only printed. |
 
-Folge von `-file`: Die Datei muss danach aus dem Watch-Ordner, sonst legt ein späterer Lauf oder der Dienst eine zweite Notiz an (siehe `docs/progress.md`, Follow-up 6). Lösch- oder Verschiebeaktionen an Mark-Dateien nur mit seiner Zustimmung.
+Result of `-file`: the file must be taken out of the watch folder afterwards. Otherwise a later run or the service creates a second note (see `docs/progress.md`, follow-up 6). Delete or move actions on Mark's files only with his consent.
