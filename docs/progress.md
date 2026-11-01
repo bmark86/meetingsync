@@ -5,7 +5,7 @@
 | T1 | YAML config | done (bf32c03) | 2026-10-31 |
 | T2 | Commented example config | done | 2026-10-31 |
 | T6 | Retry limit for transient errors | done | 2026-11-01 |
-| R-PLAN | Architecture/security review + refactoring plan (2026-11-01) | done (report and plan written; 51 tasks planned) | 2026-11-01 |
+| R-PLAN | Architecture/security review + refactoring plan (2026-11-01) | done (report and plan written; 52 tasks planned) | 2026-11-01 |
 | R-M0-01 | Pin the toolchain (go1.26.10, govulncheck 0 findings) | done | 2026-11-01 |
 | R-M0-02 | Makefile: build, lint, test -race, vuln, check | done | 2026-11-01 |
 | R-M0-03 | golangci-lint config, 12 findings fixed | done | 2026-11-01 |
@@ -31,7 +31,7 @@
 | 7 | An LLM request that always hits `llm.timeout_minutes` counts as transient (llm.go ~185): retried every 16 min forever, never moved to `_fehler`. Decide whether that is intended (decision: Mark) | open | done (T6) |
 | 8 | `go` directive still 1.22: legacy GODEBUG defaults stay active (see ADR 0002) | Mark | done (R-M0-11) |
 | 9 | GitHub settings: allow Actions (read-only token, approve fork PRs), enable Private vulnerability reporting, Dependabot alerts and security updates, branch protection for `main` with required check `check`, no force push | Mark | open |
-| 10 | With `create_tasks_for=all` the log/notification says "N To-dos für dich" counting all created tasks, not only Mark's (frozen in golden G16b). Likely a bug, decision Mark | Mark | open |
+| 10 | With `create_tasks_for=all` the log/notification says "N To-dos für dich" counting all created tasks, not only Mark's (frozen in golden G16b). Decided by Mark (2026-11-02): count only `fuer_mich` | Mark | planned (R-M3-16) |
 | 11 | Golden test helpers duplicated between `golden_flow_test.go` and `golden_cli_test.go`. Consolidate in R-M0-08 | Mark | done (R-M0-08) |
 | 12 | Transcript toggle truncation at 99 paragraphs not covered by golden tests. Add unit test in R-M0-08 | Mark | done (R-M0-08) |
-| 13 | G10b freezes OS/Go-specific "connection refused" text. Watch in R-M0-11 | Mark | open |
+| 13 | G10b freezes OS/Go-specific "connection refused" text. Watched in R-M0-11 | Mark | done (unchanged with go 1.26) |
