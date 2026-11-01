@@ -125,3 +125,122 @@ func TestYAMLErrorMessage(t *testing.T) {
 		t.Fatalf("ohne Zeile: %q, erwartet %q", got, want)
 	}
 }
+
+func loadWarn(t *testing.T, name, body string) []string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cfg.warnings
+}
+
+// Fängt: Clamp ohne Warnung / falscher Schlüssel in der Warnung / Warnung ohne Clamp.
+func TestConfigClampWarnings(t *testing.T) {
+	tests := []struct {
+		name, extra, want string
+	}{
+		{"poll", "poll_interval_seconds: 1\nllm:\n  model: m\n", "poll_interval_seconds=1 ist zu klein, verwende 2"},
+		{"attempts", "max_attempts: 0\nllm:\n  model: m\n", "max_attempts=0 ist zu klein, verwende 1"},
+		{"chunk", "llm:\n  model: m\n  max_chunk_chars: 100\n", "llm.max_chunk_chars=100 ist zu klein, verwende 5000"},
+		{"timeout", "llm:\n  model: m\n  timeout_minutes: 0\n", "llm.timeout_minutes=0 ist zu klein, verwende 1"},
+		{"timeout negativ", "llm:\n  model: m\n  timeout_minutes: -5\n", "llm.timeout_minutes=-5 ist zu klein, verwende 1"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			body := "watch_dir: /x\nnotion:\n  notes_data_source_id: n\n" + tc.extra
+			w := loadWarn(t, "config.yaml", body)
+			if len(w) != 1 || w[0] != "Konfiguration: "+tc.want {
+				t.Fatalf("warnings = %q, want genau %q", w, tc.want)
+			}
+		})
+	}
+}
+
+// Fängt: Lauf ohne Timeout (0 bedeutet beim http.Client "kein Timeout").
+func TestConfigTimeoutClampedToOne(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config.yaml")
+	body := "watch_dir: /x\nllm:\n  model: m\n  timeout_minutes: 0\nnotion:\n  notes_data_source_id: n\n"
+	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LLM.TimeoutMinutes != 1 {
+		t.Fatalf("TimeoutMinutes = %d, want 1", cfg.LLM.TimeoutMinutes)
+	}
+}
+
+// Fängt: unbekannte Schlüssel unbemerkt / Wert im Text / verschachtelte Pfade fehlen.
+func TestConfigUnknownKeys(t *testing.T) {
+	yamlBody := "watch_dir: /x\nfoo: ntn_geheim1\nllm:\n  model: m\n  modell: ntn_geheim2\nnotion:\n  notes_data_source_id: n\n  notes_properties:\n    titel: ntn_geheim3\n"
+	jsonBody := `{"watch_dir":"/x","foo":"ntn_geheim1","llm":{"model":"m","modell":"ntn_geheim2"},` +
+		`"notion":{"notes_data_source_id":"n","notes_properties":{"titel":"ntn_geheim3"}}}`
+	want := []string{
+		`Konfiguration: unbekannter Schlüssel "foo" wird ignoriert`,
+		`Konfiguration: unbekannter Schlüssel "llm.modell" wird ignoriert`,
+		`Konfiguration: unbekannter Schlüssel "notion.notes_properties.titel" wird ignoriert`,
+	}
+	for name, body := range map[string]string{"config.yaml": yamlBody, "config.json": jsonBody} {
+		t.Run(name, func(t *testing.T) {
+			w := loadWarn(t, name, body)
+			if !reflect.DeepEqual(w, want) {
+				t.Fatalf("warnings = %q, want %q", w, want)
+			}
+			if strings.Contains(strings.Join(w, "\n"), "ntn_geheim") {
+				t.Fatalf("Wert aus der Datei in der Warnung: %q", w)
+			}
+		})
+	}
+}
+
+// JSON ordnet Schlüssel ohne Beachtung der Schreibweise zu: kein Fehlalarm.
+func TestConfigJSONKeyCaseNoWarning(t *testing.T) {
+	w := loadWarn(t, "config.json", `{"Watch_Dir":"/x","llm":{"MODEL":"m"},"notion":{"notes_data_source_id":"n"}}`)
+	if len(w) != 0 {
+		t.Fatalf("warnings = %q, want keine", w)
+	}
+}
+
+func TestConfigYAMLKeyCaseWarns(t *testing.T) {
+	w := loadWarn(t, "config.yaml", "watch_dir: /x\nWatch_Dir: /y\nllm:\n  model: m\nnotion:\n  notes_data_source_id: n\n")
+	if len(w) != 1 || !strings.Contains(w[0], `unbekannter Schlüssel "Watch_Dir"`) {
+		t.Fatalf("warnings = %q, want eine Warnung für Watch_Dir", w)
+	}
+}
+
+func TestConfigCLIWarningsOrder(t *testing.T) {
+	home := t.TempDir()
+	env := append([]string{"HOME=" + home, "PATH=" + os.Getenv("PATH")}, goldenProxyEnv...)
+	p := filepath.Join(t.TempDir(), "x.yaml")
+	writeCfg(t, p, "watch_dir: "+filepath.Join(home, "w")+"\nllm:\n  model: m\nnotion:\n  token_keychain_service: \"\"\n  notes_data_source_id: n\nfoo: ntn_geheim\nmax_attempts: 0\n")
+	stdout, stderr, _ := goldenRunCLI(t, env, "-config", p, "-check")
+	out := stdout + stderr
+	if strings.Contains(out, "ntn_geheim") {
+		t.Fatalf("Wert in der Ausgabe:\n%s", out)
+	}
+	i := strings.Index(out, "Konfiguration: "+p+"\n")
+	j := strings.Index(out, `unbekannter Schlüssel "foo"`)
+	k := strings.Index(out, "max_attempts=0 ist zu klein, verwende 1")
+	if i < 0 || j < 0 || k < 0 || i >= j || j >= k {
+		t.Fatalf("Reihenfolge Pfad(%d) < unbekannt(%d) < zu klein(%d) verletzt:\n%s", i, j, k, out)
+	}
+}
+
+func TestConfigNormalNoWarnings(t *testing.T) {
+	for _, f := range []string{"config.example.json", "config.example.yaml"} {
+		cfg, err := LoadConfig(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(cfg.warnings) != 0 {
+			t.Fatalf("%s: warnings = %q, want keine", f, cfg.warnings)
+		}
+	}
+}
