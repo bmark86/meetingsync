@@ -4,6 +4,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- Docs: review report, refactoring plan; documentation switched to plain English.
+
 ## [1.0.0] - 2026-11-01
 
 ### Added

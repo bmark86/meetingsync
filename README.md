@@ -1,113 +1,114 @@
 # meetingsync
 
-MacWhisper-Export → lokales LLM (LM Studio) → Meeting-Notiz im Second Brain.
+MacWhisper export → local LLM (LM Studio) → meeting note in the Second Brain.
 
 ```
-MacWhisper ──► Exportordner ──► meetingsync ──► LM Studio (Gemma, lokal)
+MacWhisper ──► export folder ──► meetingsync ──► LM Studio (Gemma, local)
                                      │
-                                     ├──► Notion › Notes   (Template "Meeting Notes", Status Inbox)
-                                     ├──► Notion › Tasks   (deine To-dos, verknüpft mit der Notiz)
-                                     └──► _archiv/JJJJ-MM  (verarbeitete Dateien)
+                                     ├──► Notion › Notes   (template "Meeting Notes", status Inbox)
+                                     ├──► Notion › Tasks   (your to-dos, linked to the note)
+                                     └──► _archiv/JJJJ-MM  (processed files; JJJJ-MM = YYYY-MM)
 ```
 
-**Was passiert pro Meeting**
+**What happens for each meeting**
 
-1. Das Tool schaut alle 10 s in den Exportordner und wartet, bis eine Datei 20 s lang nicht mehr verändert wurde.
-2. Es erkennt an **Endung und Inhalt**, was Transkript und was Zusammenfassung ist (`.srt`/`.vtt` sind immer Transkript, bei `.txt`/`.md` entscheiden Zeitstempel und Sprecher-Labels). Der Dateiname liefert nur das Datum und die Paarbildung: Gleicher Namensstamm gehört zusammen, sonst gilt die zeitlich nächste Datei innerhalb von `pair_window_seconds`.
-3. Das Transkript geht an dein lokales Modell in LM Studio. Nichts davon verlässt den Mac.
-4. In Notion entsteht eine Seite in **Notes** mit genau den Abschnitten deines Templates, Status **Inbox**, und – falls eindeutig – verknüpft mit einem aktiven **Projekt**.
-5. Aufgaben, die *du* übernommen hast, landen als To-dos in **Tasks** (mit Deadline, verknüpft mit Notiz und Projekt).
-6. Transkript und Zusammenfassung wandern nach `_archiv/JJJJ-MM/`. Ein Protokoll verhindert, dass eine Datei je zweimal verarbeitet wird.
+1. The tool looks at the export folder every 10 s. It waits until a file has not changed for 20 s.
+2. It detects by **extension and content** which file is the transcript and which is the summary. `.srt`/`.vtt` are always transcripts. For `.txt`/`.md`, timestamps and speaker labels decide. The file name only gives the date and the pairing: files with the same name stem belong together. Otherwise the closest file in time within `pair_window_seconds` is used.
+3. The transcript goes to your local model in LM Studio. None of it leaves the Mac.
+4. A page is created in **Notes** in Notion. It has exactly the sections of your template and the status **Inbox**. If there is a clear match, it is linked to an active **Project**.
+5. Tasks that *you* took on become to-dos in **Tasks** (with a due date, linked to the note and the project).
+6. The transcript and the summary move to `_archiv/JJJJ-MM/`. A ledger makes sure a file is never processed twice.
 
-Wenn das Modell unsicher ist (Sprecherzuordnung, schlechte Tonqualität, keine Zeitmarken), steht oben auf der Seite eine gelbe **Bitte prüfen**-Box, die Checkbox **Prüfen** wird gesetzt und du bekommst eine Mitteilung auf dem Mac.
+If the model is unsure (speaker assignment, poor audio quality, no timestamps), a yellow **Bitte prüfen** box ("please check") appears at the top of the page. The checkbox **Prüfen** ("check") is set, and you get a notification on the Mac.
 
 ---
 
-## Einrichtung (ca. 15 Minuten)
+## Setup (about 15 minutes)
 
-### 1. Bauen
+### 1. Build
 
 ```bash
 cd meetingsync
-go test ./...                       # optional, dauert 1 Sekunde
+go test ./...                       # optional, takes 1 second
 go build -o ~/bin/meetingsync .
 ```
 
-### 2. LM Studio vorbereiten
+### 2. Prepare LM Studio
 
-- Developer-Tab → **Start Server** (Port 1234).
-- Gemma laden und die **Kontextlänge auf mindestens 32768** stellen. Der Standardwert (4096) ist für Transkripte viel zu klein.
-- Den exakten Modell-Identifier kopieren (im Developer-Tab oder per `lms ls`). Den brauchst du gleich für `llm.model`.
+- Developer tab → **Start Server** (port 1234).
+- Load Gemma and set the **context length to at least 32768**. The default (4096) is far too small for transcripts.
+- Copy the exact model identifier (in the Developer tab or with `lms ls`). You need it soon for `llm.model`.
 
-Läuft LM Studio mal nicht, ist das kein Problem: Die Dateien bleiben liegen und werden automatisch erneut versucht (nach 1, 2, 4, 8 Minuten, danach alle 16 Minuten, bis `max_attempts` erreicht ist, danach `_fehler`).
+If LM Studio is not running, that is fine. The files stay in place and are retried automatically (after 1, 2, 4, 8 minutes, then every 16 minutes, until `max_attempts` is reached, then `_fehler`).
 
-Zeitbedarf: ca. 4–5 Minuten LLM-Zeit pro Meeting-Stunde (Erfahrungswert mit `gemma-4-31b-qat`).
+Time needed: about 4–5 minutes of LLM time per hour of meeting (from experience with `gemma-4-31b-qat`).
 
-### 3. Notion-Integration anlegen
+### 3. Create the Notion integration
 
-1. [notion.so/profile/integrations](https://www.notion.so/profile/integrations) → **Neue Integration** → Typ *Intern* → Name z. B. „meetingsync". Berechtigungen: Inhalte lesen, aktualisieren, einfügen.
-2. Den Token kopieren.
-3. In Notion die Seite **Second Brain** öffnen → `•••` → **Verbindungen** → „meetingsync" hinzufügen. Damit hat die Integration Zugriff auf Notes, Tasks und Projects darunter.
+1. [notion.so/profile/integrations](https://www.notion.so/profile/integrations) → **New integration** (Neue Integration) → type *Internal* (Intern) → name, for example "meetingsync". Permissions: read content, update content, insert content.
+2. Copy the token.
+3. In Notion, open the **Second Brain** page → `•••` → **Connections** (Verbindungen) → add "meetingsync". This gives the integration access to Notes, Tasks and Projects below it.
 
-Token sicher im Schlüsselbund ablegen (du wirst nach dem Token gefragt):
+Store the token safely in the keychain (you will be asked for the token):
 
 ```bash
 security add-generic-password -a "$USER" -s meetingsync-notion -w
 ```
 
-### 4. Konfiguration
+### 4. Configuration
 
 ```bash
 mkdir -p ~/.config/meetingsync
 cp config.example.yaml ~/.config/meetingsync/config.yaml
 ```
 
-Eine bestehende `config.json` funktioniert weiterhin. Liegen beide Dateien im Ordner, hat `config.yaml` Vorrang.
+An existing `config.json` still works. If both files are in the folder, `config.yaml` wins.
 
-> **Aktive Config:** `~/.config/meetingsync/config.yaml`. Ohne `-config` wird sie gelesen, beim Start steht der Pfad im Log („Konfiguration: …“).
-> Änderungen nur dort machen. Eine `config.yaml` im Repo-Ordner ist per `.gitignore` ausgeschlossen und wird nur mit `-config ./config.yaml` gelesen. Sie ist also keine aktive Kopie und kann bei `git clean -x` verloren gehen.
+> **Active config:** `~/.config/meetingsync/config.yaml`. It is read when you do not pass `-config`. At start, the path is written to the log (`Konfiguration: …`, German for "configuration").
+> Make changes only there. A `config.yaml` in the repo folder is excluded by `.gitignore`. It is only read with `-config ./config.yaml`. So it is not an active copy, and it can be lost with `git clean -x`.
 
-Anpassen musst du nur drei Dinge:
+You only need to change three things:
 
-- `watch_dir` – dein MacWhisper-Exportordner
-- `llm.model` – der Identifier aus LM Studio, z. B. `google/gemma-4-31b-qat`
-- `my_speaker_label` – der Sprechername deiner eigenen Spur, bei MacWhisper `"Microphone"`
+- `watch_dir` – your MacWhisper export folder
+- `llm.model` – the identifier from LM Studio, for example `google/gemma-4-31b-qat`
+- `my_speaker_label` – the speaker name of your own track, `"Microphone"` in MacWhisper
 
-In `config.example.yaml` sind die IDs der Notes-, Tasks- und Projects-Datenbank schon eingetragen. Alle Optionen mit Kommentaren stehen dort.
+In `config.example.yaml`, the IDs of the Notes, Tasks and Projects databases are already filled in. All options with comments are listed there.
 
-> **macOS-Hinweis:** Liegt der Exportordner unter *Dokumente*, *Schreibtisch* oder *Downloads*, blockiert macOS den Zugriff im Hintergrund. Entweder einen Ordner wie `~/Meetings/MacWhisper` nehmen oder `~/bin/meetingsync` unter *Systemeinstellungen → Datenschutz & Sicherheit → Festplattenvollzugriff* freigeben.
+> **macOS note:** If the export folder is under *Documents*, *Desktop* or *Downloads*, macOS blocks background access. Either use a folder like `~/Meetings/MacWhisper`, or allow `~/bin/meetingsync` under *System Settings (Systemeinstellungen) → Privacy & Security (Datenschutz & Sicherheit) → Full Disk Access (Festplattenvollzugriff)*.
 
-### 5. Prüfen und testen
+### 5. Check and test
 
 ```bash
 meetingsync -check
 ```
 
-zeigt, ob Notion und LM Studio erreichbar sind und ob das Modell gefunden wird. Exit 1 gibt es bei Config-Fehler, fehlendem Token oder Schlüsselbund-Fehler und bei Fehlern mit der Notes- oder Tasks-Datenbank. Ein ✗ bei Ordner, LM Studio oder Projects-Datenbank endet trotzdem mit Exit 0, also die Ausgabe lesen.
+shows whether Notion and LM Studio are reachable and whether the model is found. It exits with code 1 on a config error, a missing token, a keychain error, and errors with the Notes or Tasks database. A ✗ for the folder, LM Studio or the Projects database still ends with exit code 0, so read the output.
 
-Liegt `~/bin` nicht im PATH, rufst du `~/bin/meetingsync …` auf oder trägst `export PATH="$HOME/bin:$PATH"` in `~/.zshrc` ein.
+If `~/bin` is not in your PATH, call `~/bin/meetingsync …` or add `export PATH="$HOME/bin:$PATH"` to `~/.zshrc`.
 
-Weitere Aufrufe:
-
-```bash
-meetingsync -once                         # einen Durchlauf über den Exportordner, dann beenden
-meetingsync -config ./config.yaml -check  # andere Konfigurationsdatei verwenden
-```
-
-Dann mit einem echten Transkript testen, **ohne** etwas nach Notion zu schreiben:
+More calls:
 
 ```bash
-meetingsync -dry-run -file ~/Meetings/MacWhisper/irgendein-transkript.srt
+meetingsync -once                         # one pass over the export folder, then exit
+meetingsync -config ./config.yaml -check  # use a different config file
 ```
 
-Du siehst das JSON, das das Modell liefert. Passt das, legt derselbe Befehl ohne `-dry-run` eine echte Notiz an.
+Then test with a real transcript, **without** writing anything to Notion:
 
-> **Achtung `-file` ohne `-dry-run`:** Es entsteht eine echte Notiz, aber kein Ledger-Eintrag, und die Datei wird nicht verschoben. Liegt sie im `watch_dir`, verarbeitet ein späterer Lauf sie erneut (zweite Notiz). Danach die Datei aus dem `watch_dir` nehmen.
+```bash
+meetingsync -dry-run -file ~/Meetings/MacWhisper/any-transcript.srt
+```
 
-### 6. Dauerbetrieb
-Was eine plist ist, warum sie unter `~/Library/LaunchAgents` liegt und wie `launchctl` funktioniert: siehe [docs/launchd.md](docs/launchd.md).
+You see the JSON that the model returns. If it looks right, the same command without `-dry-run` creates a real note.
 
-`de.borukhov.meetingsync.plist` öffnen, `DEINNAME` ersetzen, dann:
+> **Warning, `-file` without `-dry-run`:** A real note is created, but there is no ledger entry and the file is not moved. If the file is in `watch_dir`, a later run processes it again (second note). Remove the file from `watch_dir` afterwards.
+
+### 6. Running all the time
+
+What a plist is, why it lives in `~/Library/LaunchAgents` and how `launchctl` works: see [docs/launchd.md](docs/launchd.md).
+
+Open `de.borukhov.meetingsync.plist`, replace `DEINNAME` (German for "YOURNAME"), then:
 
 ```bash
 cp de.borukhov.meetingsync.plist ~/Library/LaunchAgents/
@@ -115,97 +116,97 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/de.borukhov.meetingsync.
 tail -f ~/Library/Logs/meetingsync.log
 ```
 
-Die plist ruft `-config …/config.yaml` explizit auf, ein Wechsel der Config-Datei braucht also auch eine Anpassung dort.
+The plist calls `-config …/config.yaml` explicitly. If you switch to another config file, you must also change it there.
 
-Stoppen: `launchctl bootout gui/$(id -u)/de.borukhov.meetingsync`
-
----
-
-## Notion: zwei Ansichten für den Feierabend
-
-Damit die Inbox nicht zum Archiv wird:
-
-1. In **Notes** eine Checkbox-Property **Prüfen** anlegen (optional – ohne sie gibt es nur die gelbe Box auf der Seite).
-2. Auf der Second-Brain-Startseite zwei verknüpfte Ansichten:
-   - **Zu prüfen** – Notes, Filter: *Prüfen ist angehakt* und *Status = Inbox*
-   - **Meine offenen To-dos** – Tasks, Filter: *Completed ist nicht angehakt*, sortiert nach *Due Date*
-
-Abends gehst du nur noch die markierten Notizen durch. Alle anderen sind fertig vorbereitet und brauchen nur einen Blick.
+To stop: `launchctl bootout gui/$(id -u)/de.borukhov.meetingsync`
 
 ---
 
-## MacWhisper-Export
+## Notion: two views for the end of the day
 
-Exportiere nur den **kombinierten SRT-Export** aus MacWhisper (Sprecher + Zeitmarken). Deine eigene Spur heißt darin `Microphone`, das trägst du als `my_speaker_label` ein.
+So that the inbox does not turn into an archive:
 
-> **Warnung:** `.md`/`.txt` ohne Zeitmarken gelten als Zusammenfassung. Hat sie keinen Partner, wird nach `orphan_summary_minutes` eine eigene Notiz mit Prüf-Box daraus (nur bei `orphan_summary_action: note`, dem Standard). Getrennte Spur-Exporte (`_app-audio` / `_mic-audio`) ergeben je eine eigene Notiz.
+1. In **Notes**, create a checkbox property **Prüfen** (optional. Without it, you only get the yellow box on the page).
+2. On the Second Brain start page, add two linked views:
+   - **Zu prüfen** ("to check") – Notes, filter: *Prüfen is checked* and *Status = Inbox*
+   - **Meine offenen To-dos** ("my open to-dos") – Tasks, filter: *Completed is not checked*, sorted by *Due Date*
 
-- **Unterstützte Endungen:** `.srt`, `.vtt`, `.json`, `.txt`, `.md`, `.markdown`. `.srt`/`.vtt` sind immer Transkript, `.json` wird an der Segmentstruktur erkannt, bei `.txt`/`.md` entscheidet der Inhalt.
-- **Ignoriert** werden Unterordner, versteckte und temporäre Dateien (`.tmp`, `.part`, …) sowie Dateien über 20 MB. Nicht unterstützte Endungen werden ebenfalls ignoriert, mit einer Logmeldung.
+In the evening, you only go through the marked notes. All others are fully prepared and only need a quick look.
 
-Wenn die Erkennung nicht passt, kannst du sie in der Config festnageln, z. B.:
+---
+
+## MacWhisper export
+
+Export only the **combined SRT export** from MacWhisper (speakers + timestamps). Your own track is called `Microphone` in it. Enter this as `my_speaker_label`.
+
+> **Warning:** `.md`/`.txt` without timestamps count as a summary. If it has no partner, it becomes its own note with the yellow **Bitte prüfen** hint box after `orphan_summary_minutes` (only with `orphan_summary_action: note`, the default). Separate track exports (`_app-audio` / `_mic-audio`) each give their own note.
+
+- **Supported extensions:** `.srt`, `.vtt`, `.json`, `.txt`, `.md`, `.markdown`. `.srt`/`.vtt` are always transcripts. `.json` is detected by its segment structure. For `.txt`/`.md`, the content decides.
+- **Ignored** are subfolders, hidden and temporary files (`.tmp`, `.part`, …) and files over 20 MB. Unsupported extensions are also ignored, with a log message.
+
+If the detection does not fit, you can fix it in the config, for example:
 
 ```yaml
 transcript_extensions: [srt]
 summary_extensions: [md]
 ```
 
-Die MacWhisper-Zusammenfassung wird standardmäßig **nicht** benutzt, das Modell arbeitet direkt mit dem Transkript. Sie wird nur mit archiviert. Mit `use_summary_as_context: true` bekommt das Modell sie als Zusatzinfo.
+By default, the MacWhisper summary is **not** used. The model works directly with the transcript. The summary is only archived. With `use_summary_as_context: true`, the model gets it as extra information.
 
-**Datum und Uhrzeit** nimmt das Tool aus dem Dateinamen, falls drin (MacWhisper-Format `2026-10-30 14_30_49`, außerdem `24.08.2026`). Ohne Datum gilt der Exportzeitpunkt minus Länge des Transkripts. Steht im Namen nur ein Datum ohne Uhrzeit, gilt dieses Datum ohne Uhrzeit. Ist es der Exporttag, wird die Uhrzeit aus Exportzeitpunkt minus Dauer geschätzt.
+**Date and time** come from the file name if they are in it (MacWhisper format `2026-10-30 14_30_49`, also `24.08.2026`). Without a date, the export time minus the length of the transcript is used. If the name has only a date and no time, that date is used without a time. If it is the export day, the time is estimated from the export time minus the duration.
 
-**Ledger:** Verarbeitete Dateien stehen in `<archive_dir>/.meetingsync-ledger.jsonl`. Es arbeitet per Inhalts-Hash, dieselbe Datei wird also nie zweimal verarbeitet (außer per `-file`, siehe oben), auch nicht unter anderem Namen.
+**Ledger:** Processed files are listed in `<archive_dir>/.meetingsync-ledger.jsonl`. It works with a content hash. So the same file is never processed twice (except with `-file`, see above), even under a different name.
 
 ---
 
-## Konfiguration im Detail
+## Configuration in detail
 
-Die vollständige, kommentierte Referenz aller Optionen steht in [config.example.yaml](config.example.yaml). Die wichtigsten:
+The full, commented reference of all options is in [config.example.yaml](config.example.yaml). The most important ones:
 
-| Schlüssel | Standard | Bedeutung |
+| Key | Default | Meaning |
 |---|---|---|
-| `watch_dir` | – | Exportordner von MacWhisper |
-| `archive_dir` / `failed_dir` | `watch_dir/_archiv`, `watch_dir/_fehler` | Ziel für verarbeitete bzw. gescheiterte Dateien |
-| `my_name` | `Mark` | Dein Name, damit deine To-dos erkannt werden |
-| `my_speaker_label` | leer | Sprechername deiner Mikrofonspur, bei MacWhisper `"Microphone"` |
-| `include_transcript` | `false` | Volles Transkript als aufklappbarer Block in die Notion-Seite |
-| `use_summary_as_context` | `false` | MacWhisper-Zusammenfassung zusätzlich ans Modell geben |
-| `orphan_summary_action` | `note` | Datei ohne Zeitmarken und ohne Partner: `note` (Notiz mit Prüf-Hinweis), `archive` oder `keep` |
-| `orphan_summary_minutes` | `10` | So lange wartet eine solche Datei auf ihr Transkript |
-| `pair_window_seconds` | `180` | Zeitfenster, in dem Transkript und Zusammenfassung als Paar gelten |
-| `stable_seconds` | `20` | Datei muss so lange unverändert sein |
-| `max_attempts` | `10` | Fehlversuche (alle Fehler, auch vorübergehende), danach wandert die Datei nach `_fehler` (mit `.fehler.txt`) |
-| `llm.model` | – | Modell-Identifier aus LM Studio |
-| `llm.max_chunk_chars` | `60000` | Längere Transkripte werden erst abschnittsweise verdichtet |
-| `notion.create_tasks_for` | `me` | `me` = nur deine To-dos, `all` = alle, `none` = keine |
+| `watch_dir` | – | Export folder of MacWhisper |
+| `archive_dir` / `failed_dir` | `watch_dir/_archiv`, `watch_dir/_fehler` | Target for processed and failed files |
+| `my_name` | `Mark` | Your name, so that your to-dos are recognized |
+| `my_speaker_label` | empty | Speaker name of your microphone track, `"Microphone"` in MacWhisper |
+| `include_transcript` | `false` | Put the full transcript in the Notion page as a collapsible block |
+| `use_summary_as_context` | `false` | Also give the MacWhisper summary to the model |
+| `orphan_summary_action` | `note` | File without timestamps and without a partner: `note` (note with the **Bitte prüfen** hint box), `archive` or `keep` |
+| `orphan_summary_minutes` | `10` | How long such a file waits for its transcript |
+| `pair_window_seconds` | `180` | Time window in which a transcript and a summary count as a pair |
+| `stable_seconds` | `20` | A file must stay unchanged for this long |
+| `max_attempts` | `10` | Failed attempts (all errors, also temporary ones). After that, the file moves to `_fehler` (with `.fehler.txt`) |
+| `llm.model` | – | Model identifier from LM Studio |
+| `llm.max_chunk_chars` | `60000` | Longer transcripts are first condensed in parts |
+| `notion.create_tasks_for` | `me` | `me` = only your to-dos, `all` = all, `none` = none |
 
-Der Notion-Token wird in dieser Reihenfolge gesucht: Umgebungsvariable `NOTION_TOKEN` → Schlüsselbund, wenn `token_keychain_service` gesetzt ist (ein Fehler dort bricht ab, `notion.token` wird dann nicht gelesen) → `notion.token`.
+The Notion token is looked up in this order: environment variable `NOTION_TOKEN` → keychain, if `token_keychain_service` is set (an error there aborts, and `notion.token` is then not read) → `notion.token`.
 
 ---
 
-## Datenschutz
+## Privacy
 
-- Transkription (MacWhisper) und Zusammenfassung (LM Studio) laufen komplett lokal.
-- Nach Notion geht nur die fertige Notiz. Das Rohtranskript nur, wenn du `include_transcript` einschaltest.
-- Die Originaldateien bleiben auf dem Mac im Archivordner.
+- Transcription (MacWhisper) and summarizing (LM Studio) run fully locally.
+- Only the finished note goes to Notion. The raw transcript goes only if you turn on `include_transcript`.
+- The original files stay on the Mac in the archive folder.
 
-## Wenn etwas hakt
+## When something goes wrong
 
-| Symptom im Log | Ursache |
+| Symptom in the log | Cause |
 |---|---|
-| `ungültiges YAML in … (Zeile N)` | Syntaxfehler in der Config in der genannten Zeile. Der Inhalt steht bewusst nicht in der Meldung (könnte ein Token sein) |
-| `LM Studio nicht erreichbar` | Server in LM Studio nicht gestartet – Dateien warten einfach |
-| `Modell … nicht geladen` | Modell laden oder Identifier in `llm.model` prüfen (`meetingsync -check` listet alle) |
-| `Antwort … abgeschnitten` | Kontextlänge in LM Studio erhöhen oder `llm.max_chunk_chars` verkleinern |
-| `Notion HTTP 404 … Integration verbunden?` | Integration ist nicht mit der Second-Brain-Seite verbunden. Klappt es trotz Verbindung nicht, statt der Data-Source-ID die Datenbank-ID aus der Notion-URL eintragen – beides wird akzeptiert. |
-| `operation not permitted` | macOS-Schutz, siehe Hinweis bei Schritt 4 |
-| `Notion HTTP 401 … – Token gültig? Ist die Integration mit der Datenbank verbunden?` bleibt dauerhaft | Schlüsselbund-Eintrag ohne `-w` angelegt (leeres Token, Eintrag neu anlegen, siehe Schritt 3) oder Token ungültig bzw. widerrufen |
+| `ungültiges YAML in … (Zeile N)` (invalid YAML) | Syntax error in the config at the given line. The content is deliberately not in the message (it could be a token) |
+| `LM Studio nicht erreichbar` (not reachable) | Server in LM Studio is not started. Files simply wait |
+| `Modell … nicht geladen` (model not loaded) | Load the model or check the identifier in `llm.model` (`meetingsync -check` lists all) |
+| `Antwort … abgeschnitten` (answer cut off) | Increase the context length in LM Studio or lower `llm.max_chunk_chars` |
+| `Notion HTTP 404 … Integration verbunden?` (integration connected?) | The integration is not connected to the Second Brain page. If it still fails although it is connected, enter the database ID from the Notion URL instead of the data source ID. Both are accepted. |
+| `operation not permitted` | macOS protection, see the note in step 4 |
+| `Notion HTTP 401 … – Token gültig? Ist die Integration mit der Datenbank verbunden?` (token valid? is the integration connected to the database?) stays for good | Keychain entry was created without `-w` (empty token, create the entry again, see step 3) or the token is invalid or revoked |
 
-Vorübergehende Fehler (LM Studio oder Notion nicht erreichbar, auch bei Timeout, HTTP 429/5xx, LM-Studio-Modell nicht geladen, Notion 401/403/404) werden mit Backoff wiederholt: nach 1, 2, 4, 8 Minuten, danach alle 16 Minuten. Sie zählen wie alle anderen Fehler gegen `max_attempts` (Standard 10); danach landet die Datei in `_fehler`. Bei den Standardwerten wartet eine Datei so mindestens rund 95 Minuten auf die Behebung der Ursache; die Laufzeit der einzelnen Versuche kommt hinzu (bei LLM-Timeouts bis zu `llm.timeout_minutes` je Versuch). Andere Fehler werden im Abstand von 2 Minuten wiederholt.
+Temporary errors (LM Studio or Notion not reachable, also on timeout, HTTP 429/5xx, LM Studio model not loaded, Notion 401/403/404) are retried with backoff: after 1, 2, 4, 8 minutes, then every 16 minutes. Like all other errors, they count against `max_attempts` (default 10). After that, the file goes to `_fehler`. With the default values, a file waits at least about 95 minutes for the cause to be fixed. The run time of each attempt comes on top (for LLM timeouts, up to `llm.timeout_minutes` per attempt). Other errors are retried every 2 minutes.
 
-## Weitere Doku
+## More docs
 
-- [docs/changelog.md](docs/changelog.md) – Änderungen
-- [docs/progress.md](docs/progress.md) – Task-Stand und offene Punkte
-- [docs/adr/](docs/adr/) – Architekturentscheidungen
-- [docs/launchd.md](docs/launchd.md) – plist und `launchctl` erklärt
+- [docs/changelog.md](docs/changelog.md) – changes
+- [docs/progress.md](docs/progress.md) – task status and open items
+- [docs/adr/](docs/adr/) – architecture decisions
+- [docs/launchd.md](docs/launchd.md) – plist and `launchctl` explained
