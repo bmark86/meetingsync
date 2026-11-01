@@ -1,0 +1,13 @@
+Neu: Sirius Sync.srt → Transkript
+→ Sirius Sync.srt (Transkript, 0 KB)
+   LLM läuft (317 Zeichen, Modell gemma-test) …
+   ⏸  LM Studio HTTP 503: {"error":"Model is loading"} – neuer Versuch in 1m0s (Versuch 1/4)
+→ Sirius Sync.srt (Transkript, 0 KB)
+   LLM läuft (317 Zeichen, Modell gemma-test) …
+   ⏸  LM Studio HTTP 503: {"error":"Model is loading"} – neuer Versuch in 2m0s (Versuch 2/4)
+→ Sirius Sync.srt (Transkript, 0 KB)
+   LLM läuft (317 Zeichen, Modell gemma-test) …
+   ⏸  LM Studio HTTP 503: {"error":"Model is loading"} – neuer Versuch in 4m0s (Versuch 3/4)
+→ Sirius Sync.srt (Transkript, 0 KB)
+   LLM läuft (317 Zeichen, Modell gemma-test) …
+   ✗ LM Studio HTTP 503: {"error":"Model is loading"} – gebe auf, Dateien → <tmp>/watch/_fehler
