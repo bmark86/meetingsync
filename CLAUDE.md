@@ -6,7 +6,7 @@ Go-Tool (macOS, stdlib plus `go.yaml.in/yaml/v3`, `go 1.22`): MacWhisper-Export 
 
 Exportordner pollen (10 s), Datei muss `stable_seconds` unverändert sein → Transkript/Zusammenfassung an Endung und Inhalt erkennen (`classify.go`) → Paarbildung Transkript+Zusammenfassung (`pair_window_seconds`), Zusammenfassung ohne Partner nach `orphan_summary_action` → LLM-Extraktion, lange Transkripte in Chunks (`llm.go`) → Notion-Seite und Tasks (`blocks.go`, `notion.go`) → Archiv `_archiv/JJJJ-MM`, Ledger gegen Doppelverarbeitung (`app.go`).
 
-Retry: Vorübergehende Fehler (LM Studio/Notion nicht erreichbar (inkl. Timeout), HTTP 429/5xx, LM-Studio-Modell nicht geladen, Notion 401/403/404) mit Backoff ohne Ende (1/2/4/8 min, dann alle 16 min). Andere Fehler zählen gegen `max_attempts` (Abstand 2 min), danach `_fehler`.
+Retry: Vorübergehende Fehler (LM Studio/Notion nicht erreichbar (inkl. Timeout), HTTP 429/5xx, LM-Studio-Modell nicht geladen, Notion 401/403/404) mit Backoff (1/2/4/8 min, dann alle 16 min). Alle Fehler zählen gemeinsam gegen `max_attempts` (Standard 10; andere Fehler im Abstand 2 min), danach `_fehler`.
 
 ## Dateien
 

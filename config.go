@@ -100,7 +100,7 @@ func defaultConfig() *Config {
 		PairWindowSeconds:    180,
 		OrphanSummaryMinutes: 10,
 		OrphanSummaryAction:  "note",
-		MaxAttempts:          3,
+		MaxAttempts:          10,
 		MyName:               "Mark",
 		Timezone:             "Europe/Berlin",
 		TitleFormat:          "{date} – {title}",

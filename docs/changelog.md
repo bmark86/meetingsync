@@ -15,6 +15,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - T1: README and plist template point to `config.yaml`; `config.json` keeps working.
 - T1: CLAUDE.md: "stdlib only" now excepts `go.yaml.in/yaml/v3`; real config path updated.
 - T2: Defaults documented per option, not in a header; active values unchanged, loaded config identical (test).
+- T6: Transient errors (LM Studio/Notion unreachable incl. timeout, HTTP 429/5xx, model not loaded, Notion 401/403/404) count toward `max_attempts`, together with other errors. Wait times unchanged (transient 1/2/4/8/16 min, then 16 min; other 2 min).
+- T6: After `max_attempts` the file moves to `_fehler` with `.fehler.txt`. Context cancellation does not count as an attempt.
+- T6: Default `max_attempts` 3 → 10 (breaking: also applies to non-transient errors).
+- T6: Consequence: if LM Studio is down for about 95 min, or the Notion access is missing, all affected files end up in `_fehler` and must be moved back to the watch folder by hand.
 
 ### Fixed
 - T2: Keychain hint in `config.example.yaml`: `security add-generic-password ... -w`. Without `-w` an empty password is stored and Notion answers 401 permanently.

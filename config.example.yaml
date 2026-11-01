@@ -36,10 +36,10 @@ watch_dir: ~/Meetings/MacWhisper
 #   keep = bleibt liegen (Warnung im Log).
 orphan_summary_action: note
 # Fehlversuche je Datei (Minimum 1), danach Verschieben nach failed_dir; Retry nach 2 Minuten.
-# Vorübergehende Fehler zählen nicht mit: LM Studio oder Notion nicht erreichbar, Modell nicht
-# geladen, Timeout, HTTP 429/5xx, Notion 401/403/404. Dann Wartezeit 1, 2, 4, 8 Minuten,
-# danach alle 16 Minuten. Standard: 3
-# max_attempts: 3
+# Gilt für alle Fehler. Vorübergehende Fehler (LM Studio oder Notion nicht erreichbar, Modell
+# nicht geladen, Timeout, HTTP 429/5xx, Notion 401/403/404) zählen mit, warten aber mit Backoff
+# 1, 2, 4, 8, 16 Minuten (danach 16). Standard: 10
+# max_attempts: 10
 # Endungen (mit oder ohne Punkt), die immer als Transkript gelten, auch eigene wie ".log".
 # Ohne Eintrag: .srt/.vtt sind immer Transkript, .json wird an der Segmentstruktur erkannt,
 # bei .txt/.md/.markdown entscheidet der Inhalt. Standard: leer
