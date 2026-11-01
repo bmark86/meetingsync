@@ -59,8 +59,8 @@ summary_extensions: []
 # Dein Name, damit deine To-dos erkannt werden und das Modell dich zuordnen kann.
 # Standard: Mark
 my_name: Mark
-# Sprecher-Label deiner Mikrofonspur, z. B. "Speaker 1". Standard: leer (Modell rät aus
-# dem Kontext).
+# Sprecher-Label deiner Mikrofonspur, z. B. "Microphone" (eigene Spur im kombinierten
+# MacWhisper-SRT). Standard: leer (Modell rät aus dem Kontext).
 my_speaker_label: ""
 # Transkript als aufklappbarer Block in der Notion-Seite (sehr lange werden gekürzt).
 # Sonst verlässt es den Mac nicht. Standard: false
