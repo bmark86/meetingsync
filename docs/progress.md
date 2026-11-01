@@ -9,6 +9,7 @@
 | R-M0-01 | Pin the toolchain (go1.26.10, govulncheck 0 findings) | done | 2026-11-01 |
 | R-M0-02 | Makefile: build, lint, test -race, vuln, check | done | 2026-11-01 |
 | R-M0-03 | golangci-lint config, 12 findings fixed | done | 2026-11-01 |
+| R-M0-04 | GitHub Actions CI (macOS), Dependabot, SECURITY.md (CI run link follows after push) | done | 2026-11-01 |
 
 ## Open follow-ups
 
@@ -22,3 +23,4 @@
 | 6 | `-file` without `-dry-run` writes no ledger entry and leaves the file in place; a later service run would process it a second time | open | planned (R-M3-14) |
 | 7 | An LLM request that always hits `llm.timeout_minutes` counts as transient (llm.go ~185): retried every 16 min forever, never moved to `_fehler`. Decide whether that is intended (decision: Mark) | open | done (T6) |
 | 8 | `go` directive still 1.22: legacy GODEBUG defaults stay active (see ADR 0002) | Mark | planned (R-M0-11) |
+| 9 | GitHub settings: allow Actions (read-only token, approve fork PRs), enable Private vulnerability reporting, Dependabot alerts and security updates, branch protection for `main` with required check `check`, no force push | Mark | open |
