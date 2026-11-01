@@ -36,7 +36,7 @@ linters:
       # nicht durch eine Shell interpretiert. Befund S-10 / Task R-M3-07.
       # Exclusion in R-M3-07 entfernen.
       - linters: [gosec]
-        path: (^(app|config)\.go$|_test\.go$)
+        path: ^(app|config)\.go$
         text: "G204:"
       # version wird nur per -ldflags "-X main.version=..." gesetzt und per
       # "go version -m" gelesen (OD-02), nicht im Code.
