@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  # govulncheck lädt die Schwachstellen-Datenbank zur Laufzeit; sie ändert sich täglich.
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Liest die toolchain-Zeile aus go.mod (go1.26.10). Cache-Schlüssel enthält
+      # das Makefile, weil dort die Tool-Versionen stehen. PR-Läufe schreiben nur
+      # in ihren eigenen Cache-Bereich, nicht in den von main.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            Makefile
+
+      # setup-go setzt GOTOOLCHAIN=local. Zurück auf den Go-Standard "auto",
+      # damit CI wie lokal die toolchain-Zeile aus go.mod auswertet.
+      - name: GOTOOLCHAIN auf auto setzen
+        run: echo "GOTOOLCHAIN=auto" >> "$GITHUB_ENV"
+
+      # Tests dürfen weder den Schlüsselbund noch Mitteilungen aufrufen.
+      # Die Stubs schreiben eine Markierung und enden mit Exit 1.
+      - name: Stubs für security und osascript
+        run: |
+          stubs="$RUNNER_TEMP/stubs"
+          marks="$RUNNER_TEMP/stub-aufrufe"
+          mkdir -p "$stubs" "$marks"
+          for tool in security osascript; do
+            printf '#!/bin/sh\necho "%s in CI aufgerufen" >&2\ntouch "%s/%s"\nexit 1\n' "$tool" "$marks" "$tool" > "$stubs/$tool"
+            chmod +x "$stubs/$tool"
+          done
+          echo "$stubs" >> "$GITHUB_PATH"
+
+      - name: Go-Version und Go-Umgebung prüfen
+        run: |
+          set -euo pipefail
+          fail=0
+          v="$(go version)"
+          echo "$v"
+          case "$v" in
+            "go version go1.26.10 "*) ;;
+            *) echo "::error::Erwartet go1.26.10, gefunden: $v"; fail=1 ;;
+          esac
+          go env GOSUMDB GOFLAGS GOTOOLCHAIN GONOSUMDB GOPRIVATE GOINSECURE GOPROXY
+          [ "$(go env GOSUMDB)" = "sum.golang.org" ] || { echo "::error::GOSUMDB ist nicht sum.golang.org"; fail=1; }
+          case " $(go env GOFLAGS) " in
+            *-insecure*) echo "::error::GOFLAGS enthält -insecure"; fail=1 ;;
+          esac
+          [ "$(go env GOTOOLCHAIN)" = "auto" ] || { echo "::error::GOTOOLCHAIN ist nicht auto"; fail=1; }
+          for k in GONOSUMDB GOPRIVATE GOINSECURE; do
+            [ -z "$(go env "$k")" ] || { echo "::error::$k ist gesetzt"; fail=1; }
+          done
+          for tool in security osascript; do
+            [ "$(command -v "$tool")" = "$RUNNER_TEMP/stubs/$tool" ] || { echo "::error::Stub für $tool nicht vorn im PATH"; fail=1; }
+          done
+          go mod verify
+          exit "$fail"
+
+      - run: make vet
+      - run: make lint
+      - run: make test
+      - run: make vuln
+
+      - name: Keine Aufrufe von security oder osascript
+        if: always()
+        run: |
+          marks="$RUNNER_TEMP/stub-aufrufe"
+          if [ -n "$(ls -A "$marks" 2>/dev/null)" ]; then
+            echo "::error::Aufgerufen: $(ls "$marks" | tr '\n' ' ')"
+            exit 1
+          fi

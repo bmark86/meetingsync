@@ -7,6 +7,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 - R-M0-02: Makefile targets `build` (to `./bin`, version via ldflags), `lint`, `test` (with `-race`), `vuln`; `check` = vet + lint + test + vuln. Tools pinned: golangci-lint v2.11.4, govulncheck v1.9.0.
 - R-M0-03: `.golangci.yml` (govet, errcheck, staticcheck all except ST1005, unused, ineffassign, gosec). gosec exclusions limited to app.go, config.go and tests until R-M3-03/04/07.
+- R-M0-04: CI workflow (GitHub Actions, macOS): vet, lint, test, vuln; daily run; toolchain and env checks. See ADR 0002.
+- R-M0-04: Dependabot for gomod and github-actions (weekly).
+- R-M0-04: `SECURITY.md` (private reporting, answer within 14 days).
 
 ### Changed
 - R-M0-03: 12 lint findings fixed, no behavior change.
