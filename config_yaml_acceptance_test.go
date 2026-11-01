@@ -113,7 +113,7 @@ func TestAC5_DefaultPathPrecedence(t *testing.T) {
 		t.Fatalf("beide: %s", got)
 	}
 	// config.yml wird bewusst nicht automatisch gesucht (Kriterium nennt nur config.yaml).
-	os.Remove(filepath.Join(dir, "config.yaml"))
+	_ = os.Remove(filepath.Join(dir, "config.yaml"))
 	writeCfg(t, filepath.Join(dir, "config.yml"), "{}")
 	if got := defaultConfigPath(); got != filepath.Join(dir, "config.json") {
 		t.Fatalf("yml: %s", got)

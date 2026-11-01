@@ -184,7 +184,7 @@ func (l *LLM) chat(ctx context.Context, msgs []chatMsg, schema any) (string, err
 	if err != nil {
 		return "", transient(fmt.Errorf("LM Studio nicht erreichbar (%s) – läuft der lokale Server? %w", l.cfg.BaseURL, err))
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }() // nur gelesen, Close-Fehler ohne Folgen
 	data, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
@@ -232,7 +232,7 @@ func (l *LLM) Models(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }() // nur gelesen, Close-Fehler ohne Folgen
 	var out struct {
 		Data []struct {
 			ID string `json:"id"`

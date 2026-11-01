@@ -73,7 +73,7 @@ func (n *Notion) do(ctx context.Context, method, path string, in, out any, idemp
 			return transient(fmt.Errorf("Notion nicht erreichbar: %w", err))
 		}
 		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close() // Body ist bereits gelesen, Close-Fehler ohne Folgen
 
 		if resp.StatusCode == http.StatusTooManyRequests ||
 			(idempotent && resp.StatusCode >= 500) {

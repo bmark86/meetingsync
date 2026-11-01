@@ -18,9 +18,12 @@ Retry: temporary errors (LM Studio or Notion not reachable (including timeout), 
 
 ## Commands
 
-- `make test` (`go test ./...`, including `e2e_test.go`)
+- `make build` (builds `./bin/meetingsync` with the version set; `./bin` is gitignored)
+- `make test` (`go test -race ./...`, including `e2e_test.go`)
 - `make vet` (`go vet ./...`)
-- `make check` (vet + test, Definition of Done)
+- `make lint` (golangci-lint, pinned version)
+- `make vuln` (govulncheck, pinned version)
+- `make check` (vet + lint + test + vuln, Definition of Done)
 - `go build -o ~/bin/meetingsync .`
 - `meetingsync -check` (checks Notion/LM Studio; exit code is 0 even with ✗ for folder or LM Studio, so read the output), `-dry-run -file <file>` (writes nothing), `-once`, `-config <path>`
 - `-file` without `-dry-run` creates a real note, but without a ledger entry and without moving the file.

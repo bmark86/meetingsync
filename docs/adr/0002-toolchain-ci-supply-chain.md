@@ -10,6 +10,7 @@ Status: accepted (Mark), 2026-11-01. Toolchain part delivered by R-M0-01. R-M0-0
 ## Decision
 - `go.mod` gets `toolchain go1.26.10`. The `go` directive stays `go 1.22` for now.
 - Check with `go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...` (exact version). The tool does not go into `go.mod`. Result after the pin: 0 findings (before: 26).
+- Tool pins (R-M0-02): golangci-lint (`v2.11.4`) and govulncheck (`v1.9.0`) run via `go run module@version` from the Makefile. The module download is verified by sumdb; the tools are not in `go.mod`. Dependabot does not see these pins: check and raise them by hand at every release check. The tools run with Mark's rights, so only exact versions, never `@latest`.
 - Raise the `go` directive to `go 1.26` in its own task R-M0-11, after the golden tests exist (decided by Mark, 2026-11-01).
 - Raise the `toolchain` line by hand at every Go security release. Dependabot does not reliably update it.
 

@@ -667,13 +667,13 @@ func moveFile(src, dir string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }() // nur gelesen, Close-Fehler ohne Folgen
 	out, err := os.Create(dst)
 	if err != nil {
 		return "", err
 	}
 	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
+		_ = out.Close() // der Kopierfehler wird zurückgegeben, Close-Fehler zweitrangig
 		return "", err
 	}
 	if err := out.Close(); err != nil {
@@ -708,7 +708,7 @@ func LoadLedger(path string, persist bool) (*Ledger, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }() // nur gelesen, Close-Fehler ohne Folgen
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 64*1024), 1<<20)
 	for sc.Scan() {
@@ -745,7 +745,7 @@ func (l *Ledger) Add(e LedgerEntry) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }() // TODO R-M1-01: Close-Fehler beim Ledger-Schreiben behandeln
 	b, _ := json.Marshal(e)
 	_, err = f.Write(append(b, '\n'))
 	return err
