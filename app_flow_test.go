@@ -99,20 +99,18 @@ func (e *flowEnv) archived(name string) string { return filepath.Join(e.archive,
 
 // --- Ledger --------------------------------------------------------------------
 
-// Einordnung für R-M1-01 (Ledger-Umbau):
-//   - Charakterisieren Ist-Verhalten, das R-M1-01 bewusst ändert und dann
-//     angepasst werden darf: TestLoadLedgerLongLine und
-//     TestLoadLedgerLineOverLimitFails (Limit 1 MB, bufio.ErrTooLong),
-//     TestLedgerAddReturnsWriteError (Add ohne Close-/Sync-Fehler; baut außerdem
-//     das Literal &Ledger{…}) sowie die Zugriffe auf byHash/mtimes in
-//     TestLoadLedgerReloadsAfterRestart, TestLoadLedgerSkipsBrokenLines und
-//     TestLoadLedgerMissingFileIsEmpty.
-//   - Sichern Verhalten ab, das bleiben soll: kaputte Zeilen überspringen
-//     (TestLoadLedgerSkipsBrokenLines), Neustart-Reload
-//     (TestLoadLedgerReloadsAfterRestart, TestPassAfterRestartUsesLoadedLedger)
-//     und persist=false (TestLedgerAddWithoutPersistKeepsFileUntouched).
+// Einordnung nach R-M1-01 (Ledger mit Status, ADR 0004):
+//   - Angepasst: mtimes gibt es nicht mehr, HasNear liest byHash
+//     (TestLoadLedgerSkipsBrokenLines prüft das über HasNear);
+//     TestLoadLedgerLongLine schreibt die Zeile im Plattenformat ledgerLine.
+//   - Unverändert gültig: Limit 1 MB (TestLoadLedgerLineOverLimitFails),
+//     kaputte Zeilen überspringen, Neustart-Reload (TestLoadLedgerReloadsAfterRestart,
+//     TestPassAfterRestartUsesLoadedLedger), persist=false
+//     (TestLedgerAddWithoutPersistKeepsFileUntouched).
+//   - Neu: Status-Modell, Plattenformat, Kompatibilität mit v1.0.0 in beide
+//     Richtungen, Sync-Fehler (Block "Ledger-Status" unten).
 
-// Fängt: Add schreibt nicht / LoadLedger füllt byHash oder mtimes nicht.
+// Fängt: Add schreibt nicht / LoadLedger füllt byHash nicht.
 func TestLoadLedgerReloadsAfterRestart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sub", ".ledger.jsonl")
 	l1, err := LoadLedger(path, true)
@@ -134,7 +132,7 @@ func TestLoadLedgerReloadsAfterRestart(t *testing.T) {
 	if !l2.Has("h1") || !l2.Has("h2") || l2.Has("h3") {
 		t.Fatalf("Has nach Neustart falsch: h1=%v h2=%v h3=%v", l2.Has("h1"), l2.Has("h2"), l2.Has("h3"))
 	}
-	if got := l2.byHash["h2"]; got.File != "b.srt" || got.URL != "u2" || !got.ModTime.Equal(flowM.Add(time.Hour)) {
+	if got := l2.byHash["h2"]; got.Status != StatusFertig || got.File != "b.srt" || got.URL != "u2" || !got.ModTime.Equal(flowM.Add(time.Hour)) {
 		t.Fatalf("Eintrag h2 nicht vollständig geladen: %+v", got)
 	}
 	w := 3 * time.Minute
@@ -173,15 +171,15 @@ func TestLoadLedgerSkipsBrokenLines(t *testing.T) {
 	if len(l.byHash) != 2 || !l.Has("ok1") || !l.Has("ok2") {
 		t.Fatalf("nur ok1 und ok2 erwartet, got %v", l.byHash)
 	}
-	if len(l.mtimes) != 2 {
-		t.Fatalf("mtimes = %d, want 2 (Einträge ohne hash zählen nicht)", len(l.mtimes))
+	if l.HasNear(flowM.Add(time.Hour), 59*time.Minute) {
+		t.Fatal("HasNear: Einträge ohne hash zählen nicht")
 	}
 }
 
 // Fängt: Scanner-Puffer bleibt bei 64 KB (bufio-Standard) statt 1 MB.
 func TestLoadLedgerLongLine(t *testing.T) {
 	dir := t.TempDir()
-	long, _ := json.Marshal(LedgerEntry{Hash: "lang", File: strings.Repeat("x", 100*1024), ModTime: flowM})
+	long, _ := json.Marshal(ledgerLine{Hash: "lang", File: strings.Repeat("x", 100*1024), ModTime: flowM})
 	if len(long) <= 64*1024 {
 		t.Fatal("Testzeile muss länger als 64 KB sein")
 	}
@@ -261,6 +259,186 @@ func TestLedgerAddReturnsWriteError(t *testing.T) {
 	l := &Ledger{path: filepath.Join(blocker, "l.jsonl"), persist: true, byHash: map[string]LedgerEntry{}}
 	if err := l.Add(LedgerEntry{Hash: "h"}); err == nil {
 		t.Fatal("Schreibfehler muss zurückgegeben werden")
+	}
+}
+
+// --- Ledger-Status (R-M1-01, ADR 0004) ---------------------------------------
+
+// Fängt: Add ruft f.Sync nicht auf oder verschluckt dessen Fehler.
+// /dev/null lässt Write zu, fsync schlägt dort fehl (macOS: ENOTSUP).
+func TestLedgerAddReturnsSyncError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "l.jsonl")
+	if err := os.Symlink(os.DevNull, path); err != nil {
+		t.Fatal(err)
+	}
+	l, _ := LoadLedger(filepath.Join(t.TempDir(), "leer.jsonl"), true)
+	l.path = path
+	if err := l.Add(LedgerEntry{Hash: "h", ModTime: flowM}); err == nil {
+		t.Fatal("Sync-Fehler muss zurückgegeben werden")
+	}
+	if !l.Has("h") {
+		t.Fatal("Eintrag bleibt trotz Schreibfehler im Speicher")
+	}
+}
+
+// Fängt: Has/HasNear zählen begonnen oder verworfen / nicht die letzte Zeile gewinnt.
+func TestLedgerStatusLastLineWins(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "l.jsonl")
+	l, _ := LoadLedger(path, true)
+	w := time.Minute
+	steps := []struct {
+		status string
+		want   bool
+	}{
+		{StatusBegonnen, false},
+		{StatusFertig, true},
+		{StatusVerworfen, false},
+		{"", true}, // leerer Status = fertig
+		{StatusBegonnen, false},
+	}
+	for i, s := range steps {
+		if err := l.Add(LedgerEntry{Hash: "h", Status: s.status, ModTime: flowM}); err != nil {
+			t.Fatal(err)
+		}
+		if l.Has("h") != s.want || l.HasNear(flowM, w) != s.want {
+			t.Fatalf("Schritt %d (%q): Has=%v HasNear=%v, want %v", i, s.status, l.Has("h"), l.HasNear(flowM, w), s.want)
+		}
+		re, err := LoadLedger(path, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if re.Has("h") != s.want || re.HasNear(flowM, w) != s.want {
+			t.Fatalf("Schritt %d (%q) nach Neuladen: Has=%v HasNear=%v, want %v", i, s.status, re.Has("h"), re.HasNear(flowM, w), s.want)
+		}
+	}
+	if got := l.byHash["h"].Status; got != StatusBegonnen {
+		t.Fatalf("Status = %q, want begonnen", got)
+	}
+}
+
+// Fängt: fertige Zeilen weichen vom v1.0.0-Format ab (Golden ledger.jsonl) /
+// nicht fertige Zeilen tragen "hash" und würden von v1.0.0 gezählt.
+func TestLedgerLineFormat(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "l.jsonl")
+	l, _ := LoadLedger(path, true)
+	at := flowM.Add(time.Minute)
+	for _, st := range []string{"", StatusFertig, StatusBegonnen, StatusVerworfen} {
+		if err := l.Add(LedgerEntry{Hash: "h", Status: st, File: "a.srt", ModTime: flowM, URL: "u", At: at}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b, err := os.ReadFile(path) //nolint:gosec // G304: Pfad unter t.TempDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fertig := `{"hash":"h","file":"a.srt","mtime":"2026-09-30T12:00:00Z","url":"u","at":"2026-09-30T12:01:00Z"}`
+	want := strings.Join([]string{
+		fertig,
+		fertig,
+		`{"sha256":"h","status":"begonnen","file":"a.srt","mtime":"2026-09-30T12:00:00Z","url":"u","at":"2026-09-30T12:01:00Z"}`,
+		`{"sha256":"h","status":"verworfen","file":"a.srt","mtime":"2026-09-30T12:00:00Z","url":"u","at":"2026-09-30T12:01:00Z"}`,
+	}, "\n") + "\n"
+	if string(b) != want {
+		t.Fatalf("Ledger-Datei:\n%s\nwant:\n%s", b, want)
+	}
+}
+
+// Fängt: alte Zeilen ohne Status werden nicht als fertig gelesen (alt → neu).
+func TestLoadLedgerV100File(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "l.jsonl")
+	data, err := os.ReadFile(filepath.Join("testdata", "ledger-v1.0.0.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil { //nolint:gosec // G703: Pfad unter t.TempDir(), Inhalt aus testdata
+		t.Fatal(err)
+	}
+	l, err := LoadLedger(path, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, h := range []string{"1111", "2222", "3333"} {
+		h = strings.Repeat(h, 16)
+		if !l.Has(h) || l.byHash[h].Status != StatusFertig {
+			t.Fatalf("v1.0.0-Zeile %s… nicht als fertig gelesen: %+v", h[:4], l.byHash[h])
+		}
+	}
+	if !l.HasNear(time.Date(2026, 10, 1, 7, 31, 0, 0, time.UTC), time.Minute) {
+		t.Fatal("HasNear muss v1.0.0-Zeilen zählen (mtime mit Zeitzonen-Offset)")
+	}
+	// neue Zeilen werden an die alte Datei angehängt, alte bleiben gültig
+	if err := l.Add(LedgerEntry{Hash: strings.Repeat("1111", 16), Status: StatusVerworfen}); err != nil {
+		t.Fatal(err)
+	}
+	re, _ := LoadLedger(path, false)
+	if re.Has(strings.Repeat("1111", 16)) || !re.Has(strings.Repeat("2222", 16)) {
+		t.Fatal("nach verworfen: 1111 nicht fertig, 2222 weiter fertig erwartet")
+	}
+	got, _ := os.ReadFile(path) //nolint:gosec // G304: Pfad unter t.TempDir()
+	if !bytes.HasPrefix(got, data) {
+		t.Fatal("die v1.0.0-Zeilen müssen unverändert bleiben")
+	}
+}
+
+// v100LoadLedger bildet die Ladelogik von v1.0.0 nach (git show v1.0.0:app.go,
+// LoadLedger und LedgerEntry). Nicht anpassen: sie steht für das alte Binary.
+func v100LoadLedger(path string) (map[string]bool, []time.Time, error) {
+	type v100Entry struct {
+		Hash    string    `json:"hash"`
+		File    string    `json:"file"`
+		ModTime time.Time `json:"mtime"`
+		URL     string    `json:"url"`
+		At      time.Time `json:"at"`
+	}
+	byHash, mtimes := map[string]bool{}, []time.Time{}
+	f, err := os.Open(path) //nolint:gosec // G304: Pfad unter t.TempDir()
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() { _ = f.Close() }()
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 64*1024), 1<<20)
+	for sc.Scan() {
+		var e v100Entry
+		if json.Unmarshal(sc.Bytes(), &e) == nil && e.Hash != "" {
+			byHash[e.Hash] = true
+			mtimes = append(mtimes, e.ModTime)
+		}
+	}
+	return byHash, mtimes, sc.Err()
+}
+
+// Fängt: v1.0.0 wertet begonnen/verworfen als verarbeitet (neu → alt) und
+// archiviert die Datei dann ohne Notiz.
+func TestV100LoaderIgnoresNonFinalLines(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "l.jsonl")
+	l, _ := LoadLedger(path, true)
+	for _, e := range []LedgerEntry{
+		{Hash: "begonnen", Status: StatusBegonnen, ModTime: flowM},
+		{Hash: "verworfen", Status: StatusVerworfen, ModTime: flowM.Add(time.Hour)},
+		{Hash: "fertig", Status: StatusFertig, ModTime: flowM.Add(2 * time.Hour)},
+		{Hash: "spaeter", Status: StatusBegonnen, ModTime: flowM.Add(3 * time.Hour)},
+		{Hash: "spaeter", Status: StatusFertig, ModTime: flowM.Add(3 * time.Hour)},
+		{Hash: "alt", ModTime: flowM.Add(4 * time.Hour)},
+	} {
+		if err := l.Add(e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	byHash, mtimes, err := v100LoadLedger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if byHash["begonnen"] || byHash["verworfen"] || !byHash["fertig"] || !byHash["spaeter"] || !byHash["alt"] || len(byHash) != 3 {
+		t.Fatalf("v1.0.0 sieht %v, want nur fertig, spaeter, alt", byHash)
+	}
+	if len(mtimes) != 3 {
+		t.Fatalf("v1.0.0 mtimes = %v, want 3 (nur fertige Zeilen, HasNear)", mtimes)
+	}
+	for _, m := range mtimes {
+		if m.Equal(flowM) || m.Equal(flowM.Add(time.Hour)) {
+			t.Fatalf("mtime %v einer nicht fertigen Zeile zählt in v1.0.0 für HasNear", m)
+		}
 	}
 }
 
