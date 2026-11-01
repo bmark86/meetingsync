@@ -11,22 +11,22 @@ Finding IDs (A-xx, S-xx) and decisions (D1-D13): [review report](../../reviews/2
 
 | Milestone | Tasks | Count |
 | --- | --- | --- |
-| M0 Safety net and tooling | R-M0-01 to R-M0-10 | 10 |
+| M0 Safety net and tooling | R-M0-01 to R-M0-11 | 11 |
 | M1 Correct error paths | R-M1-01 to R-M1-06 | 6 |
 | M2 Package split | R-M2-01 to R-M2-10 | 10 |
 | M3 Security hardening | R-M3-01 to R-M3-15 | 15 |
 | M4 Repo hygiene | R-M4-01 to R-M4-03 | 3 |
 | M5 Performance and robustness | R-M5-01 to R-M5-03 | 3 |
 | M6 Documentation | R-M6-01 to R-M6-03 | 3 |
-| **Total** | | **50** |
+| **Total** | | **51** |
 
 | Model | Tasks |
 | --- | --- |
-| opus | 22 |
+| opus | 23 |
 | sonnet | 21 |
 | haiku | 7 |
 
-New in this version: R-M3-13, R-M3-14, R-M3-15 (formerly optional R-OPT-02, R-OPT-03, R-OPT-04, now mandatory). R-OPT-01 and R-OPT-05 are rejected, no task.
+New in this version: R-M0-11 (raise the `go` directive, see ADR 0002), R-M3-13, R-M3-14, R-M3-15 (formerly optional R-OPT-02, R-OPT-03, R-OPT-04, now mandatory). R-OPT-01 and R-OPT-05 are rejected, no task.
 
 ### Top guardrail: same output and outcome on the normal path
 
@@ -46,6 +46,7 @@ Exceptions only with Mark's decision. They are marked in the task as **⚠ behav
 | R-M1-01, R-M1-02 | Ledger lines with status; "started without URL" → `_fehler` | D1 | 0004 |
 | R-M3-01 | Abort at start if `llm.base_url` is not loopback | D3 | 0007 |
 | R-M3-12 | Note with to-dos for Mark → `Prüfen` flag, notice box, notification | D5 | 0010 |
+| R-M0-11 | `go` directive 1.22 → 1.26: stricter TLS/x509/url/http defaults | Mark, 2026-11-01 (OD-01 revisited) | 0002 (extended) |
 | R-M3-13 | `-check` exits with a code other than 0 when a check shows ✗ (G10 changes) | D7 (OD-17) | 0012 |
 | R-M3-14 | `-file` without `-dry-run` writes a ledger entry | D8 (OD-18) | 0013 |
 | R-M3-15 | `llm.api_key` can come from the Keychain | D9 (OD-20) | 0014 |
@@ -197,7 +198,7 @@ In M0 production code changes only through lint fixes (R-M0-03), the version var
 
 #### R-M0-04 CI, Dependabot, SECURITY.md
 - Goal: every push/PR runs `make check` on macOS.
-- Acceptance: `.github/workflows/ci.yml` on `macos-latest` (or a pinned version), `permissions: contents: read`, actions pinned by commit SHA, `actions/setup-go` with `go-version-file: go.mod`, steps vet/lint/test -race/vuln; PATH stubs for `security` and `osascript` that write a marker and exit with 1, the job fails if a marker exists; `.github/dependabot.yml` for `gomod` and `github-actions` (weekly); `SECURITY.md` (how to report, supported version); CI run green (link in the report).
+- Acceptance: `.github/workflows/ci.yml` on `macos-latest` (or a pinned version), `permissions: contents: read`, actions pinned by commit SHA, `actions/setup-go` with `go-version-file: go.mod`, steps vet/lint/test -race/vuln; PATH stubs for `security` and `osascript` that write a marker and exit with 1, the job fails if a marker exists; CI checks that `go version` is go1.26.10 and prints `go env GOSUMDB GOFLAGS GOTOOLCHAIN` (fails if the checksum database is off, `-insecure` is set, or the toolchain is `local`); govulncheck also runs on a schedule (`schedule:` trigger), because the vulnerability database changes daily; `.github/dependabot.yml` for `gomod` and `github-actions` (weekly); `SECURITY.md` (how to report, supported version); CI run green (link in the report).
 - Scope: `.github/`, `SECURITY.md`.
 - Out of scope: GitHub settings (Dependabot alerts, branch protection, signed tags): a task for Mark, OD-15.
 - Depends on: R-M0-03. Findings: S-07, A-09.
@@ -252,6 +253,22 @@ In M0 production code changes only through lint fixes (R-M0-03), the version var
 - Depends on: R-M0-05 (re-exec helper). Findings: A-16.
 - Model: sonnet.
 - Reviews: CR, QA.
+
+#### R-M0-11 Raise the go directive to 1.26
+⚠ Behavior change (only crypto and protocol defaults), decided by Mark on 2026-11-01 (OD-01 revisited).
+- Goal: stricter TLS, x509, url and http defaults (see ADR 0002, "Residual risk").
+- Acceptance:
+  - `go.mod` has `go 1.26`; the `toolchain` line stays at go1.26.10 or newer.
+  - `go version -m` of the built binary shows a DefaultGODEBUG without the legacy values (`tls3des=1`, `tlssha1=1`, `tlsmlkem=0`, `rsa1024min=0`, `x509negativeserial=1`, `x509usepolicies=0`, `urlmaxqueryparams=0`, `httpcookiemaxnum=0`).
+  - All golden tests are green and unchanged (`git diff --exit-code -- testdata/golden`).
+  - `make check` is green.
+  - Manual `-check` run against Notion and LM Studio, by Mark (or the coordinator with Mark's config) ✓.
+  - Changed language semantics checked and noted in the report (loopvar of Go 1.22+ is already active).
+- Scope: `go.mod`, ADR 0002 (close the residual risk), version line in `CLAUDE.md` and `README.md`.
+- Out of scope: code changes.
+- Depends on: R-M0-05, R-M0-06, R-M0-07. Findings: S-01 (residual).
+- Model: opus, supply chain and TLS behavior.
+- Reviews: CR, SR, QA. Extend ADR 0002.
 
 ### M1 Correct error paths
 
@@ -624,7 +641,7 @@ Exit: files below exist, links checked, `docs/progress.md` current.
 - Model: sonnet (docs-writer). Reviews: CR, QA.
 
 #### R-M6-03 README, CLAUDE.md, changelog, progress
-- Content: commands (`make build/lint/vuln/check`), toolchain, package structure in CLAUDE.md section "Ablauf" (flow), `-check` exit code and `-file` ledger behavior, changelog section for the release, progress.md cleaned up.
+- Content: commands (`make build/lint/vuln/check`), toolchain (with a note: `GOTOOLCHAIN=local` or a blocked proxy.golang.org makes the first build fail, because go1.26.10 must be downloaded once), package structure in CLAUDE.md section "Ablauf" (flow), `-check` exit code and `-file` ledger behavior, changelog section for the release, progress.md cleaned up.
 - Depends on: R-M6-01, R-M6-02.
 - Model: haiku, bringing docs up to date.
 - Reviews: CR, QA.
@@ -647,9 +664,9 @@ Parallel only with disjoint files and `isolation: "worktree"`.
 
 | Phase | Sequence | In parallel | Reason |
 | --- | --- | --- | --- |
-| P1 | R-M0-01 → R-M0-02 → R-M0-03 → R-M0-04 | after R-M0-01: R-M0-05 (new test files only); right away: R-M4-01 (example configs, README, config_test.go); R-M3-10 (plist, launchd.md) | `go.mod`/Makefile/CI chain vs. new files |
+| P1 | R-M0-01 → R-M0-02 → R-M0-03 → R-M0-04 (R-M0-11 follows in P3 once R-M0-05 to R-M0-07 are done) | after R-M0-01: R-M0-05 (new test files only); right away: R-M4-01 (example configs, README, config_test.go); R-M3-10 (plist, launchd.md) | `go.mod`/Makefile/CI chain vs. new files |
 | P2 | R-M0-05 → R-M0-06 / R-M0-07 | R-M0-06 ∥ R-M0-07 only if scenarios are in separate files (`golden_flow_test.go`, `golden_cli_test.go`) | Shared golden directories are disjoint |
-| P3 | R-M0-08, R-M0-09, R-M0-10 | in parallel with each other (separate test files) | R-M0-09 only after R-M0-03 |
+| P3 | R-M0-08, R-M0-09, R-M0-10, R-M0-11 | in parallel with each other (separate test files); R-M0-11 touches only `go.mod` and docs | R-M0-09 only after R-M0-03; R-M0-11 only after R-M0-05 to R-M0-07 |
 | P4 | R-M1-01 → R-M1-02 → R-M1-03; R-M1-04 → R-M1-05 | R-M1-06 (config.go, main.go) | All other M1 tasks change `app.go` → one after another (order: 01, 02, 03, 04, 05) |
 | P5 | R-M2-01 → 02 → 03 → 04 → 05 → 06 → 07 → 08 → 09 → 10 | none | Every cut changes callers in `app.go` |
 | P6 | Lane Config: R-M3-09 → R-M3-01 → R-M3-02 → R-M3-11 → R-M3-15 (R-M3-15 also after R-M3-07) | Lane Files: R-M3-03 → R-M3-04 → R-M3-14; Lane HTTP: R-M3-05 → R-M3-06 (after OD-11) → R-M3-08; Lane Processes: R-M3-07; Lane CLI: R-M3-13; R-M3-12 | Packages are disjoint after M2 |
@@ -703,7 +720,7 @@ All proposals are accepted ("decided: proposal") on 2026-11-01. Two points stay 
 
 | # | Question | Decision | Blocks |
 | --- | --- | --- | --- |
-| OD-01 | `go` directive: keep `go 1.22` or raise to `go 1.26` (GODEBUG defaults for TLS/HTTP follow the directive) | decided: proposal: keep 1.22, raising is its own task | – |
+| OD-01 | `go` directive: keep `go 1.22` or raise to `go 1.26` (GODEBUG defaults for TLS/HTTP follow the directive) | decided: proposal: keep 1.22, raising is its own task; revisited: raise in R-M0-11 | – |
 | OD-02 | How is the version shown: new flag `-version`, startup log line, or only `go version -m` | decided: proposal: only `go version -m` (no output change) | – |
 | OD-03 | Ledger state model: third status (`verworfen`) for "moved to `_fehler`" and clear `CreatePage` errors, so files moved back run again | decided: proposal: yes | – |
 | OD-04 | Make up missing tasks after an abort, or only record them | decided: proposal: only record | – |
