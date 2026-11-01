@@ -7,6 +7,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - Docs: review report, refactoring plan; documentation switched to plain English.
 
+### Security
+- Toolchain pinned to go1.26.10 (fixes 26 reachable stdlib vulnerabilities, govulncheck clean). See ADR 0002.
+
 ## [1.0.0] - 2026-11-01
 
 ### Added

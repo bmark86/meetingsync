@@ -1,6 +1,6 @@
 # meetingsync
 
-Go tool (macOS, stdlib plus `go.yaml.in/yaml/v3`, `go 1.22`): MacWhisper export → local LLM (LM Studio, Gemma) → meeting note in Notion (Notes, Tasks, Projects). Runs all the time via launchd. Details and configuration: `README.md`.
+Go tool (macOS, stdlib plus `go.yaml.in/yaml/v3`, `go 1.22`, `toolchain go1.26.10`): MacWhisper export → local LLM (LM Studio, Gemma) → meeting note in Notion (Notes, Tasks, Projects). Runs all the time via launchd. Details and configuration: `README.md`.
 
 ## Flow
 
