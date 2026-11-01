@@ -78,7 +78,7 @@ Error paths (M1, M3) may get new log lines and error messages. This goes into th
 | --- | --- |
 | Fake LM Studio | `httptest` server on 127.0.0.1; scriptable answers per scenario (success, 503, 4xx, `finish_reason=length`, broken JSON) |
 | Fake Notion | Own `httptest` server; data source schema, query, `POST /v1/pages`, `PATCH /v1/blocks/{id}/children`; scriptable errors |
-| Recorder | Per request: method, path + query, headers without `Authorization` (value checked only for presence), body as JSON with sorted keys, indented |
+| Recorder | Per request: server, method, path + query, headers, body. `Authorization` is recorded as `Bearer <token>` if it is the test token, else `<present>`. Notion bodies: JSON with sorted keys, indented. LLM bodies: key order as sent (schema order matters), indented. Nothing else changes. Binding rule: ADR 0003 |
 | File tree | After the run: relative paths and SHA-256 of every file under the temp watch folder (including `_archiv`, `_fehler`, `.fehler.txt`, ledger). No file permissions |
 | Ledger | Content line by line |
 | stdout/log | Complete; logger without timestamp, or timestamp prefix removed by regex |
@@ -98,7 +98,7 @@ Error paths (M1, M3) may get new log lines and error messages. This goes into th
 
 **Determinism:**
 - Fixed file mtimes with `os.Chtimes` (date in the past, month different from the current month).
-- `cfg.Timezone = "Europe/Berlin"`, process `TZ=UTC` (shows that only the config zone counts).
+- `cfg.Timezone = "Europe/Berlin"`. `TestMain` sets `time.Local = time.UTC` and the proxy variables before `m.Run` (`HTTP_PROXY`/`HTTPS_PROXY` = `http://127.0.0.1:1`, `NO_PROXY` = `127.0.0.1,localhost`; no real network). CLI children get `TZ=UTC`. Shows that only the config zone counts. See ADR 0003.
 - `now` is passed to `Pass(ctx, now)` (existing seam). No clock interface until M2. `time.Now()` calls are covered by the normalization.
 - `cfg.Notify = false`, `NOTION_TOKEN` set with `t.Setenv`. Tests call neither `security` nor `osascript`.
 - CLI scenarios run by re-exec of the test binary (`TestMain`, an environment variable starts `main()`), no `go build`.
@@ -251,6 +251,7 @@ In M0 production code changes only through lint fixes (R-M0-03), the version var
 - Acceptance: e2e_test.go uses `f.ModTime.In(loc)`; `config_yaml_acceptance_test.go` starts `main()` by re-exec; test with `GOFLAGS=-mod=readonly GOPROXY=off` green; test with a simulated month change (mtime on the 31st of the previous month) green.
 - Scope: `e2e_test.go`, `config_yaml_acceptance_test.go`.
 - Depends on: R-M0-05 (re-exec helper). Findings: A-16.
+- Status note (2026-11-01): the e2e archive-month flake is already fixed in R-M0-05. The expected month comes from the file mtime in the config time zone.
 - Model: sonnet.
 - Reviews: CR, QA.
 

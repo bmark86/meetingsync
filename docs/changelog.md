@@ -10,10 +10,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - R-M0-04: CI workflow (GitHub Actions, macOS): vet, lint, test, vuln; daily run; toolchain and env checks. See ADR 0002.
 - R-M0-04: Dependabot for gomod and github-actions (weekly).
 - R-M0-04: `SECURITY.md` (private reporting, answer within 14 days).
+- R-M0-05: golden test harness (fake Notion and LM Studio, request/file/ledger/log recording, normalization, -update), first scenario G01; ADR 0003.
 
 ### Changed
 - R-M0-03: 12 lint findings fixed, no behavior change.
 - Docs: review report, refactoring plan; documentation switched to plain English.
+
+### Fixed
+- e2e test archive month no longer depends on the local time zone
 
 ### Security
 - Toolchain pinned to go1.26.10 (fixes 26 reachable stdlib vulnerabilities, govulncheck clean). See ADR 0002.
