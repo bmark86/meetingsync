@@ -398,7 +398,7 @@ Logging stays `*log.Logger` with identical texts. Named constants (A-17) and rea
 
 #### R-M2-07 config and TokenSource
 - Goal: `internal/config` without `exec` and without the `loc` field; Keychain access as a `TokenSource` outside the config layer.
-- Acceptance: order NOTION_TOKEN → Keychain → `notion.token` unchanged (tests per branch with a fake runner); error messages unchanged; the time zone is resolved in `main` and injected.
+- Acceptance: order NOTION_TOKEN → Keychain → `notion.token` unchanged (tests per branch with a fake runner); error messages unchanged; the time zone is resolved in `main` and injected; `LoadConfig` returns warnings explicitly (e.g. `(cfg, warnings, err)` or exported `Warnings()`); the unexported `Config.warnings` field from R-M1-06 is removed; `collectUnknown` must handle pointer-to-struct fields if any are introduced.
 - Scope: `config.go`, `config_test.go`, `config_yaml_acceptance_test.go`, `main.go`.
 - Depends on: R-M2-01. Findings: A-12, A-03.
 - Model: opus, secrets.

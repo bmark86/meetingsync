@@ -16,9 +16,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - R-M0-08: unit tests for the flow (ledger reload, pass gating `nextTry`/`near`, orphan actions, `Run` with cancelled context, transcript toggle truncation at 99 paragraphs); shared golden test builders in `golden_test.go`.
 - R-M0-09: unit tests for the Notion and LLM clients (retry, backoff, `Retry-After`, no retry for non-idempotent requests, LLM parse retry, schema fallback, `Models`); test seam `sleepFn` in `notion.go`. Total coverage ca. 86 %.
 - R-M0-10: hermetic acceptance test (re-exec instead of `go build`); gosec G204 exception for test files removed from `.golangci.yml`; month change covered by golden G01.
+- R-M1-06: config warnings at startup (log): clamps as `Konfiguration: <key>=<n> ist zu klein, verwende <min>` (`poll_interval_seconds`, `max_attempts`, `llm.max_chunk_chars`, `llm.timeout_minutes`); unknown keys (YAML/JSON, nested) as `Konfiguration: unbekannter Schlüssel "<pfad>" wird ignoriert`, key path only, never the value.
 
 ### Changed
 - R-M0-03: 12 lint findings fixed, no behavior change.
+- R-M1-01 ⚠: ledger lines carry a status (`begonnen`, `fertig`, `verworfen`); last line per hash wins; `Has`/`HasNear` count only `fertig`. `fertig` lines stay byte-identical to v1.0.0; other lines use field `sha256`, so v1.0.0 skips them. `Add` fsyncs and returns write/sync/close errors. See ADR 0004.
+- R-M1-06 ⚠: `llm.timeout_minutes` below 1 (e.g. 0) is now clamped to 1 (was: no timeout).
 - Docs: review report, refactoring plan; documentation switched to plain English.
 
 ### Fixed
