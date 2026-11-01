@@ -62,6 +62,9 @@ cp config.example.yaml ~/.config/meetingsync/config.yaml
 
 Eine bestehende `config.json` funktioniert weiterhin. Liegen beide Dateien im Ordner, hat `config.yaml` Vorrang.
 
+> **Aktive Config:** `~/.config/meetingsync/config.yaml`. Ohne `-config` wird sie gelesen, beim Start steht der Pfad im Log („Konfiguration: …“).
+> Änderungen nur dort machen. Eine `config.yaml` im Repo-Ordner ist per `.gitignore` ausgeschlossen und wird nur mit `-config ./config.yaml` gelesen. Sie ist also keine aktive Kopie und kann bei `git clean -x` verloren gehen.
+
 Anpassen musst du nur zwei Dinge:
 
 - `watch_dir` – dein MacWhisper-Exportordner
@@ -88,6 +91,7 @@ meetingsync -dry-run -file ~/Meetings/MacWhisper/irgendein-transkript.txt
 Du siehst das JSON, das das Modell liefert. Passt das, legt derselbe Befehl ohne `-dry-run` eine echte Notiz an (die Datei bleibt dabei liegen).
 
 ### 6. Dauerbetrieb
+Was eine plist ist, warum sie unter `~/Library/LaunchAgents` liegt und wie `launchctl` funktioniert: siehe [docs/launchd.md](docs/launchd.md).
 
 `de.borukhov.meetingsync.plist` öffnen, `DEINNAME` ersetzen, dann:
 
