@@ -265,8 +265,8 @@ Regeln:
 - titel: kurz und aussagekräftig, ohne Datum, höchstens 8 Wörter.
 - typ: "1:1" (zwei Personen), "Team", "Extern" (Kunden, Partner, Dienstleister), "Lenkungskreis" oder "Sonstiges".
 - teilnehmer: Namen bzw. Labels aller Sprechenden, %[1]s eingeschlossen.
-- kontext_ziel: 1–3 Sätze, warum das Meeting stattfand und was am Ende klar sein sollte.
-- themen: die wichtigsten 2–8 Themen, je 1–6 Stichpunkte mit konkreten Fakten, Zahlen und Argumenten.
+- kontext_ziel: 1-3 Sätze, warum das Meeting stattfand und was am Ende klar sein sollte.
+- themen: die wichtigsten 2-8 Themen, je 1-6 Stichpunkte mit konkreten Fakten, Zahlen und Argumenten.
 - entscheidungen: nur ausdrücklich getroffene Entscheidungen, keine Meinungen.
 - next_actions: nur konkrete Aufgaben oder Zusagen. owner = Name der verantwortlichen Person. fuer_mich=true, wenn %[1]s die Aufgabe übernimmt oder zugesagt hat. deadline nur, wenn genannt, im Format YYYY-MM-DD; relative Angaben ("bis Freitag", "nächste Woche") rechnest du ab dem Meetingdatum um. Sonst "".
 - offene_fragen: ungeklärte oder vertagte Punkte.
