@@ -1,6 +1,6 @@
 # Refactoring plan for meetingsync
 
-Date: 2026-11-01 (decisions of 2026-11-01 included). Source of truth for the coordinator. Base: `v1.0.0` + `6ab0703`.
+Date: 2026-11-01 (decisions of 2026-11-01 and 2026-11-02 included). Source of truth for the coordinator. Base: `v1.0.0` + `6ab0703`.
 Finding IDs (A-xx, S-xx) and decisions (D1-D13): [review report](../../reviews/2026-11-01-architektur-und-security-review.md).
 
 ## 1. Goal, guardrails, non-goals
@@ -14,19 +14,19 @@ Finding IDs (A-xx, S-xx) and decisions (D1-D13): [review report](../../reviews/2
 | M0 Safety net and tooling | R-M0-01 to R-M0-11 | 11 |
 | M1 Correct error paths | R-M1-01 to R-M1-06 | 6 |
 | M2 Package split | R-M2-01 to R-M2-10 | 10 |
-| M3 Security hardening | R-M3-01 to R-M3-15 | 15 |
+| M3 Security hardening | R-M3-01 to R-M3-16 | 16 |
 | M4 Repo hygiene | R-M4-01 to R-M4-03 | 3 |
 | M5 Performance and robustness | R-M5-01 to R-M5-03 | 3 |
 | M6 Documentation | R-M6-01 to R-M6-03 | 3 |
-| **Total** | | **51** |
+| **Total** | | **52** |
 
 | Model | Tasks |
 | --- | --- |
 | opus | 23 |
-| sonnet | 21 |
+| sonnet | 22 |
 | haiku | 7 |
 
-New in this version: R-M0-11 (raise the `go` directive, see ADR 0002), R-M3-13, R-M3-14, R-M3-15 (formerly optional R-OPT-02, R-OPT-03, R-OPT-04, now mandatory). R-OPT-01 and R-OPT-05 are rejected, no task.
+New in this version: R-M0-11 (raise the `go` directive, see ADR 0002), R-M3-13, R-M3-14, R-M3-15 (formerly optional R-OPT-02, R-OPT-03, R-OPT-04, now mandatory), R-M3-16 (to-do count, decided 2026-11-02). R-OPT-01 and R-OPT-05 are rejected, no task.
 
 ### Top guardrail: same output and outcome on the normal path
 
@@ -50,6 +50,7 @@ Exceptions only with Mark's decision. They are marked in the task as **⚠ behav
 | R-M3-13 | `-check` exits with a code other than 0 when a check shows ✗ (G10 changes) | D7 (OD-17) | 0012 |
 | R-M3-14 | `-file` without `-dry-run` writes a ledger entry | D8 (OD-18) | 0013 |
 | R-M3-15 | `llm.api_key` can come from the Keychain | D9 (OD-20) | 0014 |
+| R-M3-16 | To-do count in log and notification only for `fuer_mich` (G16b) | Mark, 2026-11-02 (OD-23) | open: no ADR assigned yet |
 | R-M4-02 | Git history rewritten, tag `v1.0.0` recreated | D2 | 0011 |
 
 Error paths (M1, M3) may get new log lines and error messages. This goes into the changelog. Golden tests for the normal path stay unchanged.
@@ -432,7 +433,7 @@ Logging stays `*log.Logger` with identical texts. Named constants (A-17) and rea
 ### M3 Security hardening
 
 Goal: enforce trust boundaries; close the decided CLI and secrets changes.
-Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, S-18, S-20, S-21, A-14 closed; golden unchanged except R-M3-12 (scenarios with `fuer_mich`), R-M3-13 (`exit.txt` of G10 with ✗) and R-M3-14 (new scenario).
+Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, S-18, S-20, S-21, A-14 closed; golden unchanged except R-M3-12 (scenarios with `fuer_mich`), R-M3-13 (`exit.txt` of G10 with ✗), R-M3-14 (new scenario) and R-M3-16 (count line of G16b).
 
 #### R-M3-01 llm.base_url loopback only ⚠
 ⚠ Behavior change, decided by Mark on 2026-11-01 (D3).
@@ -562,6 +563,19 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 - Model: opus, secrets.
 - Reviews: CR, SR, QA. ADR 0014.
 
+#### R-M3-16 Count only Mark's to-dos ⚠
+⚠ Behavior change, decided by Mark on 2026-11-02 (OD-23). Source: progress follow-up #10.
+- Goal: the message "N To-dos für dich" (log and Mac notification) counts only actions with `fuer_mich=true`, not all created tasks.
+- Acceptance:
+  - With `create_tasks_for=all` the count shows only the `fuer_mich=true` actions; a unit test covers this.
+  - Golden G16b is changed on purpose, and only its count line changes; the diff is explained.
+  - All other golden files stay unchanged (`git diff --exit-code -- testdata/golden` shows G16b only).
+- Scope: `internal/pipeline` (after R-M2-09), or `app.go` if M2 is not done yet; tests; `testdata/golden/G16b`.
+- Out of scope: the wording of the message; task creation.
+- Depends on: R-M3-12 (same log and notification code, same golden files); M2 pipeline split preferred.
+- Model: sonnet, small counting change; the golden diff is the proof.
+- Reviews: CR, QA. ADR: none assigned yet (open, see section 9).
+
 ### M4 Repo hygiene
 
 Goal: no real IDs or personal data in the public repo.
@@ -673,7 +687,7 @@ Parallel only with disjoint files and `isolation: "worktree"`.
 | P3 | R-M0-08, R-M0-09, R-M0-10, R-M0-11 | in parallel with each other (separate test files); R-M0-11 touches only `go.mod` and docs | R-M0-09 only after R-M0-03; R-M0-11 only after R-M0-05 to R-M0-07 |
 | P4 | R-M1-01 → R-M1-02 → R-M1-03; R-M1-04 → R-M1-05 | R-M1-06 (config.go, main.go) | All other M1 tasks change `app.go` → one after another (order: 01, 02, 03, 04, 05) |
 | P5 | R-M2-01 → 02 → 03 → 04 → 05 → 06 → 07 → 08 → 09 → 10 | none | Every cut changes callers in `app.go` |
-| P6 | Lane Config: R-M3-09 → R-M3-01 → R-M3-02 → R-M3-11 → R-M3-15 (R-M3-15 also after R-M3-07) | Lane Files: R-M3-03 → R-M3-04 → R-M3-14; Lane HTTP: R-M3-05 → R-M3-06 (after OD-11) → R-M3-08; Lane Processes: R-M3-07; Lane CLI: R-M3-13; R-M3-12 | Packages are disjoint after M2 |
+| P6 | Lane Config: R-M3-09 → R-M3-01 → R-M3-02 → R-M3-11 → R-M3-15 (R-M3-15 also after R-M3-07) | Lane Files: R-M3-03 → R-M3-04 → R-M3-14; Lane HTTP: R-M3-05 → R-M3-06 (after OD-11) → R-M3-08; Lane Processes: R-M3-07; Lane CLI: R-M3-13; R-M3-12 → R-M3-16 (sequential: same notification/log code and golden G16b) | Packages are disjoint after M2 |
 | P7 | R-M4-02 | nothing (no open branches) | The rewrite needs a quiet state; earliest after R-M4-01, latest before the next release; ask OD-15 first |
 | P8 | R-M5-01 → R-M5-02 | R-M5-03, R-M4-03 | |
 | P9 | R-M6-01 ∥ R-M6-02 → R-M6-03 | | |
@@ -746,5 +760,17 @@ All proposals are accepted ("decided: proposal") on 2026-11-01. Two points stay 
 | OD-20 | `llm.api_key` through the Keychain | decided: yes → mandatory task R-M3-15 (⚠, ADR 0014) | – |
 | OD-21 | Switch to `log/slog` | decided: proposal: no → R-OPT-01 rejected | – |
 | OD-22 | D5: wording of the reason; does D5 also apply with `create_tasks_for=none`? | decided: proposal: it always applies (D5 is tied to `fuer_mich`, not to task creation); wording set in R-M3-12 | – |
+| OD-23 | To-do count "N To-dos für dich" (log, notification): all created tasks or only `fuer_mich` (progress #10) | decided: Mark, 2026-11-02: only `fuer_mich` → R-M3-16 (⚠, G16b) | – |
+| OD-24 | Squash the red commit `b6af06d` and `c48e5f4` before the merge to `main` | decided: Mark, 2026-11-02: yes, branch only (section 10) | merge |
 
 Details left to the tasks (not separate questions): exit code value in R-M3-13; whether `-file` also moves the file in R-M3-14 (needs Mark's consent); Keychain lookup order and service name in R-M3-15.
+
+## 10. Merge to main
+
+Decided by Mark on 2026-11-02 (OD-24). Applies before `refactor/architektur` is merged into `main`.
+
+| Step | Action | Check |
+| --- | --- | --- |
+| 1 | Squash the red commit `b6af06d` (R-M0-05 golden harness) and `c48e5f4` (R-M0-05 review fixes) into one commit. The later commits follow on top | `git log` shows one R-M0-05 commit; `make check` green on it |
+| 2 | Force-push the branch `refactor/architektur` only (`git push --force-with-lease`). Never force-push `main` | Remote branch equals the local branch |
+| 3 | Merge the branch into `main` | `make check` green on `main` |
