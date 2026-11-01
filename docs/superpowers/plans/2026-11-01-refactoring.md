@@ -288,6 +288,7 @@ Exit: A-01, A-02, A-11, A-12, S-13, S-14, S-15 closed; golden unchanged except `
   - Golden: only `ledger.jsonl` changes, diff explained.
 - Scope: ledger code (app.go:685-752), tests, `testdata/`.
 - Out of scope: callers in `handle` (R-M1-02).
+- Note: Ledger characterization tests in `app_flow_test.go` are marked (block "Einordnung für R-M1-01"); adapt them deliberately.
 - Depends on: M0. Findings: A-01, A-11, S-13.
 - Model: opus, persistence and backward compatibility.
 - Reviews: CR, SR, QA. ADR 0004.
@@ -413,6 +414,8 @@ Logging stays `*log.Logger` with identical texts. Named constants (A-17) and rea
 #### R-M2-09 pipeline
 - Goal: `handle`, `handleError`, `process`, `archive`, `fail`, `activeProjects` → `internal/pipeline`; Clock, FS, Summarizer, PageWriter, Notifier, Ledger injected; retry policy as its own type.
 - Acceptance: no `time.Now()` and no `os.*` in `pipeline`; retry tests use the constructor (no struct literal like app_retry_test.go:26); golden unchanged; coverage of `pipeline` ≥ 85 %.
+  - Replace the temporary package variable `sleepFn` (notion.go, from R-M0-09) by dependency injection.
+  - Switch the test helper `newFlowApp` (app_flow_test.go, builds App with notion=nil) to the new interface fakes.
 - Scope: `app.go`, `app_retry_test.go`, new `internal/pipeline/`.
 - Depends on: R-M2-02 to R-M2-08. Findings: A-04, A-05.
 - Model: opus, state, retry and ledger order.

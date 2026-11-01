@@ -534,6 +534,73 @@ func goldenNoteJSON(note map[string]any) string {
 	return string(b)
 }
 
+// --- Gemeinsame Builder der Szenario-Dateien (flow und cli) ---
+
+const goldenSummaryMD = `# Planung Q4
+
+Kurze Notizen zum Gespräch: Das Team will den Build beschleunigen und führt dafür einen Cache ein.
+Mark klärt das Budget für die Runner bis Freitag, Sascha baut den Cache.
+
+Offen bleibt, wer den Cache reviewt.
+`
+
+// goldenCfg erweitert die Basis-Config: top am Anfang (oberste Ebene), llm nach
+// dem Modell, notion am Ende des notion-Blocks.
+func goldenCfg(top, llm, notion string) string {
+	return top + strings.Replace(goldenBaseConfig, "  model: gemma-test\n", "  model: gemma-test\n"+llm, 1) + notion
+}
+
+// goldenNoteWith liefert die Modellantwort für eine Notiz; mod passt Felder an.
+func goldenNoteWith(mod func(map[string]any)) string {
+	n := map[string]any{
+		"titel": "Planung Q4", "typ": "Team",
+		"teilnehmer":     []string{"Mark", "Sascha"},
+		"kontext_ziel":   "Build beschleunigen.",
+		"themen":         []any{map[string]any{"titel": "Cache", "punkte": []string{"Cache fehlt", "Build dauert 12 Minuten"}}},
+		"entscheidungen": []string{"Cache wird eingeführt"},
+		"next_actions": []any{
+			map[string]any{"aufgabe": "Budget für Runner klären", "owner": "Mark", "deadline": "2026-10-02", "fuer_mich": true},
+		},
+		"offene_fragen":     []string{"Wer reviewt den Cache?"},
+		"naechstes_meeting": map[string]any{"datum": "", "themen": []string{}},
+		"projekt":           "",
+		"pruef_gruende":     []string{},
+		"pruefen":           false,
+	}
+	if mod != nil {
+		mod(n)
+	}
+	return goldenNoteJSON(n)
+}
+
+// goldenLLM: Chat-Antworten in Reihenfolge, jede mit finish_reason=stop.
+func goldenLLM(replies ...string) map[string][]fakeReply {
+	var rs []fakeReply
+	for _, r := range replies {
+		rs = append(rs, fakeReply{Body: goldenChat(r, "stop")})
+	}
+	return map[string][]fakeReply{"POST /v1/chat/completions": rs}
+}
+
+// goldenLLMError: jede Chat-Anfrage bekommt denselben Fehlerstatus.
+func goldenLLMError(status int, body string) map[string][]fakeReply {
+	return map[string][]fakeReply{"POST /v1/chat/completions": {{Status: status, Body: body}}}
+}
+
+func goldenSRTInput(name string, at time.Time) goldenInput {
+	return goldenInput{name: name, content: goldenSRT, mtime: at}
+}
+
+func goldenSummaryInput(name string, at time.Time) goldenInput {
+	return goldenInput{name: name, content: goldenSummaryMD, mtime: at}
+}
+
+// goldenNotFound: realistische Notion-404-Antwort für eine nicht verbundene Datenbank.
+func goldenNotFound(id string) string {
+	return `{"object":"error","status":404,"code":"object_not_found","message":"Could not find database with ID: ` + id +
+		`. Make sure the relevant pages and databases are shared with your integration."}`
+}
+
 // goldenNotionDefault: Notes, Tasks und Projects lesbar, Seiten anlegen klappt.
 func goldenNotionDefault() map[string][]fakeReply {
 	return map[string][]fakeReply{

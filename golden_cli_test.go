@@ -13,20 +13,13 @@ import (
 
 // goldenCLINote ist eine kleine, gültige LLM-Antwort für den Dry-Run.
 func goldenCLINote() string {
-	return goldenNoteJSON(map[string]any{
-		"titel": "Sirius Sync", "typ": "Team",
-		"teilnehmer":     []string{"Mark"},
-		"kontext_ziel":   "Stand der Build-Pipeline klären.",
-		"themen":         []any{map[string]any{"titel": "Pipeline", "punkte": []string{"Build dauert 12 Minuten"}}},
-		"entscheidungen": []string{"Cache wird eingeführt"},
-		"next_actions": []any{
-			map[string]any{"aufgabe": "Budget für Runner klären", "owner": "Mark", "deadline": "2026-10-02", "fuer_mich": true},
-		},
-		"offene_fragen":     []string{},
-		"naechstes_meeting": map[string]any{"datum": "", "themen": []string{}},
-		"projekt":           "ai-first",
-		"pruef_gruende":     []string{},
-		"pruefen":           false,
+	return goldenNoteWith(func(n map[string]any) {
+		n["titel"] = "Sirius Sync"
+		n["teilnehmer"] = []string{"Mark"}
+		n["kontext_ziel"] = "Stand der Build-Pipeline klären."
+		n["themen"] = []any{map[string]any{"titel": "Pipeline", "punkte": []string{"Build dauert 12 Minuten"}}}
+		n["offene_fragen"] = []string{}
+		n["projekt"] = "ai-first"
 	})
 }
 
@@ -56,17 +49,17 @@ func init() {
 	cfg := goldenBaseConfig
 	// Nichts hört auf 127.0.0.1:1 → "connection refused", ohne Netz.
 	cfgDeadLLM := strings.Replace(cfg, "{{llm}}/v1", "http://127.0.0.1:1/v1", 1)
-	cfgNoSchema := strings.Replace(cfg, "  model: gemma-test\n", "  model: gemma-test\n  structured_output: false\n", 1)
-	srt := []goldenInput{{name: "Sirius Sync.srt", content: goldenSRT, mtime: goldenMTime}}
-	llm503 := map[string][]fakeReply{"POST /v1/chat/completions": {{Status: 503, Body: `{"error":"Model is loading"}`}}}
-	llm400 := map[string][]fakeReply{"POST /v1/chat/completions": {{Status: 400, Body: `{"error":"bad request"}`}}}
+	cfgNoSchema := goldenCfg("", "  structured_output: false\n", "")
+	srt := []goldenInput{goldenSRTInput("Sirius Sync.srt", goldenMTime)}
+	llm503 := goldenLLMError(503, `{"error":"Model is loading"}`)
+	llm400 := goldenLLMError(400, `{"error":"bad request"}`)
 
 	registerGolden(
 		goldenScenario{
 			name:   "G09",
 			config: cfg,
 			files:  srt,
-			llm:    map[string][]fakeReply{"POST /v1/chat/completions": {{Body: goldenChat(goldenCLINote(), "stop")}}},
+			llm:    goldenLLM(goldenCLINote()),
 			notion: goldenNotionDefault(),
 			args:   []string{"-config", "{{config}}", "-dry-run", "-file", "{{watch}}/Sirius Sync.srt"},
 		},
@@ -97,8 +90,8 @@ func init() {
 			config: cfg,
 			llm:    goldenCLIModels("gemma-test"),
 			notion: map[string][]fakeReply{
-				"GET /v1/data_sources/notes-ds": {{Status: 404, Body: gfNotFound("notes-ds")}},
-				"GET /v1/databases/notes-ds":    {{Status: 404, Body: gfNotFound("notes-ds")}},
+				"GET /v1/data_sources/notes-ds": {{Status: 404, Body: goldenNotFound("notes-ds")}},
+				"GET /v1/databases/notes-ds":    {{Status: 404, Body: goldenNotFound("notes-ds")}},
 			},
 			args: []string{"-config", "{{config}}", "-check"},
 		},

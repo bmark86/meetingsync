@@ -13,6 +13,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - R-M0-05: golden test harness (fake Notion and LM Studio, request/file/ledger/log recording, normalization, -update), first scenario G01; ADR 0003.
 - R-M0-06: 20 golden flow scenarios G02–G16c in `golden_flow_test.go` (summary modes, pairs, JSON, chunking, Notion limits with multibyte text, project matching, `create_tasks_for`).
 - R-M0-07: 9 golden CLI/error scenarios G09–G12c in `golden_cli_test.go` (`-dry-run`, `-check`, backoff to `_fehler`, LLM errors incl. schema fallback, empty file). Total coverage ca. 76 %.
+- R-M0-08: unit tests for the flow (ledger reload, pass gating `nextTry`/`near`, orphan actions, `Run` with cancelled context, transcript toggle truncation at 99 paragraphs); shared golden test builders in `golden_test.go`.
+- R-M0-09: unit tests for the Notion and LLM clients (retry, backoff, `Retry-After`, no retry for non-idempotent requests, LLM parse retry, schema fallback, `Models`); test seam `sleepFn` in `notion.go`. Total coverage ca. 86 %.
+- R-M0-10: hermetic acceptance test (re-exec instead of `go build`); gosec G204 exception for test files removed from `.golangci.yml`; month change covered by golden G01.
 
 ### Changed
 - R-M0-03: 12 lint findings fixed, no behavior change.
