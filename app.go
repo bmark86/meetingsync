@@ -283,30 +283,38 @@ func (a *App) handle(ctx context.Context, j job, now time.Time) {
 		return
 	}
 
+	a.handleError(ctx, j, err, now)
+}
+
+// handleError zählt vorübergehende und andere Fehler gemeinsam gegen max_attempts.
+// Nur die Wartezeit unterscheidet sich; ein Abbruch per Kontext zählt nicht.
+func (a *App) handleError(ctx context.Context, j job, err error, now time.Time) {
+	p := j.primary
+	trans := isTransient(err)
+	if trans && ctx.Err() != nil {
+		return
+	}
 	st := a.state[p.Path]
 	if st == nil {
 		st = &fileState{}
 		a.state[p.Path] = st
 	}
-	if isTransient(err) {
-		if ctx.Err() != nil {
-			return
-		}
+	st.attempts++
+	if st.attempts >= a.cfg.MaxAttempts {
+		a.log.Printf("   ✗ %v – gebe auf, Dateien → %s", err, a.cfg.FailedDir)
+		a.fail(err, j.files()...)
+		delete(a.state, p.Path)
+		return
+	}
+	if trans {
 		wait := time.Minute << min(st.transient, 4) // 1, 2, 4, 8, 16 min
 		st.transient++
 		st.nextTry = now.Add(wait)
-		a.log.Printf("   ⏸  %v – neuer Versuch in %s", err, wait)
+		a.log.Printf("   ⏸  %v – neuer Versuch in %s (Versuch %d/%d)", err, wait, st.attempts, a.cfg.MaxAttempts)
 		return
 	}
-	st.attempts++
-	if st.attempts < a.cfg.MaxAttempts {
-		st.nextTry = now.Add(2 * time.Minute)
-		a.log.Printf("   ✗ %v (Versuch %d/%d)", err, st.attempts, a.cfg.MaxAttempts)
-		return
-	}
-	a.log.Printf("   ✗ %v – gebe auf, Dateien → %s", err, a.cfg.FailedDir)
-	a.fail(err, j.files()...)
-	delete(a.state, p.Path)
+	st.nextTry = now.Add(2 * time.Minute)
+	a.log.Printf("   ✗ %v (Versuch %d/%d)", err, st.attempts, a.cfg.MaxAttempts)
 }
 
 // process: Text aufbereiten → lokales LLM → Notion-Seite + Tasks.

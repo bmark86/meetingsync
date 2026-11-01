@@ -39,7 +39,7 @@ go build -o ~/bin/meetingsync .
 - Gemma laden und die **Kontextlänge auf mindestens 32768** stellen. Der Standardwert (4096) ist für Transkripte viel zu klein.
 - Den exakten Modell-Identifier kopieren (im Developer-Tab oder per `lms ls`). Den brauchst du gleich für `llm.model`.
 
-Läuft LM Studio mal nicht, ist das kein Problem: Die Dateien bleiben liegen und werden automatisch erneut versucht (nach 1, 2, 4, 8 Minuten, danach alle 16 Minuten, ohne Ende).
+Läuft LM Studio mal nicht, ist das kein Problem: Die Dateien bleiben liegen und werden automatisch erneut versucht (nach 1, 2, 4, 8 Minuten, danach alle 16 Minuten, bis `max_attempts` erreicht ist, danach `_fehler`).
 
 Zeitbedarf: ca. 4–5 Minuten LLM-Zeit pro Meeting-Stunde (Erfahrungswert mit `gemma-4-31b-qat`).
 
@@ -174,7 +174,7 @@ Die vollständige, kommentierte Referenz aller Optionen steht in [config.example
 | `orphan_summary_minutes` | `10` | So lange wartet eine solche Datei auf ihr Transkript |
 | `pair_window_seconds` | `180` | Zeitfenster, in dem Transkript und Zusammenfassung als Paar gelten |
 | `stable_seconds` | `20` | Datei muss so lange unverändert sein |
-| `max_attempts` | `3` | Fehlversuche, danach wandert die Datei nach `_fehler` (mit `.fehler.txt`) |
+| `max_attempts` | `10` | Fehlversuche (alle Fehler, auch vorübergehende), danach wandert die Datei nach `_fehler` (mit `.fehler.txt`) |
 | `llm.model` | – | Modell-Identifier aus LM Studio |
 | `llm.max_chunk_chars` | `60000` | Längere Transkripte werden erst abschnittsweise verdichtet |
 | `notion.create_tasks_for` | `me` | `me` = nur deine To-dos, `all` = alle, `none` = keine |
@@ -201,7 +201,7 @@ Der Notion-Token wird in dieser Reihenfolge gesucht: Umgebungsvariable `NOTION_T
 | `operation not permitted` | macOS-Schutz, siehe Hinweis bei Schritt 4 |
 | `Notion HTTP 401 … – Token gültig? Ist die Integration mit der Datenbank verbunden?` bleibt dauerhaft | Schlüsselbund-Eintrag ohne `-w` angelegt (leeres Token, Eintrag neu anlegen, siehe Schritt 3) oder Token ungültig bzw. widerrufen |
 
-Vorübergehende Fehler (LM Studio oder Notion nicht erreichbar, auch bei Timeout, HTTP 429/5xx, LM-Studio-Modell nicht geladen, Notion 401/403/404) werden ohne Ende wiederholt: nach 1, 2, 4, 8 Minuten, danach alle 16 Minuten. Solche Dateien landen nie in `_fehler`, sie warten, bis die Ursache behoben ist. Nur andere Fehler zählen gegen `max_attempts`.
+Vorübergehende Fehler (LM Studio oder Notion nicht erreichbar, auch bei Timeout, HTTP 429/5xx, LM-Studio-Modell nicht geladen, Notion 401/403/404) werden mit Backoff wiederholt: nach 1, 2, 4, 8 Minuten, danach alle 16 Minuten. Sie zählen wie alle anderen Fehler gegen `max_attempts` (Standard 10); danach landet die Datei in `_fehler`. Bei den Standardwerten wartet eine Datei so mindestens rund 95 Minuten auf die Behebung der Ursache; die Laufzeit der einzelnen Versuche kommt hinzu (bei LLM-Timeouts bis zu `llm.timeout_minutes` je Versuch). Andere Fehler werden im Abstand von 2 Minuten wiederholt.
 
 ## Weitere Doku
 
