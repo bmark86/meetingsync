@@ -4,7 +4,16 @@ Go-Tool (macOS, stdlib plus `go.yaml.in/yaml/v3`, `go 1.22`): MacWhisper-Export 
 
 ## Ablauf
 
-Exportordner pollen (10 s), Datei muss `stable_seconds` unverändert sein → Transkript/Zusammenfassung am Inhalt erkennen (`classify.go`) → LLM-Extraktion, lange Transkripte in Chunks (`llm.go`) → Notion-Seite und Tasks (`blocks.go`, `notion.go`) → Archiv `_archiv/JJJJ-MM`, Ledger gegen Doppelverarbeitung (`app.go`). Bei Fehlern Retry mit Backoff, nach `max_attempts` nach `_fehler`.
+Exportordner pollen (10 s), Datei muss `stable_seconds` unverändert sein → Transkript/Zusammenfassung an Endung und Inhalt erkennen (`classify.go`) → Paarbildung Transkript+Zusammenfassung (`pair_window_seconds`), Zusammenfassung ohne Partner nach `orphan_summary_action` → LLM-Extraktion, lange Transkripte in Chunks (`llm.go`) → Notion-Seite und Tasks (`blocks.go`, `notion.go`) → Archiv `_archiv/JJJJ-MM`, Ledger gegen Doppelverarbeitung (`app.go`).
+
+Retry: Vorübergehende Fehler (LM Studio/Notion nicht erreichbar (inkl. Timeout), HTTP 429/5xx, LM-Studio-Modell nicht geladen, Notion 401/403/404) mit Backoff ohne Ende (1/2/4/8 min, dann alle 16 min). Andere Fehler zählen gegen `max_attempts` (Abstand 2 min), danach `_fehler`.
+
+## Dateien
+
+- `main.go` Flags, `config.go` Config (YAML/JSON, Defaults), `app.go` Ablauf/Ledger/Archiv
+- `classify.go`, `llm.go`, `blocks.go`, `notion.go` wie oben
+- `config.example.yaml` kommentierte Referenz aller Optionen
+- Doku in `docs/`: `progress.md` (offene Punkte), `adr/`, `launchd.md`, `changelog.md`
 
 ## Befehle
 
@@ -12,7 +21,8 @@ Exportordner pollen (10 s), Datei muss `stable_seconds` unverändert sein → Tr
 - `make vet` (`go vet ./...`)
 - `make check` (vet + test, Definition of Done)
 - `go build -o ~/bin/meetingsync .`
-- `meetingsync -check` (Notion/LM Studio prüfen), `-dry-run -file <datei>` (nichts schreiben), `-once`
+- `meetingsync -check` (Notion/LM Studio prüfen; Exit 0 trotz ✗ bei Ordner/LM Studio, Ausgabe lesen), `-dry-run -file <datei>` (nichts schreiben), `-once`, `-config <pfad>`
+- `-file` ohne `-dry-run` legt eine echte Notiz an, aber ohne Ledger-Eintrag und ohne Verschieben der Datei.
 
 ## Definition of Done
 
@@ -25,7 +35,7 @@ Exportordner pollen (10 s), Datei muss `stable_seconds` unverändert sein → Tr
 ## Regeln
 
 - Datenschutz: Rohtranskript verlässt den Mac nicht, nur die fertige Notiz geht nach Notion (Transkript nur mit `include_transcript`).
-- Notion-Token nie ins Repo: `NOTION_TOKEN` → Keychain (`meetingsync-notion`) → `notion.token`. Echte `config.yaml` (oder `config.json`) liegt unter `~/.config/meetingsync/`.
+- Notion-Token nie ins Repo: `NOTION_TOKEN` → Keychain (`meetingsync-notion`, nur wenn `token_keychain_service` gesetzt ist; ein Fehler dort bricht ab) → `notion.token`. Echte `config.yaml` (oder `config.json`) liegt unter `~/.config/meetingsync/`.
 - Nur stdlib, einzige Ausnahme `go.yaml.in/yaml/v3`; keine weiteren Dependencies ohne Rückfrage.
 - Code-Kommentare, Logs und Notion-Inhalte sind deutsch.
 
