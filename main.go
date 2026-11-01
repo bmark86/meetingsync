@@ -11,6 +11,11 @@ import (
 	"time"
 )
 
+// version wird beim Build per -ldflags gesetzt (siehe Makefile, Target build).
+// Der Linker entfernt die ungenutzte Variable; sichtbar ist der Wert nur in den
+// Build-Infos ("go version -m", ldflags-Eintrag). Lint-Ausnahme in .golangci.yml.
+var version = "dev"
+
 // meetingsync: MacWhisper-Export → lokales LLM (LM Studio) → Notion Second Brain.
 func main() {
 	cfgPath := flag.String("config", defaultConfigPath(), "Pfad zur Konfigurationsdatei")

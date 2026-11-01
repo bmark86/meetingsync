@@ -39,7 +39,7 @@ func (f *fakeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if strings.HasPrefix(r.URL.Path, "/v1/") && !strings.HasPrefix(r.URL.Path, "/v1/chat") && r.URL.Path != "/v1/models" {
 		if r.Header.Get("Authorization") != "Bearer secret-test" || r.Header.Get("Notion-Version") != "2025-09-03" {
-			http.Error(w, `{"code":"unauthorized","message":"bad headers"}`, 401)
+			http.Error(w, `{"code":"unauthorized","message":"bad headers"}`, http.StatusUnauthorized)
 			return
 		}
 	}

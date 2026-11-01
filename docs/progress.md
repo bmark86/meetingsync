@@ -7,6 +7,8 @@
 | T6 | Retry limit for transient errors | done | 2026-11-01 |
 | R-PLAN | Architecture/security review + refactoring plan (2026-11-01) | done (report and plan written; 51 tasks planned) | 2026-11-01 |
 | R-M0-01 | Pin the toolchain (go1.26.10, govulncheck 0 findings) | done | 2026-11-01 |
+| R-M0-02 | Makefile: build, lint, test -race, vuln, check | done | 2026-11-01 |
+| R-M0-03 | golangci-lint config, 12 findings fixed | done | 2026-11-01 |
 
 ## Open follow-ups
 

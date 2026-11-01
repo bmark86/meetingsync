@@ -198,7 +198,7 @@ In M0 production code changes only through lint fixes (R-M0-03), the version var
 
 #### R-M0-04 CI, Dependabot, SECURITY.md
 - Goal: every push/PR runs `make check` on macOS.
-- Acceptance: `.github/workflows/ci.yml` on `macos-latest` (or a pinned version), `permissions: contents: read`, actions pinned by commit SHA, `actions/setup-go` with `go-version-file: go.mod`, steps vet/lint/test -race/vuln; PATH stubs for `security` and `osascript` that write a marker and exit with 1, the job fails if a marker exists; CI checks that `go version` is go1.26.10 and prints `go env GOSUMDB GOFLAGS GOTOOLCHAIN` (fails if the checksum database is off, `-insecure` is set, or the toolchain is `local`); govulncheck also runs on a schedule (`schedule:` trigger), because the vulnerability database changes daily; `.github/dependabot.yml` for `gomod` and `github-actions` (weekly); `SECURITY.md` (how to report, supported version); CI run green (link in the report).
+- Acceptance: `.github/workflows/ci.yml` on `macos-latest` (or a pinned version), `permissions: contents: read`, actions pinned by commit SHA, `actions/setup-go` with `go-version-file: go.mod`, steps vet/lint/test -race/vuln; CI calls `make` targets, tool versions are defined only in the Makefile (no duplicate pins); PATH stubs for `security` and `osascript` that write a marker and exit with 1, the job fails if a marker exists; CI checks that `go version` is go1.26.10 and prints `go env GOSUMDB GOFLAGS GOTOOLCHAIN` (fails if the checksum database is off, `-insecure` is set, or the toolchain is `local`); govulncheck also runs on a schedule (`schedule:` trigger), because the vulnerability database changes daily; `.github/dependabot.yml` for `gomod` and `github-actions` (weekly); `SECURITY.md` (how to report, supported version); CI run green (link in the report).
 - Scope: `.github/`, `SECURITY.md`.
 - Out of scope: GitHub settings (Dependabot alerts, branch protection, signed tags): a task for Mark, OD-15.
 - Depends on: R-M0-03. Findings: S-07, A-09.
@@ -273,7 +273,7 @@ In M0 production code changes only through lint fixes (R-M0-03), the version var
 ### M1 Correct error paths
 
 Goal: no duplicates, no silent losses, no overwritten files.
-Exit: A-01, A-02, A-11, A-12, S-13, S-14, S-15 closed; golden unchanged except `ledger.jsonl` (⚠ D1); crash tests (abort after each step) green.
+Exit: A-01, A-02, A-11, A-12, S-13, S-14, S-15 closed; golden unchanged except `ledger.jsonl` (⚠ D1); crash tests (abort after each step) green; errcheck `check-blank: true` enabled in `.golangci.yml`; every remaining `_ =` has a reason comment.
 
 #### R-M1-01 Ledger format with status ⚠
 ⚠ Behavior change, decided by Mark on 2026-11-01 (D1).
@@ -449,7 +449,7 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 
 #### R-M3-03 Skip symlinks
 - Goal: process only regular files in the watch folder.
-- Acceptance: symlink to a file and to a folder → skipped, one warning (text in the task), no read; test with a symlink to a file outside the watch folder; golden unchanged. OD-09 (decided: proposal): no symlinks are in use, so skip them.
+- Acceptance: symlink to a file and to a folder → skipped, one warning (text in the task), no read; test with a symlink to a file outside the watch folder; golden unchanged; gosec G304 exclusion for app.go removed from `.golangci.yml`. OD-09 (decided: proposal): no symlinks are in use, so skip them.
 - Scope: `internal/watch`, tests.
 - Depends on: M2. Findings: S-04.
 - Model: opus, file security.
@@ -457,7 +457,7 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 
 #### R-M3-04 File permissions
 - Goal: new ledger and `.fehler.txt` files 0600; newly created archive, error and month folders 0700; the copy path creates 0600.
-- Acceptance: tests check the mode (independent of umask, by `Chmod` after creation); existing files/folders are left as they are (OD-10, decided: proposal: new ones only); golden unchanged (permissions are not part of `tree.txt`).
+- Acceptance: tests check the mode (independent of umask, by `Chmod` after creation); existing files/folders are left as they are (OD-10, decided: proposal: new ones only); golden unchanged (permissions are not part of `tree.txt`); gosec G301/G302/G306 exclusions removed (prod files).
 - Scope: `internal/ledger`, `internal/watch`, `internal/pipeline`, tests.
 - Depends on: R-M3-03. Findings: S-12.
 - Model: opus, permissions.
@@ -465,7 +465,7 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 
 #### R-M3-05 Limit response sizes
 - Goal: `io.LimitReader` for LLM and Notion responses, `Models()` checks the status code.
-- Acceptance: limit per client as a constant (value in the task, well above real responses); exceeding it → own error; `Models()` at ≥ 300 → error with status; tests with an oversized response; golden unchanged.
+- Acceptance: limit per client as a constant (value in the task, well above real responses); exceeding it → own error; `Models()` at ≥ 300 → error with status; tests with an oversized response; read errors of response bodies are no longer discarded (notion.go `data, _ := io.ReadAll`, llm.go): a truncated 2xx response is treated safely (security review: a truncated 2xx answer to POST /v1/pages risks a duplicate); golden unchanged.
 - Scope: `internal/llm`, `internal/notion`, tests.
 - Depends on: M2. Findings: S-08, A-15.
 - Model: sonnet, clearly bounded limit.
@@ -481,7 +481,7 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 
 #### R-M3-07 Absolute paths and minimal environment
 - Goal: `/usr/bin/security`, `/usr/bin/osascript` with a minimal environment.
-- Acceptance: the runner gets an absolute path; environment only `HOME`, `USER`, `LANG`, `PATH=/usr/bin:/bin` (final list in the task); escaping for osascript unchanged (test with `"` and `\`); tests with a fake runner check path and environment.
+- Acceptance: the runner gets an absolute path; environment only `HOME`, `USER`, `LANG`, `PATH=/usr/bin:/bin` (final list in the task); escaping for osascript unchanged (test with `"` and `\`); tests with a fake runner check path and environment; gosec G204 exclusions for app.go/config.go removed.
 - Scope: `internal/notify`, TokenSource from R-M2-07, tests.
 - Depends on: M2. Findings: S-10.
 - Model: opus, secrets and process start.
