@@ -233,6 +233,13 @@ func TestEndToEnd(t *testing.T) {
 	writeOld(t, filepath.Join(dir, "Meeting 2026-10-28 14-00.txt"), srtLikeText(), 5*time.Minute)
 	writeOld(t, filepath.Join(dir, "Meeting 2026-10-28 14-00 (1).txt"), "Zusammenfassung\n\nEs ging um die Pipeline. Cache kommt.\n", 5*time.Minute)
 
+	// Archivmonat wie in der App: mtime in der Config-Zeitzone
+	st, err := os.Stat(filepath.Join(dir, "Meeting 2026-10-28 14-00.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	month := st.ModTime().In(app.cfg.loc).Format("2006-01")
+
 	app.Pass(ctx, time.Now())
 
 	if len(f.pages) != 2 {
@@ -287,7 +294,6 @@ func TestEndToEnd(t *testing.T) {
 	if left := remaining(t, dir); len(left) != 0 {
 		t.Errorf("Dateien nicht archiviert: %v", left)
 	}
-	month := time.Now().Format("2006-01")
 	archived, _ := os.ReadDir(filepath.Join(dir, "_archiv", month))
 	if len(archived) != 2 {
 		t.Errorf("Archiv enthält %d Dateien, erwartet 2", len(archived))

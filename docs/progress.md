@@ -9,7 +9,8 @@
 | R-M0-01 | Pin the toolchain (go1.26.10, govulncheck 0 findings) | done | 2026-11-01 |
 | R-M0-02 | Makefile: build, lint, test -race, vuln, check | done | 2026-11-01 |
 | R-M0-03 | golangci-lint config, 12 findings fixed | done | 2026-11-01 |
-| R-M0-04 | GitHub Actions CI (macOS), Dependabot, SECURITY.md (CI run link follows after push) | done | 2026-11-01 |
+| R-M0-04 | GitHub Actions CI (macOS), Dependabot, SECURITY.md. CI run (green): https://github.com/bmark86/meetingsync/actions/runs/41356860373 | done | 2026-11-01 |
+| R-M0-05 | Golden harness (fakes, recorder, normalization, `-update`), scenario G01; ADR 0003 | done | 2026-11-01 |
 
 ## Open follow-ups
 

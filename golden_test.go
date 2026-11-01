@@ -4,18 +4,21 @@ package main
 // LM Studio und Notion zeichnen jeden Request auf; Dateibaum, Ledger und Log
 // werden normalisiert mit testdata/golden/<szenario>/ verglichen.
 // Neu schreiben: go test -run Golden ./... -update
+// Szenarien kommen per registerGolden (in init) aus beliebigen Dateien dazu,
+// z. B. golden_flow_test.go und golden_cli_test.go.
 //
 // Normalisierung, abschließende Liste (alles andere bleibt roh):
 //   - Temp-Pfade (auch über /private aufgelöst)  → <tmp>
 //   - Host:Port der Fakes                         → <llm>, <notion>
-//   - Ledger-Feld "at", erste Zeile .fehler.txt   → <now>
+//   - Ledger-Feld "at", erste Zeile .fehler.txt   → <now>, nur wenn RFC3339 und
+//     zwischen Start und Ende des Laufs, sonst roh
 //   - Dauer in "LLM fertig nach …"                → <dur>
 //   - Log-Zeitstempel                             → entfernt
 //   - Authorization-Header                        → nur "vorhanden"/"Token korrekt"
 //   - Notion-Bodies: JSON mit sortierten Schlüsseln; LLM-Bodies: Schlüsselreihenfolge
 //     wie gesendet (Schema-Reihenfolge zählt). Beide nur eingerückt.
 //   - Hash im Dateibaum: Ledger und .fehler.txt nach obiger Normalisierung, alle
-//     anderen Dateien roh.
+//     anderen Dateien roh und mit mtime (UTC, RFC3339).
 
 import (
 	"bytes"
@@ -30,7 +33,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -125,7 +127,7 @@ func (f *goldenFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if len(replies) == 0 {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
-		_, _ = io.WriteString(w, `{"object":"error","status":404,"code":"object_not_found","message":"kein Fake-Skript für `+key+`"}`)
+		_, _ = io.WriteString(w, `{"object":"error","status":404,"code":"object_not_found","message":"kein Fake-Skript für `+key+`"}`) //nolint:gosec // G705: Fake-Server im Test, Antwort ist JSON, kein HTML
 		return
 	}
 	f.calls[key]++
@@ -176,16 +178,21 @@ func goldenBody(raw []byte, sorted bool) json.RawMessage {
 
 // --- Normalisierung ---------------------------------------------------------
 
-type goldenNormalizer struct{ repl *strings.Replacer }
+// goldenNormalizer: from/to ist das Zeitfenster des Laufs. Nur Zeitpunkte darin
+// werden zu <now>; ein falscher Zeitwert (z. B. die mtime) bleibt sichtbar.
+type goldenNormalizer struct {
+	repl     *strings.Replacer
+	from, to time.Time
+}
 
 var (
 	reGoldenLogTS  = regexp.MustCompile(`(?m)^\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} `)
 	reGoldenDur    = regexp.MustCompile(`(LLM fertig nach )\S+?(: )`)
-	reGoldenAt     = regexp.MustCompile(`("at":)"[^"]*"`)
+	reGoldenAt     = regexp.MustCompile(`"at":"([^"]*)"`)
 	reGoldenFehler = regexp.MustCompile(`^[^\n]*`)
 )
 
-func newGoldenNormalizer(root, llmHost, notionHost string) *goldenNormalizer {
+func newGoldenNormalizer(root, llmHost, notionHost string, from, to time.Time) *goldenNormalizer {
 	roots := []string{root}
 	if r, err := filepath.EvalSymlinks(root); err == nil && r != root {
 		roots = append(roots, r)
@@ -201,10 +208,17 @@ func newGoldenNormalizer(root, llmHost, notionHost string) *goldenNormalizer {
 	if notionHost != "" {
 		pairs = append(pairs, notionHost, "<notion>")
 	}
-	return &goldenNormalizer{strings.NewReplacer(pairs...)}
+	// RFC3339 in .fehler.txt hat nur Sekunden, darum from abrunden.
+	return &goldenNormalizer{repl: strings.NewReplacer(pairs...), from: from.Truncate(time.Second), to: to}
 }
 
 func (n *goldenNormalizer) text(s string) string { return n.repl.Replace(s) }
+
+// isNow: s ist ein RFC3339-Zeitpunkt innerhalb des Laufs.
+func (n *goldenNormalizer) isNow(s string) bool {
+	ts, err := time.Parse(time.RFC3339Nano, s)
+	return err == nil && !ts.Before(n.from) && !ts.After(n.to)
+}
 
 func (n *goldenNormalizer) log(s string) string {
 	s = reGoldenLogTS.ReplaceAllString(n.text(s), "")
@@ -212,11 +226,21 @@ func (n *goldenNormalizer) log(s string) string {
 }
 
 func (n *goldenNormalizer) ledger(s string) string {
-	return reGoldenAt.ReplaceAllString(n.text(s), `${1}"<now>"`)
+	return reGoldenAt.ReplaceAllStringFunc(n.text(s), func(m string) string {
+		if n.isNow(reGoldenAt.FindStringSubmatch(m)[1]) {
+			return `"at":"<now>"`
+		}
+		return m
+	})
 }
 
 func (n *goldenNormalizer) fehler(s string) string {
-	return reGoldenFehler.ReplaceAllLiteralString(n.text(s), "<now>")
+	return reGoldenFehler.ReplaceAllStringFunc(n.text(s), func(m string) string {
+		if n.isNow(m) {
+			return "<now>"
+		}
+		return m
+	})
 }
 
 // file normalisiert Dateiinhalte vor dem Hashen; ok=false heißt: roh hashen.
@@ -231,6 +255,8 @@ func (n *goldenNormalizer) file(name string, data []byte) ([]byte, bool) {
 }
 
 // goldenTree listet Ordner und Dateien unter root mit SHA-256 (ohne Rechte).
+// Roh gehashte Dateien zeigen ihre mtime (Eingaben haben feste mtimes),
+// normalisierte (Ledger, .fehler.txt) nicht, die schreibt die App gerade erst.
 func goldenTree(t *testing.T, root string, n *goldenNormalizer) string {
 	t.Helper()
 	var b strings.Builder
@@ -247,15 +273,19 @@ func goldenTree(t *testing.T, root string, n *goldenNormalizer) string {
 			fmt.Fprintf(&b, "%s/\n", rel)
 			return nil
 		}
-		data, err := os.ReadFile(p)
+		data, err := os.ReadFile(p) //nolint:gosec // G304: Pfad aus WalkDir unter t.TempDir()
 		if err != nil {
 			return err
 		}
-		mark := ""
 		if nd, ok := n.file(rel, data); ok {
-			data, mark = nd, " (normalized)"
+			fmt.Fprintf(&b, "%x  %s (normalized)\n", sha256.Sum256(nd), rel)
+			return nil
 		}
-		fmt.Fprintf(&b, "%x  %s%s\n", sha256.Sum256(data), rel, mark)
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(&b, "%x  %s  %s\n", sha256.Sum256(data), info.ModTime().UTC().Format(time.RFC3339), rel)
 		return nil
 	})
 	if err != nil {
@@ -268,7 +298,8 @@ func goldenTree(t *testing.T, root string, n *goldenNormalizer) string {
 
 // goldenEnv setzt HOME, PATH (nur Stubs) und NOTION_TOKEN auf Temp-Werte.
 // security und osascript sind Stubs, die einen Marker schreiben und mit 1 enden.
-// Liefert die Umgebung für Re-Exec-Kindprozesse.
+// Liefert die Umgebung für Re-Exec-Kindprozesse (mit TZ=UTC und Netzschutz-Proxy;
+// im Testprozess setzt TestMain beides).
 func goldenEnv(t *testing.T, root string) []string {
 	t.Helper()
 	home, bin, calls := filepath.Join(root, "home"), filepath.Join(root, "bin"), filepath.Join(root, "calls")
@@ -295,39 +326,7 @@ func goldenEnv(t *testing.T, root string) []string {
 			t.Errorf("Test hat externe Programme aufgerufen: %v", names)
 		}
 	})
-	return []string{"HOME=" + home, "PATH=" + bin, "NOTION_TOKEN=" + goldenToken, "TZ=UTC"}
-}
-
-// goldenInUTCChild sorgt für Prozess-TZ=UTC: time.Local wird nur beim Start
-// gelesen, darum läuft der Test bei anderer TZ einmal als Kindprozess.
-// true = der Kindprozess hat den Test erledigt.
-func goldenInUTCChild(t *testing.T) bool {
-	t.Helper()
-	if os.Getenv("TZ") == "UTC" {
-		return false
-	}
-	args := []string{"-test.run=^" + t.Name() + "$", "-test.count=1"}
-	if testing.Verbose() {
-		args = append(args, "-test.v")
-	}
-	if *goldenUpdate {
-		args = append(args, "-update")
-	}
-	cmd := exec.Command(os.Args[0], args...)
-	for _, kv := range os.Environ() {
-		if !strings.HasPrefix(kv, "TZ=") && !strings.HasPrefix(kv, goldenMainEnv+"=") {
-			cmd.Env = append(cmd.Env, kv)
-		}
-	}
-	cmd.Env = append(cmd.Env, "TZ=UTC")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("Golden-Test mit TZ=UTC fehlgeschlagen: %v\n%s", err, out)
-	}
-	if testing.Verbose() {
-		t.Logf("Kindprozess mit TZ=UTC:\n%s", out)
-	}
-	return true
+	return append([]string{"HOME=" + home, "PATH=" + bin, "NOTION_TOKEN=" + goldenToken, "TZ=UTC"}, goldenProxyEnv...)
 }
 
 // --- Szenarien --------------------------------------------------------------
@@ -337,6 +336,9 @@ type goldenInput struct {
 	mtime         time.Time
 }
 
+// goldenScenario ist entweder ein Pass-Szenario (passes) oder ein CLI-Szenario
+// (args, Re-Exec von main()). CLI-Szenarien schreiben zusätzlich stdout.txt,
+// stderr.txt und exit.txt.
 type goldenScenario struct {
 	name   string
 	config string // YAML; Platzhalter {{watch}}, {{llm}}, {{notion}}
@@ -344,13 +346,40 @@ type goldenScenario struct {
 	llm    map[string][]fakeReply
 	notion map[string][]fakeReply
 	passes []time.Time // je ein Pass(ctx, now)
+	args   []string    // CLI-Argumente; Platzhalter {{config}}, {{watch}}
 }
 
-// runGolden führt ein Pass-Szenario aus und liefert die normalisierten Ergebnisse.
+var goldenRegistry = map[string]goldenScenario{}
+
+// registerGolden nimmt Szenarien auf (aus init() jeder Szenario-Datei).
+// Läuft nur aus init() (sequenziell), daher ohne Mutex. Doppelte Namen sind ein Programmierfehler.
+func registerGolden(scs ...goldenScenario) {
+	for _, sc := range scs {
+		if _, dup := goldenRegistry[sc.name]; dup {
+			panic("Golden-Szenario doppelt registriert: " + sc.name)
+		}
+		goldenRegistry[sc.name] = sc
+	}
+}
+
+// goldenScenarios liefert alle registrierten Szenarien, nach Name sortiert.
+func goldenScenarios() []goldenScenario {
+	out := make([]goldenScenario, 0, len(goldenRegistry))
+	for _, sc := range goldenRegistry {
+		out = append(out, sc)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].name < out[j].name })
+	return out
+}
+
+// runGolden führt ein Szenario aus und liefert die normalisierten Ergebnisse.
 func runGolden(t *testing.T, sc goldenScenario) map[string]string {
 	t.Helper()
+	if (len(sc.passes) > 0) == (sc.args != nil) {
+		t.Fatalf("Szenario %s: genau eins von passes und args setzen", sc.name)
+	}
 	root := t.TempDir()
-	goldenEnv(t, root)
+	env := goldenEnv(t, root)
 	rec := &goldenRecorder{}
 	llm := newGoldenFake(t, "llm", "", rec, sc.llm)
 	notion := newGoldenFake(t, "notion", goldenToken, rec, sc.notion)
@@ -374,23 +403,40 @@ func runGolden(t *testing.T, sc goldenScenario) map[string]string {
 		t.Fatal(err)
 	}
 
+	start := time.Now()
+	out := map[string]string{}
 	var logBuf bytes.Buffer
-	ctx := context.Background()
-	app, err := goldenStart(ctx, cfgPath, log.New(&logBuf, "", 0), false)
-	if err != nil {
-		t.Fatalf("Start: %v", err)
+	var stdout, stderr string
+	exit := 0
+	if sc.args != nil {
+		args := make([]string, len(sc.args))
+		for i, a := range sc.args {
+			args[i] = strings.NewReplacer("{{config}}", cfgPath, "{{watch}}", watch).Replace(a)
+		}
+		stdout, stderr, exit = goldenRunCLI(t, env, args...)
+	} else {
+		ctx := context.Background()
+		app, err := goldenStart(ctx, cfgPath, log.New(&logBuf, "", 0), false)
+		if err != nil {
+			t.Fatalf("Start: %v", err)
+		}
+		for _, now := range sc.passes {
+			app.Pass(ctx, now)
+		}
 	}
-	for _, now := range sc.passes {
-		app.Pass(ctx, now)
-	}
+	end := time.Now()
 
-	n := newGoldenNormalizer(root, llm.host(), notion.host())
-	out := map[string]string{
-		"requests.json": n.text(rec.json()),
-		"log.txt":       n.log(logBuf.String()),
-		"tree.txt":      goldenTree(t, watch, n),
+	n := newGoldenNormalizer(root, llm.host(), notion.host(), start, end)
+	out["requests.json"] = n.text(rec.json())
+	out["tree.txt"] = goldenTree(t, watch, n)
+	if sc.args != nil {
+		out["stdout.txt"] = n.log(stdout)
+		out["stderr.txt"] = n.log(stderr)
+		out["exit.txt"] = strconv.Itoa(exit) + "\n"
+	} else {
+		out["log.txt"] = n.log(logBuf.String())
 	}
-	if b, err := os.ReadFile(filepath.Join(watch, "_archiv", ".meetingsync-ledger.jsonl")); err == nil {
+	if b, err := os.ReadFile(filepath.Join(watch, "_archiv", ".meetingsync-ledger.jsonl")); err == nil { //nolint:gosec // G304: Pfad unter t.TempDir()
 		out["ledger.jsonl"] = n.ledger(string(b))
 	}
 	return out
@@ -417,7 +463,7 @@ func checkGolden(t *testing.T, scenario string, got map[string]string) {
 		}
 	}
 	for _, name := range names {
-		want, err := os.ReadFile(filepath.Join(dir, name))
+		want, err := os.ReadFile(filepath.Join(dir, name)) //nolint:gosec // G304: Pfad unter testdata/golden
 		if err != nil {
 			t.Errorf("%s/%s fehlt (neu schreiben: go test -run Golden ./... -update): %v", scenario, name, err)
 			continue
@@ -536,9 +582,9 @@ Speaker 1: Dann führen wir den Cache ein. Ich kläre das Budget für die Runner
 Speaker 2: Danke Mark, ich baue den Cache. Bis Freitag.
 `
 
-func goldenScenarios() []goldenScenario {
-	return []goldenScenario{
-		{
+func init() {
+	registerGolden(
+		goldenScenario{
 			name:   "G01",
 			config: goldenBaseConfig,
 			files:  []goldenInput{{name: "Sirius Sync.srt", content: goldenSRT, mtime: goldenMTime}},
@@ -563,13 +609,11 @@ func goldenScenarios() []goldenScenario {
 			notion: goldenNotionDefault(),
 			passes: []time.Time{goldenMTime.Add(5 * time.Minute)},
 		},
-	}
+	)
 }
 
+// TestGolden ist der gemeinsame Runner für alle registrierten Szenarien.
 func TestGolden(t *testing.T) {
-	if goldenInUTCChild(t) {
-		return
-	}
 	for _, sc := range goldenScenarios() {
 		t.Run(sc.name, func(t *testing.T) {
 			checkGolden(t, sc.name, runGolden(t, sc))
@@ -586,16 +630,52 @@ func TestGoldenHarnessCLI(t *testing.T) {
 	env := goldenEnv(t, root)
 	missing := filepath.Join(root, "fehlt.yaml")
 	stdout, stderr, exit := goldenRunCLI(t, env, "-config", missing, "-check")
-	n := newGoldenNormalizer(root, "", "")
+	n := newGoldenNormalizer(root, "", "", time.Time{}, time.Time{})
 	want := "Konfiguration: kann <tmp>/fehlt.yaml nicht lesen: open <tmp>/fehlt.yaml: no such file or directory\n"
 	if got := n.log(stdout); got != want || exit != 1 || stderr != "" {
 		t.Fatalf("exit=%d stdout=%q stderr=%q", exit, got, stderr)
+	}
+	// Usage wie beim gebauten Binary: Text aus main(), kein "Usage of …".
+	stdout, stderr, exit = goldenRunCLI(t, env, "-bogus")
+	if exit != 2 || stdout != "" || !strings.HasPrefix(stderr, "flag provided but not defined: -bogus\nmeetingsync – ") || strings.Contains(stderr, "test.") {
+		t.Fatalf("-bogus: exit=%d stdout=%q stderr=%q", exit, stdout, stderr)
+	}
+}
+
+// Runner für CLI-Szenarien: Platzhalter, stdout/stderr/exit landen im Ergebnis.
+func TestGoldenHarnessCLIScenario(t *testing.T) {
+	got := runGolden(t, goldenScenario{
+		name: "cli-selbsttest", config: goldenBaseConfig,
+		args: []string{"-config", "{{watch}}/fehlt.yaml", "-check"},
+	})
+	want := "Konfiguration: kann <tmp>/watch/fehlt.yaml nicht lesen: open <tmp>/watch/fehlt.yaml: no such file or directory\n"
+	if got["stdout.txt"] != want || got["stderr.txt"] != "" || got["exit.txt"] != "1\n" || got["tree.txt"] != "" {
+		t.Fatalf("%q", got)
+	}
+	if _, ok := got["log.txt"]; ok {
+		t.Error("CLI-Szenario darf kein log.txt haben")
+	}
+}
+
+// Netzschutz: Requests an fremde Hosts gehen an den toten Proxy, Loopback nicht.
+func TestGoldenHarnessNoNetwork(t *testing.T) {
+	proxy := http.DefaultTransport.(*http.Transport).Proxy
+	for _, u := range []string{"https://api.notion.com/v1/pages", "http://example.com/"} {
+		req, _ := http.NewRequest(http.MethodGet, u, nil)
+		if p, err := proxy(req); err != nil || p == nil || p.String() != goldenProxy {
+			t.Errorf("%s: Proxy %v, %v", u, p, err)
+		}
+	}
+	req, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1:1234/v1", nil)
+	if p, _ := proxy(req); p != nil {
+		t.Errorf("Loopback darf nicht über den Proxy gehen: %v", p)
 	}
 }
 
 func TestGoldenHarnessNormalizer(t *testing.T) {
 	root := t.TempDir()
-	n := newGoldenNormalizer(root, "127.0.0.1:1111", "127.0.0.1:2222")
+	now := time.Date(2026, 11, 1, 23, 4, 5, 500_000_000, time.UTC)
+	n := newGoldenNormalizer(root, "127.0.0.1:1111", "127.0.0.1:2222", now, now.Add(time.Second))
 	real, _ := filepath.EvalSymlinks(root)
 
 	in := "2026/11/01 23:04:05 📦 a → " + real + "/x\n2026/11/01 23:04:05    LLM fertig nach 1m3s: \"T\" http://127.0.0.1:1111/v1 " + root + "\n"
@@ -603,15 +683,39 @@ func TestGoldenHarnessNormalizer(t *testing.T) {
 	if got := n.log(in); got != want {
 		t.Errorf("log:\n%q\n%q", got, want)
 	}
-	led := `{"hash":"h","file":"f","mtime":"2026-09-30T22:47:00Z","url":"https://127.0.0.1:2222/p","at":"2026-11-01T23:04:05.123+01:00"}` + "\n"
+	led := `{"hash":"h","file":"f","mtime":"2026-09-30T22:47:00Z","url":"https://127.0.0.1:2222/p","at":"2026-11-02T00:04:05.9+01:00"}` + "\n"
 	if got := n.ledger(led); got != `{"hash":"h","file":"f","mtime":"2026-09-30T22:47:00Z","url":"https://<notion>/p","at":"<now>"}`+"\n" {
 		t.Errorf("ledger: %s", got)
 	}
 	if got := n.fehler("2026-11-01T23:04:05Z\nkaputt in " + root + "\n"); got != "<now>\nkaputt in <tmp>\n" {
 		t.Errorf("fehler: %q", got)
 	}
+	// Außerhalb des Laufs oder kein RFC3339: bleibt roh.
+	for _, v := range []string{"2026-09-30T22:47:00Z", "2026-11-01T23:04:07Z", "gestern"} {
+		if got := n.ledger(`{"at":"` + v + `"}`); got != `{"at":"`+v+`"}` {
+			t.Errorf("ledger %s: %s", v, got)
+		}
+		if got := n.fehler(v + "\nx\n"); got != v+"\nx\n" {
+			t.Errorf("fehler %s: %q", v, got)
+		}
+	}
 	if _, ok := n.file("_archiv/2026-10/a.srt", []byte("x")); ok {
 		t.Error("normale Dateien müssen roh gehasht werden")
+	}
+	// tree.txt: mtime nur für roh gehashte Dateien.
+	dir := t.TempDir()
+	mt := time.Date(2026, 9, 30, 22, 47, 0, 0, time.FixedZone("x", 3600))
+	for _, name := range []string{"a.srt", "b.srt.fehler.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(filepath.Join(dir, name), mt, mt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tree := goldenTree(t, dir, n)
+	if !strings.Contains(tree, "  2026-09-30T21:47:00Z  a.srt\n") || strings.Count(tree, "2026-09-30") != 1 {
+		t.Errorf("tree:\n%s", tree)
 	}
 	// Notion: sortierte Schlüssel; LLM: Reihenfolge wie gesendet.
 	if got := string(goldenBody([]byte(`{"b":1,"a":"x & y"}`), true)); got != `{"a":"x & y","b":1}` {
