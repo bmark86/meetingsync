@@ -27,7 +27,7 @@ If the model is unsure (speaker assignment, poor audio quality, no timestamps), 
 
 ### 1. Build
 
-You need Go 1.21 or newer. `go.mod` pins the toolchain to go1.26.10. With the default `GOTOOLCHAIN=auto`, Go downloads this version on the first build.
+The build needs Go 1.26 (`go 1.26` in `go.mod`). `go.mod` pins the toolchain to go1.26.10. An installed Go 1.21 or newer is enough: with the default `GOTOOLCHAIN=auto`, Go downloads go1.26.10 on the first build.
 
 ```bash
 cd meetingsync

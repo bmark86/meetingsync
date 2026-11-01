@@ -26,6 +26,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Security
 - Toolchain pinned to go1.26.10 (fixes 26 reachable stdlib vulnerabilities, govulncheck clean). See ADR 0002.
+- R-M0-11: go directive raised to 1.26 – stricter TLS/x509/URL defaults, post-quantum key exchange; no change in output (golden tests unchanged, live -check green)
 
 ## [1.0.0] - 2026-11-01
 
