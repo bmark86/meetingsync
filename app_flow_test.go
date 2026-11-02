@@ -251,14 +251,97 @@ func TestLedgerAddWithoutPersistKeepsFileUntouched(t *testing.T) {
 	}
 }
 
-func TestLedgerAddReturnsWriteError(t *testing.T) {
+// Fängt: Fehler von MkdirAll/OpenFile werden verschluckt. Der Pfad liegt unter
+// einer Datei (ENOTDIR), Write wird gar nicht erreicht; Write/Sync-Fehler
+// prüft TestLedgerAddReturnsSyncError.
+func TestLedgerAddReturnsOpenError(t *testing.T) {
 	blocker := filepath.Join(t.TempDir(), "datei")
 	if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	l := &Ledger{path: filepath.Join(blocker, "l.jsonl"), persist: true, byHash: map[string]LedgerEntry{}}
 	if err := l.Add(LedgerEntry{Hash: "h"}); err == nil {
-		t.Fatal("Schreibfehler muss zurückgegeben werden")
+		t.Fatal("Fehler beim Öffnen muss zurückgegeben werden")
+	}
+}
+
+// Fängt: die neue Zeile wird an eine abgerissene letzte Zeile angehängt
+// (verschmilzt, geht beim Laden verloren) / der Normalpfad bekommt ein
+// zusätzliches '\n'.
+func TestLedgerAddAfterTornLastLine(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "l.jsonl")
+	torn := `{"hash":"alt","file":"a"}` + "\n" + `{"sha256":"abgerissen","sta`
+	if err := os.WriteFile(path, []byte(torn), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	l, _ := LoadLedger(path, true)
+	for _, h := range []string{"neu1", "neu2"} {
+		if err := l.Add(LedgerEntry{Hash: h, ModTime: flowM, At: flowM}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, _ := os.ReadFile(path) //nolint:gosec // G304: Pfad unter t.TempDir()
+	line := func(h string) string {
+		return `{"hash":"` + h + `","file":"","mtime":"2026-09-30T12:00:00Z","url":"","at":"2026-09-30T12:00:00Z"}` + "\n"
+	}
+	if want := torn + "\n" + line("neu1") + line("neu2"); string(got) != want {
+		t.Fatalf("Ledger-Datei:\n%q\nwant:\n%q", got, want)
+	}
+	re, err := LoadLedger(path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !re.Has("alt") || !re.Has("neu1") || !re.Has("neu2") || re.Started("abgerissen") {
+		t.Fatalf("nach Neuladen: %v", re.byHash)
+	}
+}
+
+// Fängt: kein Ordner-Sync beim ersten Anlegen (ADR 0004) / Ordner-Sync bei
+// jedem Add. Der Ordner ist schreib-, aber nicht lesbar (0300): Datei anlegen
+// geht, Ordner öffnen für Sync nicht.
+func TestLedgerAddSyncsDirOnCreate(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "sub")
+	if err := os.Mkdir(dir, 0o300); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) }) //nolint:gosec // G302: TempDir aufräumen
+	path := filepath.Join(dir, "l.jsonl")
+	l, _ := LoadLedger(path, true)
+	if err := l.Add(LedgerEntry{Hash: "h1"}); err == nil {
+		t.Fatal("erster Add: Fehler vom Ordner-Sync erwartet")
+	}
+	if err := l.Add(LedgerEntry{Hash: "h2"}); err != nil {
+		t.Fatalf("Datei existiert: kein Ordner-Sync, kein Fehler erwartet: %v", err)
+	}
+	if err := os.Chmod(dir, 0o755); err != nil { //nolint:gosec // G302: TempDir
+		t.Fatal(err)
+	}
+	re, _ := LoadLedger(path, false)
+	if !re.Has("h1") || !re.Has("h2") {
+		t.Fatal("beide Zeilen stehen trotz Sync-Fehler in der Datei")
+	}
+	if err := syncDir(dir); err != nil {
+		t.Fatalf("Ordner-Sync auf macOS: %v", err)
+	}
+}
+
+// Fängt: unbekannter Status zählt als fertig oder begonnen / sha256-Zeile
+// ohne Status zählt nicht als fertig (ADR 0004).
+func TestLoadLedgerUnknownStatusAndSHA256WithoutStatus(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "l.jsonl")
+	data := `{"sha256":"neu","status":"pausiert","file":"a"}` + "\n" + `{"sha256":"ohne","file":"b"}` + "\n"
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	l, err := LoadLedger(path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l.Has("neu") || l.Started("neu") {
+		t.Fatal("unbekannter Status: weder fertig noch begonnen (läuft neu)")
+	}
+	if !l.Has("ohne") {
+		t.Fatal("sha256 ohne Status = fertig")
 	}
 }
 

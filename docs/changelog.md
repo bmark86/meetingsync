@@ -22,9 +22,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - R-M0-03: 12 lint findings fixed, no behavior change.
 - R-M1-01 ⚠: ledger lines carry a status (`begonnen`, `fertig`, `verworfen`); last line per hash wins; `Has`/`HasNear` count only `fertig`. `fertig` lines stay byte-identical to v1.0.0; other lines use field `sha256`, so v1.0.0 skips them. `Add` fsyncs and returns write/sync/close errors. See ADR 0004.
 - R-M1-06 ⚠: `llm.timeout_minutes` below 1 (e.g. 0) is now clamped to 1 (was: no timeout).
+- R-M1-02 ⚠: ledger gets a `begonnen` line (fsync) after the LLM run, right before Notion `CreatePage`. After success `fertig` as before (byte-identical to v1.0.0), on a non-cancel error `verworfen`, on context cancel `begonnen` stays. v1.0.0 skips `begonnen` lines. Golden diff: only `ledger.jsonl` and its hash in `tree.txt`. See ADR 0004.
 - Docs: review report, refactoring plan; documentation switched to plain English.
 
 ### Fixed
+- R-M1-02: restart rule: a file whose last ledger status is `begonnen` goes to `_fehler` (partner first, primary last) with a `.fehler.txt` note to check Notion, log line `letzter Lauf wurde beim Anlegen in Notion unterbrochen`, then `verworfen`; identical copies in the same pass follow. No second page at the tested crash points (after `begonnen`, `CreatePage`, tasks, `fertig`, archive; failed partner move; identical copy).
 - e2e test archive month no longer depends on the local time zone
 
 ### Security

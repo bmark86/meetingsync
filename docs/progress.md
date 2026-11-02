@@ -18,6 +18,8 @@
 | R-M0-10 | Hermetic acceptance test (re-exec, no `go build`); gosec G204 exception for tests removed | done | 2026-11-02 |
 | R-M0-11 | go directive 1.22 → 1.26 (toolchain go1.26.10); legacy GODEBUG defaults gone; golden tests unchanged, live `-check` green | done | 2026-11-02 |
 | R-M1-01 | Ledger with status (`begonnen`/`fertig`/`verworfen`), fsync in `Add`; v1.0.0 compatible; ADR 0004 | done | 2026-11-02 |
+| R-M1-02 ⚠ | Crash-safe flow: `begonnen` before `CreatePage`, restart rule to `_fehler`, crash matrix tests; ADR 0004. Decisions: identical-copy hash set per pass (coordinator); OD-05 residual risk becomes R-M3-17 (Mark, 2026-11-02); moveFile copy-fallback accumulation deferred to R-M1-04 | done | 2026-11-02 |
+| R-M1-03 | Do not lose tasks and remaining blocks silently | next | – |
 | R-M1-06 | Config validation: clamps and unknown keys as startup warnings; `llm.timeout_minutes` min 1 | done | 2026-11-02 |
 
 ## Open follow-ups
@@ -37,3 +39,6 @@
 | 11 | Golden test helpers duplicated between `golden_flow_test.go` and `golden_cli_test.go`. Consolidate in R-M0-08 | Mark | done (R-M0-08) |
 | 12 | Transcript toggle truncation at 99 paragraphs not covered by golden tests. Add unit test in R-M0-08 | Mark | done (R-M0-08) |
 | 13 | G10b freezes OS/Go-specific "connection refused" text. Watched in R-M0-11 | Mark | done (unchanged with go 1.26) |
+| 14 | Before rebuilding `~/bin` (R-M1-02): new `begonnen` lines appear in the ledger (v1.0.0 skips them). A crash during page creation leaves the file in `_fehler` with a note to check Notion; if the page is missing, move the file(s) back into the export folder | Mark | open |
+| 15 | After an ambiguous `CreatePage` failure (5xx, network error, timeout, unreadable 2xx body) a retry can create duplicate pages (ADR 0004). Decided by Mark (2026-11-02) | Mark | planned (R-M3-17) |
+| 16 | R-M1-04 must not leave a growing number of copies in `_fehler` when `Remove(src)` fails; deleting meetingsync's own copy needs Mark's approval | Mark | planned (R-M1-04, question for the gate) |
