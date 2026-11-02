@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"meetingsync/internal/domain"
 )
 
 func retryApp(t *testing.T, max int) (*App, job, string) {
@@ -33,7 +35,7 @@ func failedFiles(dir string) int {
 }
 
 var (
-	errTrans = transient(errors.New("LM Studio nicht erreichbar"))
+	errTrans = domain.Transient(errors.New("LM Studio nicht erreichbar"))
 	errOther = errors.New("kaputt")
 )
 

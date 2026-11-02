@@ -8,27 +8,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"meetingsync/internal/domain"
 )
-
-// Kind beschreibt, was in einer Exportdatei steckt.
-type Kind int
-
-const (
-	KindUnsupported Kind = iota
-	KindTranscript
-	KindSummary
-)
-
-func (k Kind) String() string {
-	switch k {
-	case KindTranscript:
-		return "Transkript"
-	case KindSummary:
-		return "Zusammenfassung"
-	default:
-		return "nicht unterstützt"
-	}
-}
 
 var supportedExt = map[string]bool{
 	".txt": true, ".md": true, ".markdown": true,
@@ -56,30 +38,30 @@ var (
 // Transkript oder eine Zusammenfassung ist. Die Dateinamen von MacWhisper
 // verraten das nicht, der Inhalt schon: nur Transkripte haben Zeitstempel
 // bzw. Sprecher-Labels in nennenswerter Menge.
-func classify(path string, content []byte, cfg *Config) Kind {
+func classify(path string, content []byte, cfg *Config) domain.Kind {
 	ext := strings.ToLower(filepath.Ext(path))
 	if contains(cfg.TranscriptExtensions, ext) {
-		return KindTranscript
+		return domain.KindTranscript
 	}
 	if contains(cfg.SummaryExtensions, ext) {
-		return KindSummary
+		return domain.KindSummary
 	}
 	if !supportedExt[ext] {
-		return KindUnsupported
+		return domain.KindUnsupported
 	}
 	switch ext {
 	case ".srt", ".vtt":
-		return KindTranscript
+		return domain.KindTranscript
 	case ".json":
 		if len(jsonSegments(content)) > 0 {
-			return KindTranscript
+			return domain.KindTranscript
 		}
-		return KindSummary
+		return domain.KindSummary
 	}
 	if looksLikeTranscriptText(string(content)) {
-		return KindTranscript
+		return domain.KindTranscript
 	}
-	return KindSummary
+	return domain.KindSummary
 }
 
 func isSupportedExt(ext string, cfg *Config) bool {
@@ -244,22 +226,14 @@ func maxLeadingTimestamp(s string) time.Duration {
 	return max
 }
 
-// Timing beschreibt, wann das Meeting stattfand.
-type Timing struct {
-	Start     time.Time
-	End       time.Time // Null, wenn unbekannt
-	HasTime   bool
-	Estimated bool
-}
-
 // meetingTiming nimmt Datum/Uhrzeit aus dem Dateinamen, sonst den
 // Exportzeitpunkt minus Transkriptdauer.
-func meetingTiming(name string, mtime time.Time, dur time.Duration, loc *time.Location) Timing {
+func meetingTiming(name string, mtime time.Time, dur time.Duration, loc *time.Location) domain.Timing {
 	mtime = mtime.In(loc)
 	if y, mo, d, h, mi, hasTime, ok := dateFromName(name); ok {
 		if hasTime {
 			start := time.Date(y, time.Month(mo), d, h, mi, 0, 0, loc)
-			t := Timing{Start: start, HasTime: true}
+			t := domain.Timing{Start: start, HasTime: true}
 			if dur > 0 {
 				t.End = start.Add(dur)
 			}
@@ -269,13 +243,13 @@ func meetingTiming(name string, mtime time.Time, dur time.Duration, loc *time.Lo
 		if sameDay(day, mtime) {
 			return estimatedTiming(mtime, dur)
 		}
-		return Timing{Start: day}
+		return domain.Timing{Start: day}
 	}
 	return estimatedTiming(mtime, dur)
 }
 
-func estimatedTiming(mtime time.Time, dur time.Duration) Timing {
-	t := Timing{End: mtime, HasTime: true, Estimated: true, Start: mtime}
+func estimatedTiming(mtime time.Time, dur time.Duration) domain.Timing {
+	t := domain.Timing{End: mtime, HasTime: true, Estimated: true, Start: mtime}
 	if dur > 0 {
 		t.Start = mtime.Add(-dur)
 	}
@@ -317,31 +291,7 @@ func validDate(y, mo, d int) bool {
 	return t.Day() == d
 }
 
-var weekdaysShort = []string{"So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"}
 var weekdaysLong = []string{"Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"}
-
-func (t Timing) DateLabel() string {
-	return fmt.Sprintf("%s (%s)", t.Start.Format("02.01.2006"), weekdaysShort[t.Start.Weekday()])
-}
-
-func (t Timing) TimeLabel() string {
-	if !t.HasTime {
-		return "–"
-	}
-	var s string
-	switch {
-	case !t.End.IsZero() && !t.End.Equal(t.Start):
-		s = fmt.Sprintf("%s–%s (%d min)", t.Start.Format("15:04"), t.End.Format("15:04"), int(t.End.Sub(t.Start).Minutes()+0.5))
-	case t.Estimated:
-		s = "ca. " + t.Start.Format("15:04") + " (Export)"
-	default:
-		s = t.Start.Format("15:04")
-	}
-	if t.Estimated && !strings.Contains(s, "Export") {
-		s += ", geschätzt"
-	}
-	return s
-}
 
 // --- kleine Helfer ---------------------------------------------------------
 

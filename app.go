@@ -19,6 +19,8 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+
+	"meetingsync/internal/domain"
 )
 
 type App struct {
@@ -54,7 +56,7 @@ type fileState struct {
 type cachedKind struct {
 	modTime time.Time
 	size    int64
-	kind    Kind
+	kind    domain.Kind
 }
 
 type entry struct {
@@ -63,7 +65,7 @@ type entry struct {
 	ModTime time.Time
 	Size    int64
 	Stable  bool
-	Kind    Kind
+	Kind    domain.Kind
 	Content []byte
 }
 
@@ -210,9 +212,9 @@ func (a *App) Pass(ctx context.Context, now time.Time) {
 		switch {
 		case !e.Stable:
 			unstable = append(unstable, e)
-		case e.Kind == KindTranscript:
+		case e.Kind == domain.KindTranscript:
 			transcripts = append(transcripts, e)
-		case e.Kind == KindSummary:
+		case e.Kind == domain.KindSummary:
 			summaries = append(summaries, e)
 		}
 	}
@@ -352,7 +354,7 @@ func (a *App) interrupted(j job, hash string, now time.Time) {
 // Nur die Wartezeit unterscheidet sich; ein Abbruch per Kontext zählt nicht.
 func (a *App) handleError(ctx context.Context, j job, err error, now time.Time) {
 	p := j.primary
-	trans := isTransient(err)
+	trans := domain.IsTransient(err)
 	if trans && ctx.Err() != nil {
 		return
 	}
@@ -439,7 +441,7 @@ func (a *App) process(ctx context.Context, j job, hash string) (string, gaps, er
 		}
 	}
 	title := formatTitle(a.cfg.TitleFormat, note, timing)
-	meta := NoteMeta{Timing: timing, ReviewReasons: reasons}
+	meta := domain.NoteMeta{Timing: timing, ReviewReasons: reasons}
 	for _, f := range j.files() {
 		meta.SourceFiles = append(meta.SourceFiles, f.Name)
 	}
@@ -522,7 +524,7 @@ func (a *App) noteProps(title string, project *pageRef, review bool) map[string]
 
 // createTasks legt To-dos in der Tasks-Datenbank an und verknüpft sie mit der Notiz.
 // Liefert die Zahl der angelegten und der fehlenden To-dos (Fehler oder Abbruch).
-func (a *App) createTasks(ctx context.Context, n *MeetingNote, noteID string, project *pageRef, title string) (created, missing int) {
+func (a *App) createTasks(ctx context.Context, n *domain.MeetingNote, noteID string, project *pageRef, title string) (created, missing int) {
 	mode := a.cfg.Notion.CreateTasksFor
 	if a.tasksDS == "" || mode == "none" {
 		return 0, 0
@@ -597,10 +599,10 @@ func (a *App) ProcessSingleFile(ctx context.Context, path string) error {
 	e := &entry{Path: path, Name: filepath.Base(path), ModTime: info.ModTime(), Size: info.Size(), Stable: true, Content: content}
 	e.Kind = classify(path, content, a.cfg)
 	a.log.Printf("%s erkannt als: %s", e.Name, e.Kind)
-	if e.Kind == KindUnsupported {
+	if e.Kind == domain.KindUnsupported {
 		return fmt.Errorf("Dateityp %s wird nicht unterstützt", filepath.Ext(path))
 	}
-	url, _, err := a.process(ctx, job{primary: e, summaryOnly: e.Kind == KindSummary}, "")
+	url, _, err := a.process(ctx, job{primary: e, summaryOnly: e.Kind == domain.KindSummary}, "")
 	if err != nil {
 		return err
 	}
@@ -610,7 +612,7 @@ func (a *App) ProcessSingleFile(ctx context.Context, path string) error {
 	return nil
 }
 
-func (a *App) printDryRun(title string, project *pageRef, n *MeetingNote, reasons []string, blocks int) {
+func (a *App) printDryRun(title string, project *pageRef, n *domain.MeetingNote, reasons []string, blocks int) {
 	fmt.Println("────────── DRY-RUN ──────────")
 	fmt.Println("Titel:   ", title)
 	if project != nil {

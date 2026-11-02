@@ -13,41 +13,9 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"meetingsync/internal/domain"
 )
-
-// MeetingNote ist genau das, was das lokale Modell liefern soll.
-// Die Felder folgen dem Notion-Template "📋 TEMPLATE - Meeting Notes".
-type MeetingNote struct {
-	Titel            string    `json:"titel"`
-	Typ              string    `json:"typ"`
-	Teilnehmer       []string  `json:"teilnehmer"`
-	KontextZiel      string    `json:"kontext_ziel"`
-	Themen           []Thema   `json:"themen"`
-	Entscheidungen   []string  `json:"entscheidungen"`
-	NextActions      []Action  `json:"next_actions"`
-	OffeneFragen     []string  `json:"offene_fragen"`
-	NaechstesMeeting Naechstes `json:"naechstes_meeting"`
-	Projekt          string    `json:"projekt"`
-	PruefGruende     []string  `json:"pruef_gruende"`
-	Pruefen          bool      `json:"pruefen"`
-}
-
-type Thema struct {
-	Titel  string   `json:"titel"`
-	Punkte []string `json:"punkte"`
-}
-
-type Action struct {
-	Aufgabe  string `json:"aufgabe"`
-	Owner    string `json:"owner"`
-	Deadline string `json:"deadline"`
-	FuerMich bool   `json:"fuer_mich"`
-}
-
-type Naechstes struct {
-	Datum  string   `json:"datum"`
-	Themen []string `json:"themen"`
-}
 
 var meetingTypes = []string{"1:1", "Team", "Extern", "Lenkungskreis", "Sonstiges"}
 
@@ -55,7 +23,7 @@ type NoteInput struct {
 	Text        string
 	SummaryText string // optional, MacWhisper-Zusammenfassung als Zusatzkontext
 	SummaryOnly bool
-	Timing      Timing
+	Timing      domain.Timing
 	Projects    []string
 	MyName      string
 	MyLabel     string
@@ -91,7 +59,7 @@ func (e *httpError) Error() string {
 
 // Summarize macht aus Transkript (oder Zusammenfassung) eine MeetingNote.
 // Lange Transkripte werden erst abschnittsweise verdichtet.
-func (l *LLM) Summarize(ctx context.Context, in NoteInput) (*MeetingNote, error) {
+func (l *LLM) Summarize(ctx context.Context, in NoteInput) (*domain.MeetingNote, error) {
 	material := in.Text
 	label := "Transkript"
 	if in.SummaryOnly {
@@ -182,19 +150,19 @@ func (l *LLM) chat(ctx context.Context, msgs []chatMsg, schema any) (string, err
 	}
 	resp, err := l.http.Do(req)
 	if err != nil {
-		return "", transient(fmt.Errorf("LM Studio nicht erreichbar (%s) – läuft der lokale Server? %w", l.cfg.BaseURL, err))
+		return "", domain.Transient(fmt.Errorf("LM Studio nicht erreichbar (%s) – läuft der lokale Server? %w", l.cfg.BaseURL, err))
 	}
 	defer func() { _ = resp.Body.Close() }() //nolint:errcheck // nur gelesen, Close-Fehler ohne Folgen
 	data, _ := io.ReadAll(resp.Body)         //nolint:errcheck // Lesefehler fuehrt unten ohnehin zu einem JSON-/Statusfehler
 
 	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
-		return "", transient(&httpError{resp.StatusCode, string(data)})
+		return "", domain.Transient(&httpError{resp.StatusCode, string(data)})
 	}
 	if resp.StatusCode >= 400 {
 		lower := strings.ToLower(string(data))
 		if strings.Contains(lower, "no models loaded") || strings.Contains(lower, "not loaded") ||
 			(strings.Contains(lower, "model") && strings.Contains(lower, "not found")) {
-			return "", transient(fmt.Errorf("Modell %q ist in LM Studio nicht geladen: %s", l.cfg.Model, truncate(string(data), 200)))
+			return "", domain.Transient(fmt.Errorf("Modell %q ist in LM Studio nicht geladen: %s", l.cfg.Model, truncate(string(data), 200)))
 		}
 		return "", &httpError{resp.StatusCode, string(data)}
 	}
@@ -384,7 +352,7 @@ var reThink = regexp.MustCompile(`(?s)<think>.*?</think>`)
 
 func stripThink(s string) string { return reThink.ReplaceAllString(s, "") }
 
-func parseNote(raw string) (*MeetingNote, error) {
+func parseNote(raw string) (*domain.MeetingNote, error) {
 	s := strings.TrimSpace(stripThink(raw))
 	s = strings.TrimPrefix(s, "```json")
 	s = strings.TrimPrefix(s, "```")
@@ -393,7 +361,7 @@ func parseNote(raw string) (*MeetingNote, error) {
 	if i < 0 || j <= i {
 		return nil, errors.New("kein JSON-Objekt gefunden")
 	}
-	var n MeetingNote
+	var n domain.MeetingNote
 	if err := json.Unmarshal([]byte(s[i:j+1]), &n); err != nil {
 		return nil, err
 	}
@@ -404,7 +372,7 @@ func parseNote(raw string) (*MeetingNote, error) {
 }
 
 // normalizeNote räumt die Modellantwort auf (Leerzeilen, Dubletten, Längen).
-func normalizeNote(n *MeetingNote) {
+func normalizeNote(n *domain.MeetingNote) {
 	n.Titel = truncate(strings.Join(strings.Fields(n.Titel), " "), 120)
 	if !contains(meetingTypes, n.Typ) {
 		n.Typ = "Sonstiges"
