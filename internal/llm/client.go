@@ -223,7 +223,7 @@ func (l *Client) chat(ctx context.Context, msgs []chatMsg, schema any) (string, 
 	}
 	resp, err := l.http.Do(req)
 	if err != nil {
-		return "", domain.Transient(fmt.Errorf("LM Studio nicht erreichbar (%s) – läuft der lokale Server? %w", l.opts.BaseURL, err))
+		return "", domain.Transient(fmt.Errorf("LM Studio nicht erreichbar (%s) – läuft der lokale Server? %w", domain.RedactURL(l.opts.BaseURL), err))
 	}
 	defer func() { _ = resp.Body.Close() }() //nolint:errcheck // nur gelesen, Close-Fehler ohne Folgen
 	data, readErr := l.readBody(resp.Body)

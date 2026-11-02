@@ -256,6 +256,17 @@ func TestCheckReport(t *testing.T) {
 	}
 }
 
+// Fängt: Pfad oder Query der LM-Studio-URL in der -check-Ausgabe (S-03).
+func TestCheckUnreachableShowsOnlySchemeHostPort(t *testing.T) {
+	e, _ := testEnv(t, goodNotion())
+	e.Cfg.LLM.BaseURL = "http://127.0.0.1:9/v1?key=geheim"
+	e.LLM = fakeLLM{err: errors.New("refused")}
+	out := captureStdout(t, func() { _ = Check(context.Background(), e) })
+	if !strings.Contains(out, "✗ LM Studio nicht erreichbar unter http://127.0.0.1:9: refused\n") || strings.Contains(out, "geheim") {
+		t.Fatalf("Ausgabe:\n%s", out)
+	}
+}
+
 // Fängt: Init-Fehler in Check ohne ✗-Zeile oder ohne Fehler.
 func TestCheckInitError(t *testing.T) {
 	n := goodNotion()

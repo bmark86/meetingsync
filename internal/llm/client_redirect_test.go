@@ -84,3 +84,15 @@ func TestInjectedTransportKept(t *testing.T) {
 		t.Fatal("CheckRedirect fehlt bei injiziertem Transport")
 	}
 }
+
+// Fängt: Pfad, Query oder Zugangsdaten der Basis-URL im Fehlertext (S-03).
+// Der angehängte *url.Error nennt die volle Anfrage-URL inkl. Pfad; das ist
+// bei Loopback im lokalen Log vertretbar. Query und Fragment lehnt die
+// Konfiguration schon ab (config_test.go), rdClient umgeht das hier bewusst.
+func TestUnreachableShowsOnlySchemeHostPort(t *testing.T) {
+	l := rdClient("http://127.0.0.1:1/v1?key=geheim")
+	_, err := l.chat(context.Background(), nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "LM Studio nicht erreichbar (http://127.0.0.1:1) –") {
+		t.Fatalf("err = %v, want Basis-URL nur als http://127.0.0.1:1", err)
+	}
+}

@@ -30,7 +30,7 @@ Status: accepted (Mark approved M2 at the gate, 2026-11-02), R-M2-01. Number 001
 - Dependency rules, enforced by `arch_test.go` (hermetic `go list -deps -json`, extendable list `archRules`):
   1. `internal/domain` imports only stdlib and itself.
   2. No infra package (`internal/*` except `pipeline`) imports `internal/pipeline`, test imports included.
-- Delivered in R-M2-01: `internal/domain` with `MeetingNote`, `Thema`, `Action`, `Naechstes`, `Timing`, `NoteMeta`, `Kind`, `Transient`, `IsTransient`. All callers switched, no aliases. Coverage 100 %.
+- Delivered in R-M2-01: `internal/domain` with `MeetingNote`, `Thema`, `Action`, `Naechstes`, `Timing`, `NoteMeta`, `Kind`, `Transient`, `IsTransient`. All callers switched, no aliases. Coverage 100 %. Later addition (R-M3-02): `RedactURL` (scheme://host[:port] only, for messages; ADR 0008).
 - Logging stays `*log.Logger` with identical texts.
 
 ### R-M2-08: `watch.FS` covers the read side only (coordinator decision)

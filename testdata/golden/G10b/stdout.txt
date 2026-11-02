@@ -5,4 +5,4 @@ Fehler:   <tmp>/watch/_fehler
 ✓ Notion: Notes erreichbar (notes-ds)
 ✓ Notion: Tasks erreichbar (tasks-ds)
 ✓ Notion: 2 aktive Projekte
-✗ LM Studio nicht erreichbar unter http://127.0.0.1:1/v1: Get "http://127.0.0.1:1/v1/models": dial tcp 127.0.0.1:1: connect: connection refused
+✗ LM Studio nicht erreichbar unter http://127.0.0.1:1: Get "http://127.0.0.1:1/v1/models": dial tcp 127.0.0.1:1: connect: connection refused
