@@ -1,4 +1,6 @@
-package main
+// Package notion schreibt Meeting-Notizen und To-dos nach Notion: HTTP-Client
+// mit Retry, Property-Typen (PropertyKind) und Seitenblöcke.
+package notion
 
 import (
 	"bytes"
@@ -15,23 +17,33 @@ import (
 	"meetingsync/internal/domain"
 )
 
-// Notion ist ein schlanker Client für die Notion-API (Version 2025-09-03,
+// Client ist ein schlanker Client für die Notion-API (Version 2025-09-03,
 // Datenbanken werden über ihre Data Sources angesprochen).
-type Notion struct {
+type Client struct {
 	base    string
 	version string
 	token   string
 	http    *http.Client
 }
 
-func NewNotion(cfg NotionConfig, token string) *Notion {
-	return &Notion{
-		base:    strings.TrimRight(cfg.BaseURL, "/"),
-		version: cfg.APIVersion,
+// NewClient baut den Client. transport ist der HTTP-Transport; nil heißt
+// http.DefaultTransport (Produktion), Tests setzen eigene Hooks.
+func NewClient(baseURL, apiVersion, token string, transport http.RoundTripper) *Client {
+	return &Client{
+		base:    strings.TrimRight(baseURL, "/"),
+		version: apiVersion,
 		token:   token,
-		http:    &http.Client{Timeout: 60 * time.Second},
+		http:    &http.Client{Timeout: 60 * time.Second, Transport: transport},
 	}
 }
+
+// PageWriter legt Seiten an; *Client erfüllt es. Damit lässt sich der Ablauf
+// später ohne HTTP testen (R-M2-09).
+type PageWriter interface {
+	CreatePage(ctx context.Context, dsID string, props map[string]any, children []any) (string, string, error)
+}
+
+var _ PageWriter = (*Client)(nil)
 
 type apiError struct {
 	Status  int
@@ -46,7 +58,7 @@ func (e *apiError) Error() string {
 // do schickt einen Request. Rate-Limits (429) werden immer wiederholt,
 // Netzwerk- und Serverfehler nur bei idempotenten Aufrufen, damit beim
 // Anlegen keine doppelten Seiten entstehen.
-func (n *Notion) do(ctx context.Context, method, path string, in, out any, idempotent bool) error {
+func (n *Client) do(ctx context.Context, method, path string, in, out any, idempotent bool) error {
 	var payload []byte
 	if in != nil {
 		var err error
@@ -105,7 +117,7 @@ func (n *Notion) do(ctx context.Context, method, path string, in, out any, idemp
 
 // ResolveDataSource akzeptiert eine Data-Source-ID oder eine Datenbank-ID
 // und liefert Data-Source-ID plus Property-Typen (Name → Typ).
-func (n *Notion) ResolveDataSource(ctx context.Context, id string) (string, map[string]string, error) {
+func (n *Client) ResolveDataSource(ctx context.Context, id string) (string, Schema, error) {
 	id = strings.TrimSpace(strings.TrimPrefix(id, "collection://"))
 	props, err := n.dataSourceProps(ctx, id)
 	if err == nil {
@@ -124,35 +136,36 @@ func (n *Notion) ResolveDataSource(ctx context.Context, id string) (string, map[
 	return "", nil, err
 }
 
-func (n *Notion) dataSourceProps(ctx context.Context, id string) (map[string]string, error) {
+func (n *Client) dataSourceProps(ctx context.Context, id string) (Schema, error) {
 	var out struct {
 		Properties map[string]struct {
-			Type string `json:"type"`
+			Type PropertyKind `json:"type"`
 		} `json:"properties"`
 	}
 	if err := n.do(ctx, http.MethodGet, "/v1/data_sources/"+id, nil, &out, true); err != nil {
 		return nil, err
 	}
-	m := make(map[string]string, len(out.Properties))
+	m := make(Schema, len(out.Properties))
 	for k, v := range out.Properties {
 		m[k] = v.Type
 	}
 	return m, nil
 }
 
-type pageRef struct {
+// Page ist eine Seite mit ID und Titel (z. B. ein Projekt).
+type Page struct {
 	ID   string
 	Name string
 }
 
 // ActiveProjects liefert alle Projekte, die nicht erledigt und nicht archiviert sind.
-func (n *Notion) ActiveProjects(ctx context.Context, dsID string, p ProjectsProps, types map[string]string) ([]pageRef, error) {
+func (n *Client) ActiveProjects(ctx context.Context, dsID string, p ProjectsProps, types Schema) ([]Page, error) {
 	var filters []any
-	if t := types[p.Status]; (t == "status" || t == "select") && p.DoneValue != "" {
-		filters = append(filters, map[string]any{"property": p.Status, t: map[string]any{"does_not_equal": p.DoneValue}})
+	if t := types[p.Status]; types.Is(p.Status, KindStatus, KindSelect) && p.DoneValue != "" {
+		filters = append(filters, t.filter(p.Status, map[string]any{"does_not_equal": p.DoneValue}))
 	}
-	if types[p.Archive] == "checkbox" {
-		filters = append(filters, map[string]any{"property": p.Archive, "checkbox": map[string]any{"equals": false}})
+	if types.Is(p.Archive, KindCheckbox) {
+		filters = append(filters, KindCheckbox.filter(p.Archive, map[string]any{"equals": false}))
 	}
 	body := map[string]any{"page_size": 100}
 	switch len(filters) {
@@ -162,7 +175,7 @@ func (n *Notion) ActiveProjects(ctx context.Context, dsID string, p ProjectsProp
 	default:
 		body["filter"] = map[string]any{"and": filters}
 	}
-	var res []pageRef
+	var res []Page
 	for page := 0; page < 20; page++ {
 		var out struct {
 			Results []struct {
@@ -177,7 +190,7 @@ func (n *Notion) ActiveProjects(ctx context.Context, dsID string, p ProjectsProp
 		}
 		for _, r := range out.Results {
 			if name := titleText(r.Properties[p.Title]); name != "" {
-				res = append(res, pageRef{ID: r.ID, Name: name})
+				res = append(res, Page{ID: r.ID, Name: name})
 			}
 		}
 		if !out.HasMore || out.NextCursor == "" {
@@ -204,15 +217,15 @@ func titleText(raw json.RawMessage) string {
 	return strings.TrimSpace(b.String())
 }
 
-// errUnvollstaendig: die Seite existiert, aber nicht alle Blöcke wurden
+// ErrUnvollstaendig heißt: die Seite existiert, aber nicht alle Blöcke wurden
 // angehängt. CreatePage liefert dann ID und URL mit diesem Fehler.
-var errUnvollstaendig = errors.New("Seite angelegt, aber nicht der ganze Inhalt")
+var ErrUnvollstaendig = errors.New("Seite angelegt, aber nicht der ganze Inhalt")
 
 // CreatePage legt eine Seite in einer Data Source an. Notion nimmt höchstens
 // 100 Blöcke pro Request; der Rest wird angehängt. Scheitert das Anhängen,
-// kommen ID und URL zusammen mit einem Fehler zurück, der errUnvollstaendig
+// kommen ID und URL zusammen mit einem Fehler zurück, der ErrUnvollstaendig
 // umhüllt (die Seite existiert, ein neuer Versuch gäbe eine Dublette).
-func (n *Notion) CreatePage(ctx context.Context, dsID string, props map[string]any, children []any) (string, string, error) {
+func (n *Client) CreatePage(ctx context.Context, dsID string, props map[string]any, children []any) (string, string, error) {
 	first, rest := children, []any(nil)
 	if len(children) > 100 {
 		first, rest = children[:100], children[100:]
@@ -232,14 +245,15 @@ func (n *Notion) CreatePage(ctx context.Context, dsID string, props map[string]a
 		return "", "", err
 	}
 	if len(rest) > 0 {
-		if err := n.AppendChildren(ctx, out.ID, rest); err != nil {
-			return out.ID, out.URL, fmt.Errorf("%w: %w", errUnvollstaendig, err)
+		if err := n.appendChildren(ctx, out.ID, rest); err != nil {
+			return out.ID, out.URL, fmt.Errorf("%w: %w", ErrUnvollstaendig, err)
 		}
 	}
 	return out.ID, out.URL, nil
 }
 
-func (n *Notion) AppendChildren(ctx context.Context, blockID string, children []any) error {
+// appendChildren hängt Blöcke an, höchstens 100 pro Request.
+func (n *Client) appendChildren(ctx context.Context, blockID string, children []any) error {
 	for len(children) > 0 {
 		batch := children
 		if len(batch) > 100 {

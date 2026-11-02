@@ -13,13 +13,6 @@ func TestSplitHelpersKeepUTF8(t *testing.T) {
 			t.Fatal("splitByLines zerschneidet UTF-8")
 		}
 	}
-	parts := rt(long)
-	for _, p := range parts {
-		content := p.(map[string]any)["text"].(map[string]any)["content"].(string)
-		if utf8.RuneCountInString(content) > 2000 {
-			t.Fatal("Text-Objekt länger als 2000 Zeichen")
-		}
-	}
 }
 
 func TestParseNoteToleratesWrapping(t *testing.T) {

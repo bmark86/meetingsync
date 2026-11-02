@@ -1,7 +1,8 @@
-package main
+package notion
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -16,8 +17,7 @@ import (
 	"meetingsync/internal/domain"
 )
 
-// Hilfsmittel für die Notion-Client-Tests. Alle Namen tragen das Präfix nc,
-// damit sie nicht mit den Golden-/App-Tests kollidieren.
+// Hilfsmittel für die Notion-Client-Tests (Präfix nc).
 
 // ncSleeps ersetzt sleepFn: nichts wartet wirklich, die gewünschten Dauern
 // werden aufgezeichnet. ok bestimmt, ob "das Warten" gelingt (false = Abbruch).
@@ -66,12 +66,12 @@ func (s *ncServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.WriteString(w, rep.body)
 }
 
-func ncNotion(t *testing.T, replies ...ncReply) (*Notion, *ncServer) {
+func ncNotion(t *testing.T, replies ...ncReply) (*Client, *ncServer) {
 	t.Helper()
 	s := &ncServer{replies: replies}
 	srv := httptest.NewServer(s)
 	t.Cleanup(srv.Close)
-	n := NewNotion(NotionConfig{BaseURL: srv.URL + "/", APIVersion: "2025-09-03"}, "tok")
+	n := NewClient(srv.URL+"/", "2025-09-03", "tok", nil)
 	return n, s
 }
 
@@ -386,5 +386,33 @@ func TestDoUsesRetryAfterHeaderFor5xx(t *testing.T) {
 	}
 	if want := []time.Duration{9 * time.Second}; !ncEqualDurations(*sl, want) {
 		t.Errorf("Wartezeiten = %v, erwartet %v", *sl, want)
+	}
+}
+
+// Fängt (Mutation: CreatePage liefert bei Anhänge-Fehler leere ID/URL oder nil):
+// der Aufrufer kann die angelegte Seite nicht von einem Fehlschlag unterscheiden.
+func TestCreatePageReturnsAppendError(t *testing.T) {
+	var gotPatch int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPatch {
+			gotPatch++
+			http.Error(w, `{"code":"validation_error","message":"x"}`, http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "p1", "url": "https://notion.so/p1"})
+	}))
+	defer srv.Close()
+	n := NewClient(srv.URL, "2025-09-03", "tok", nil)
+	blocks := make([]any, 150)
+	for i := range blocks {
+		blocks[i] = map[string]any{"type": "divider", "divider": map[string]any{}}
+	}
+	id, url, err := n.CreatePage(context.Background(), "ds", map[string]any{}, blocks)
+	if id != "p1" || url != "https://notion.so/p1" || !errors.Is(err, ErrUnvollstaendig) || gotPatch != 1 {
+		t.Fatalf("CreatePage = %q, %q, %v (PATCH %d); want p1, url, ErrUnvollstaendig, 1", id, url, err, gotPatch)
+	}
+	if id, _, err := n.CreatePage(context.Background(), "ds", map[string]any{}, blocks[:100]); id != "p1" || err != nil {
+		t.Fatalf("ohne Rest: %q, %v; want p1, nil", id, err)
 	}
 }
