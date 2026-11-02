@@ -56,20 +56,44 @@ type Summarizer interface {
 
 var _ Summarizer = (*Client)(nil)
 
+// maxAntwortBytes begrenzt, wie viel von einer Antwort gelesen wird. Eine
+// Chat-Antwort ist höchstens einige zehn KiB groß (Notiz-JSON bzw. Teilnotizen);
+// 10 MiB liegt weit darüber und schützt trotzdem vor einem Server, der den
+// Speicher füllt.
+const maxAntwortBytes = 10 << 20
+
+// errAntwortZuGross meldet eine Antwort über dem Limit (ohne Inhalt der Antwort).
+var errAntwortZuGross = errors.New("Antwort von LM Studio ist größer als das Limit")
+
 // Client spricht mit LM Studio.
 type Client struct {
-	opts Options
-	http *http.Client
-	log  *log.Logger
+	opts     Options
+	http     *http.Client
+	log      *log.Logger
+	maxBytes int64 // Lese-Limit je Antwort; Tests setzen es kleiner
+}
+
+// readBody liest den Body höchstens bis zum Limit. Ist er größer, kommt
+// errAntwortZuGross zurück, bei einem Lesefehler dieser (ohne Body-Inhalt).
+func (l *Client) readBody(r io.Reader) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(r, l.maxBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("Antwort von LM Studio nicht vollständig lesbar: %w", err)
+	}
+	if int64(len(data)) > l.maxBytes {
+		return nil, errAntwortZuGross
+	}
+	return data, nil
 }
 
 // NewClient baut den Client. transport ist der HTTP-Transport; nil heißt
 // http.DefaultTransport (Produktion), Tests setzen eigene Hooks.
 func NewClient(opts Options, logger *log.Logger, transport http.RoundTripper) *Client {
 	return &Client{
-		opts: opts,
-		http: &http.Client{Timeout: opts.Timeout, Transport: transport},
-		log:  logger,
+		opts:     opts,
+		http:     &http.Client{Timeout: opts.Timeout, Transport: transport},
+		log:      logger,
+		maxBytes: maxAntwortBytes,
 	}
 }
 
@@ -183,7 +207,7 @@ func (l *Client) chat(ctx context.Context, msgs []chatMsg, schema any) (string, 
 		return "", domain.Transient(fmt.Errorf("LM Studio nicht erreichbar (%s) – läuft der lokale Server? %w", l.opts.BaseURL, err))
 	}
 	defer func() { _ = resp.Body.Close() }() //nolint:errcheck // nur gelesen, Close-Fehler ohne Folgen
-	data, _ := io.ReadAll(resp.Body)         //nolint:errcheck // Lesefehler fuehrt unten ohnehin zu einem JSON-/Statusfehler
+	data, readErr := l.readBody(resp.Body)
 
 	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
 		return "", domain.Transient(&httpError{resp.StatusCode, string(data)})
@@ -195,6 +219,10 @@ func (l *Client) chat(ctx context.Context, msgs []chatMsg, schema any) (string, 
 			return "", domain.Transient(fmt.Errorf("Modell %q ist in LM Studio nicht geladen: %s", l.opts.Model, truncate(string(data), 200)))
 		}
 		return "", &httpError{resp.StatusCode, string(data)}
+	}
+
+	if readErr != nil {
+		return "", readErr
 	}
 
 	var out struct {
@@ -231,12 +259,19 @@ func (l *Client) Models(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }() //nolint:errcheck // nur gelesen, Close-Fehler ohne Folgen
+	if resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("LM Studio /models: HTTP %d", resp.StatusCode)
+	}
+	data, err := l.readBody(resp.Body)
+	if err != nil {
+		return nil, err
+	}
 	var out struct {
 		Data []struct {
 			ID string `json:"id"`
 		} `json:"data"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := json.Unmarshal(data, &out); err != nil {
 		return nil, err
 	}
 	ids := make([]string, 0, len(out.Data))
