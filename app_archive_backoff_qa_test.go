@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"meetingsync/internal/ledger"
 )
 
 // Kopierpfad + Sync-Fehler beim Verschieben nach _fehler: Warnung, Datei liegt
@@ -26,7 +28,7 @@ func TestFailPathDirSyncWarnsAndMoves(t *testing.T) {
 		want string // Ursache im .fehler.txt
 	}{
 		{"Neustart-Regel", func(t *testing.T, e *crashEnv) {
-			if err := e.app.ledger.Add(LedgerEntry{Hash: e.hash(), Status: StatusBegonnen, File: "x", ModTime: flowM}); err != nil {
+			if err := e.app.ledger.Add(ledger.Entry{Hash: e.hash(), Status: ledger.StatusBegonnen, File: "x", ModTime: flowM}); err != nil {
 				t.Fatal(err)
 			}
 		}, errUnterbrochen.Error()},

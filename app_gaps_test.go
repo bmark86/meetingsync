@@ -11,11 +11,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"meetingsync/internal/ledger"
 )
 
 func isTaskPost(r *http.Request) bool {
@@ -29,7 +30,7 @@ func badRequest(r *http.Request) *http.Response {
 // lastLedgerLine liest die letzte Zeile der Ledger-Datei roh.
 func lastLedgerLine(t *testing.T, e *crashEnv) map[string]any {
 	t.Helper()
-	b := mustRead(t, e.app.ledger.path)
+	b := mustRead(t, ledgerPath(e.app.cfg))
 	lines := strings.Split(strings.TrimSpace(b), "\n")
 	var m map[string]any
 	if err := json.Unmarshal([]byte(lines[len(lines)-1]), &m); err != nil {
@@ -71,7 +72,7 @@ func TestCreateTasksCancelStopsRequests(t *testing.T) {
 	if n, k := e.pages(); n != 1 || k != 1 {
 		t.Fatalf("%d Notizen, %d Tasks; want 1, 1", n, k)
 	}
-	if got := e.lastStatus(t, e.hash()); got != StatusFertig {
+	if got := e.lastStatus(t, e.hash()); got != ledger.StatusFertig {
 		t.Fatalf("Status = %q, want fertig (Seite existiert)", got)
 	}
 	ln := lastLedgerLine(t, e)
@@ -188,7 +189,7 @@ func TestAppendBlocksCancelCounted(t *testing.T) {
 	if taskPosts != 0 {
 		t.Fatalf("To-do-Anfragen = %d, want 0 (nach dem Abbruch keine)", taskPosts)
 	}
-	if got := e.lastStatus(t, e.hash()); got != StatusFertig {
+	if got := e.lastStatus(t, e.hash()); got != ledger.StatusFertig {
 		t.Fatalf("Status = %q, want fertig (Seite existiert)\nLog:\n%s", got, e.log.String())
 	}
 	ln := lastLedgerLine(t, e)
@@ -230,41 +231,5 @@ func TestCreatePageReturnsAppendError(t *testing.T) {
 	}
 	if id, _, err := n.CreatePage(context.Background(), "ds", map[string]any{}, blocks[:100]); id != "p1" || err != nil {
 		t.Fatalf("ohne Rest: %q, %v; want p1, nil", id, err)
-	}
-}
-
-// Fängt (Mutation: omitempty an todos_fehlen/bloecke_fehler entfernt): normale
-// fertig-Zeilen weichen von v1.0.0 ab. Und (Mutation: Lücken-Zeilen im
-// sha256-Format): v1.0.0 sieht die Notiz nicht als verarbeitet.
-func TestLedgerGapFieldsAndV100Compat(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "l.jsonl")
-	l, _ := LoadLedger(path, true)
-	at := flowM.Add(time.Minute)
-	for _, e := range []LedgerEntry{
-		{Hash: "ok", File: "a.srt", ModTime: flowM, URL: "u", At: at},
-		{Hash: "luecke", File: "b.srt", ModTime: flowM.Add(time.Hour), URL: "u", At: at, MissingTasks: 2, BlockErrors: 1},
-	} {
-		if err := l.Add(e); err != nil {
-			t.Fatal(err)
-		}
-	}
-	want := `{"hash":"ok","file":"a.srt","mtime":"2026-09-30T12:00:00Z","url":"u","at":"2026-09-30T12:01:00Z"}` + "\n" +
-		`{"hash":"luecke","file":"b.srt","mtime":"2026-09-30T13:00:00Z","url":"u","at":"2026-09-30T12:01:00Z","todos_fehlen":2,"bloecke_fehler":1}` + "\n"
-	if got := mustRead(t, path); got != want {
-		t.Fatalf("Ledger-Datei:\n%s\nwant:\n%s", got, want)
-	}
-	re, err := LoadLedger(path, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !re.Has("ok") || !re.Has("luecke") {
-		t.Fatal("neu geladen: Lücken-Zeile zählt nicht als fertig")
-	}
-	byHash, mtimes, err := v100LoadLedger(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !byHash["ok"] || !byHash["luecke"] || len(mtimes) != 2 {
-		t.Fatalf("v1.0.0 sieht %v / %v, want beide fertig", byHash, mtimes)
 	}
 }

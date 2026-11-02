@@ -388,6 +388,7 @@ Logging stays `*log.Logger` with identical texts. Named constants (A-17) and rea
 - Goal: ledger from `app.go` to `internal/ledger`.
 - Acceptance: API `Load`, `Begin`, `Finish`, `Has`, `HasNear` (final names in the task); tests from R-M0-08/R-M1-01 moved along; golden unchanged.
 - Scope: `app.go` (ledger part), new `internal/ledger/`.
+- Status: done 2026-11-02. API decision (coordinator): no `Begin`/`Finish` redesign; the method set stays `ledger.Load`, `Add`, `Has`, `HasNear`, `Started` (types `ledger.Ledger`, `ledger.Entry`) to avoid API churn with no benefit. Imports stdlib only (arch_test rule); coverage 97.3 %; golden byte-identical. `syncDir` and `absDur` exist twice (`app.go`, `internal/ledger`), accepted. gosec exclusions extended to `internal/ledger/ledger.go`.
 - Depends on: R-M2-01. Findings: A-04.
 - Model: sonnet, a move; the persistence logic comes from R-M1-01.
 - Reviews: CR, QA.
@@ -474,7 +475,7 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 
 #### R-M3-03 Skip symlinks
 - Goal: process only regular files in the watch folder.
-- Acceptance: symlink to a file and to a folder → skipped, one warning (text in the task), no read; test with a symlink to a file outside the watch folder; golden unchanged; gosec G304 exclusion for app.go removed from `.golangci.yml`. OD-09 (decided: proposal): no symlinks are in use, so skip them.
+- Acceptance: symlink to a file and to a folder → skipped, one warning (text in the task), no read; test with a symlink to a file outside the watch folder; golden unchanged; gosec G304 exclusion for app.go and `internal/ledger/ledger.go` removed from `.golangci.yml`. OD-09 (decided: proposal): no symlinks are in use, so skip them.
 - Scope: `internal/watch`, tests.
 - Depends on: M2. Findings: S-04.
 - Model: opus, file security.
@@ -482,7 +483,7 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 
 #### R-M3-04 File permissions
 - Goal: new ledger and `.fehler.txt` files 0600; newly created archive, error and month folders 0700; the copy path creates 0600.
-- Acceptance: tests check the mode (independent of umask, by `Chmod` after creation); existing files/folders are left as they are (OD-10, decided: proposal: new ones only); golden unchanged (permissions are not part of `tree.txt`); gosec G301/G302/G306 exclusions removed (prod files).
+- Acceptance: tests check the mode (independent of umask, by `Chmod` after creation); existing files/folders are left as they are (OD-10, decided: proposal: new ones only); golden unchanged (permissions are not part of `tree.txt`); gosec G301/G302/G306 exclusions removed (prod files, including `internal/ledger/ledger.go`).
 - Scope: `internal/ledger`, `internal/watch`, `internal/pipeline`, tests.
 - Depends on: R-M3-03. Findings: S-12.
 - Model: opus, permissions.

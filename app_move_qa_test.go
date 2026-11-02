@@ -11,6 +11,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"meetingsync/internal/ledger"
 )
 
 // QA R-M1-04: Integrationstests über Pass und Parallelität (A1, A4, A5).
@@ -35,7 +37,7 @@ func qaWalkCount(t *testing.T, root, prefix string) int {
 func TestQAPassRestartRuleFallbackRemoveFails(t *testing.T) {
 	setRename(t, noRename)
 	e := newCrashEnv(t)
-	if err := e.app.ledger.Add(LedgerEntry{Hash: e.hash(), Status: StatusBegonnen, File: "x", ModTime: flowM}); err != nil {
+	if err := e.app.ledger.Add(ledger.Entry{Hash: e.hash(), Status: ledger.StatusBegonnen, File: "x", ModTime: flowM}); err != nil {
 		t.Fatal(err)
 	}
 	lockFile(t, e.tr)
@@ -76,7 +78,7 @@ func TestQAPassRestartRuleFallbackRemoveFails(t *testing.T) {
 func TestQAPassArchiveFallbackRemoveFailsNoCopies(t *testing.T) {
 	setRename(t, noRename)
 	e := newCrashEnv(t)
-	if err := e.app.ledger.Add(LedgerEntry{Hash: e.hash(), Status: StatusFertig, File: "x", ModTime: flowM}); err != nil {
+	if err := e.app.ledger.Add(ledger.Entry{Hash: e.hash(), Status: ledger.StatusFertig, File: "x", ModTime: flowM}); err != nil {
 		t.Fatal(err)
 	}
 	lockFile(t, e.tr)
