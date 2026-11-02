@@ -50,9 +50,9 @@ func TestFailPathDirSyncWarnsAndMoves(t *testing.T) {
 				t.Fatal(err)
 			}
 			tc.arm(t, e)
-			setRename(t, noRename)
+			e.app.mover.Rename = noRename
 			calls := 0
-			setSyncDir(t, func(string) error { calls++; return errors.New("EIO") })
+			e.app.mover.SyncDir = func(string) error { calls++; return errors.New("EIO") }
 
 			e.threePasses(time.Now())
 
@@ -67,7 +67,7 @@ func TestFailPathDirSyncWarnsAndMoves(t *testing.T) {
 				t.Fatalf("Archiv %d, Export %d; want 0, 0", a, x)
 			}
 			if calls != 1 {
-				t.Fatalf("syncDirFn %d-mal, want 1", calls)
+				t.Fatalf("SyncDir %d-mal, want 1", calls)
 			}
 			if n := strings.Count(e.log.String(), syncWarn); n != 1 {
 				t.Fatalf("Sync-Warnung %d-mal, want 1\nLog:\n%s", n, e.log.String())

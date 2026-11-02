@@ -3,7 +3,7 @@
 Status: accepted (Mark, 2026-11-02), R-M1-04
 
 ## Context
-- `moveFile` checked whether the target exists and then renamed. Between check and rename another process could create the target, and `os.Rename` would overwrite it (S-14, A-11).
+- `moveFile` (now `watch.Mover.Move` in `internal/watch/move.go`) checked whether the target exists and then renamed. Between check and rename another process could create the target, and `os.Rename` would overwrite it (S-14, A-11).
 - CLAUDE.md allows no dependency except `go.yaml.in/yaml/v3` without asking first (ADR 0001).
 - The stdlib has no rename that fails when the target exists.
 - Mark approved the new dependency on 2026-11-02, only for this rename.

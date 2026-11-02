@@ -32,6 +32,7 @@
 | R-M2-05 | `internal/llm` (`client.go`: `Options`, `Summarizer`, `Client`, `NewClient`, `NoteInput`, `Normalize`, `Models`); pure move, prompts/schema/splitter/parse retry/schema fallback byte-identical; `httpError` unexported, classification via `domain.Transient`; 18 tests moved; arch_test rule (stdlib + domain only), added in fix round 1 after the first report claimed it without it; golden unchanged. `App` still holds `*llm.Client`; `mustJSON` duplicated in `app.go` and `internal/llm` (merge in R-M2-09) | done | 2026-11-02 |
 | R-M2-06 | `internal/notify` (`Notifier`, `New()` osascript notifier, unexported runner seam); command/escaping byte-identical; `App.notifier`; arch_test rule (stdlib only); gosec G204 exclusion extended to `internal/notify/notify.go` (removal in R-M3-07); golden byte-identical; CR and SR approved. QA: fake notifier injected in golden/flow tests (pre-existing gap: scenarios ran with `Notify=true`). Next: R-M2-07 config and TokenSource (opus, security-relevant: secrets; Mark approved M2 incl. R-M2-07 at the gate) | done | 2026-11-02 |
 | R-M2-07 | `internal/config` (`Load` returns warnings; `Default`, `DefaultPath`, `Finalize`, `ExpandHome` exported; no `os/exec`, no `loc`) and `internal/secret` (`TokenSource`, Keychain lookup, unexported runner seam); time zone resolved in `main`, `NewApp(cfg, loc, tokens, logger, dry)`; arch rules; gosec G204 path `internal/secret/secret.go`. Coverage config 92.1 %, secret 100 %. Golden byte-identical; CR and SR approved. Next: R-M2-08 | done | 2026-11-02 |
+| R-M2-08 | `internal/watch` (`Lister`, `PairSummary`, `Near`, `FS`/`OS` read side, `Mover{Rename, Copy, SyncDir}` atomic move unchanged; nil fields = real functions). Decision: coordinator: FS covers ReadDir/ReadFile/Lstat only, the move is not rebuilt on an FS abstraction (`os.SameFile`/`RENAME_EXCL` risk, ADR 0015); arch rule; gosec G30[126]/G304 paths moved to `internal/watch`. Coverage 96.2 %, tests 216 → 231, golden byte-identical, CR and SR approved. Next: R-M2-09 pipeline (opus) | done | 2026-11-02 |
 
 ## M1 summary (complete 2026-11-02: R-M1-01 to R-M1-07 + R-M1-EXIT)
 
@@ -65,7 +66,7 @@ Decisions taken in M1:
 | Coordinator | `go 1.26.0` accepted | R-M1-04 |
 | Coordinator | No deletion after an identity mismatch (and after a syncDir error, see above) | R-M1-04 |
 
-Next: M2 package split, R-M2-08 watch with FS interface (opus).
+Next: M2 package split, R-M2-09 pipeline (opus).
 
 ## Open follow-ups
 

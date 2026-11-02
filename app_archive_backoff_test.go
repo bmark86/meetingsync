@@ -26,14 +26,6 @@ func unlockFile(t *testing.T, path string) {
 	}
 }
 
-// setSyncDir ersetzt syncDirFn für einen Test.
-func setSyncDir(t *testing.T, fn func(string) error) {
-	t.Helper()
-	old := syncDirFn
-	syncDirFn = fn
-	t.Cleanup(func() { syncDirFn = old })
-}
-
 // counts: Dateien in Archivmonat, _fehler und Exportordner.
 func (e *crashEnv) counts(t *testing.T) (archived, failed, export int) {
 	t.Helper()
@@ -68,7 +60,7 @@ func TestArchiveRemoveFailsBackoff(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			e := newCrashEnv(t)
 			e.app.cfg.MaxAttempts = 1
-			setRename(t, noRename)
+			e.app.mover.Rename = noRename
 			locked := tc.lock(e)
 			lockFile(t, locked)
 			now := time.Now()
@@ -120,7 +112,7 @@ func TestArchiveRemoveFailsBackoff(t *testing.T) {
 // Fängt: kein Backoff im Waisen-Archivzweig (📎 und Warnung je Durchlauf).
 func TestArchiveOrphanRemoveFailsBackoff(t *testing.T) {
 	env, p := orphanEnv(t, "archive")
-	setRename(t, noRename)
+	env.app.mover.Rename = noRename
 	lockFile(t, p)
 	now := flowM.Add(time.Hour)
 	for i := range 3 {
@@ -151,16 +143,16 @@ func TestArchiveDirSyncFailsWarnsAndMoves(t *testing.T) {
 	if err := os.Remove(e.sum); err != nil {
 		t.Fatal(err)
 	}
-	setRename(t, noRename)
+	e.app.mover.Rename = noRename
 	calls := 0
-	setSyncDir(t, func(string) error { calls++; return errors.New("EIO") })
+	e.app.mover.SyncDir = func(string) error { calls++; return errors.New("EIO") }
 	e.threePasses(time.Now())
 
 	if a, f, x := e.counts(t); a != 1 || f != 0 || x != 0 {
 		t.Fatalf("Archiv %d, _fehler %d, Export %d; want 1, 0, 0", a, f, x)
 	}
 	if calls != 1 {
-		t.Fatalf("syncDirFn %d-mal, want 1", calls)
+		t.Fatalf("SyncDir %d-mal, want 1", calls)
 	}
 	if got := mustRead(t, filepath.Join(e.app.cfg.ArchiveDir, e.month, filepath.Base(e.tr))); got != srtLikeText() {
 		t.Fatal("Kopie im Archiv hat nicht den Inhalt des Originals")

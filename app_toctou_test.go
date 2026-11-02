@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"meetingsync/internal/ledger"
+	"meetingsync/internal/watch"
 )
 
 const toctouWarn = "seit dem Einlesen geändert → nicht archiviert"
@@ -253,9 +254,9 @@ func TestTOCTOUPairSummaryChangedArchived(t *testing.T) {
 }
 
 // Primäre Datei vor dem Recheck entfernt (Lstat schlägt fehl): kein Panic,
-// gilt als unverändert, keine TOCTOU-Warnung; moveFile meldet wie bisher
+// gilt als unverändert, keine TOCTOU-Warnung; Mover.Move meldet wie bisher
 // "konnte nicht archiviert werden", der Partner geht ins Archiv, fertig steht.
-// Fängt: Lstat-Fehler als "geändert" werten (Warnung statt moveFile-Fehler).
+// Fängt: Lstat-Fehler als "geändert" werten (Warnung statt Mover.Move-Fehler).
 func TestTOCTOUPrimaryRemoved(t *testing.T) {
 	e := newTOCTOUEnv(t)
 	tr, sum := e.writePair(t)
@@ -272,7 +273,7 @@ func TestTOCTOUPrimaryRemoved(t *testing.T) {
 		t.Fatalf("TOCTOU-Warnung bei fehlender Datei:\n%s", logs)
 	}
 	if !strings.Contains(logs, filepath.Base(tr)+" konnte nicht archiviert werden") {
-		t.Fatalf("moveFile-Fehler fehlt:\n%s", logs)
+		t.Fatalf("Mover.Move-Fehler fehlt:\n%s", logs)
 	}
 	if a := e.archived(t); len(a) != 1 || a[0] != filepath.Base(sum) {
 		t.Fatalf("Archiv = %v, will nur %s", a, filepath.Base(sum))
@@ -292,7 +293,7 @@ func TestTOCTOUAlreadyProcessedChanged(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	stale := &entry{Path: p, Name: "a.txt", ModTime: st.ModTime(), Size: st.Size(), Content: []byte("alt\n")}
+	stale := &watch.Entry{Path: p, Name: "a.txt", ModTime: st.ModTime(), Size: st.Size(), Content: []byte("alt\n")}
 	hash := sha256Hex(stale.Content)
 	if err := e.app.ledger.Add(ledger.Entry{Hash: hash, File: "a.txt", ModTime: st.ModTime(), At: time.Now()}); err != nil {
 		t.Fatal(err)
@@ -319,7 +320,7 @@ func TestTOCTOUArchiveNoRecheck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	stale := &entry{Path: p, Name: "a.txt", ModTime: st.ModTime(), Size: st.Size()}
+	stale := &watch.Entry{Path: p, Name: "a.txt", ModTime: st.ModTime(), Size: st.Size()}
 	e.month = st.ModTime().In(e.app.loc).Format("2006-01")
 	rewrite(t, p, "neu, länger\n", st.ModTime().Add(time.Second))
 
