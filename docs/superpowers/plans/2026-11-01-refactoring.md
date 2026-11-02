@@ -14,19 +14,19 @@ Finding IDs (A-xx, S-xx) and decisions (D1-D13): [review report](../../reviews/2
 | M0 Safety net and tooling | R-M0-01 to R-M0-11 | 11 |
 | M1 Correct error paths | R-M1-01 to R-M1-06 | 6 |
 | M2 Package split | R-M2-01 to R-M2-10 | 10 |
-| M3 Security hardening | R-M3-01 to R-M3-16 | 16 |
+| M3 Security hardening | R-M3-01 to R-M3-17 | 17 |
 | M4 Repo hygiene | R-M4-01 to R-M4-03 | 3 |
 | M5 Performance and robustness | R-M5-01 to R-M5-03 | 3 |
 | M6 Documentation | R-M6-01 to R-M6-03 | 3 |
-| **Total** | | **52** |
+| **Total** | | **53** |
 
 | Model | Tasks |
 | --- | --- |
-| opus | 23 |
+| opus | 24 |
 | sonnet | 22 |
 | haiku | 7 |
 
-New in this version: R-M0-11 (raise the `go` directive, see ADR 0002), R-M3-13, R-M3-14, R-M3-15 (formerly optional R-OPT-02, R-OPT-03, R-OPT-04, now mandatory), R-M3-16 (to-do count, decided 2026-11-02). R-OPT-01 and R-OPT-05 are rejected, no task.
+New in this version: R-M0-11 (raise the `go` directive, see ADR 0002), R-M3-13, R-M3-14, R-M3-15 (formerly optional R-OPT-02, R-OPT-03, R-OPT-04, now mandatory), R-M3-16 (to-do count, decided 2026-11-02), R-M3-17 (no duplicate page after an ambiguous `CreatePage` failure, decided 2026-11-02). R-OPT-01 and R-OPT-05 are rejected, no task.
 
 ### Top guardrail: same output and outcome on the normal path
 
@@ -51,6 +51,7 @@ Exceptions only with Mark's decision. They are marked in the task as **⚠ behav
 | R-M3-14 | `-file` without `-dry-run` writes a ledger entry | D8 (OD-18) | 0013 |
 | R-M3-15 | `llm.api_key` can come from the Keychain | D9 (OD-20) | 0014 |
 | R-M3-16 | To-do count in log and notification only for `fuer_mich` (G16b) | Mark, 2026-11-02 (OD-23) | open: no ADR assigned yet |
+| R-M3-17 | Look up an existing page before retrying after an ambiguous `CreatePage` failure | Mark, 2026-11-02 (OD-05 residual risk) | 0004 (update) |
 | R-M4-02 | Git history rewritten, tag `v1.0.0` recreated | D2 | 0011 |
 
 Error paths (M1, M3) may get new log lines and error messages. This goes into the changelog. Golden tests for the normal path stay unchanged.
@@ -321,6 +322,8 @@ Exit: A-01, A-02, A-11, A-12, S-13, S-14, S-15 closed; golden unchanged except `
 #### R-M1-04 moveFile without overwriting
 - Goal: exclusive target, sync in the copy path, errors from `.fehler.txt` logged.
 - Acceptance: the target is never overwritten (same volume: `os.Link` + `os.Remove`; otherwise copy with `O_CREATE|O_EXCL`, `Sync`, then `Remove`); on `EEXIST` the next name `stem (n).ext` as today; test with a target created beforehand and a target created in parallel; test for the fallback without hardlink support (seam); normal-path golden (`tree.txt`) unchanged.
+  - No accumulating copies (deferred from R-M1-02 review): if the copy fallback copies successfully but `Remove(src)` fails, the restart rule (ADR 0004, no backoff) must not leave one more copy in `_fehler` on every pass, and the log line `letzter Lauf wurde beim Anlegen in Notion unterbrochen …` must not repeat every poll. Either backoff for the restart rule or no copy fallback when the source cannot be removed; test with a failing `Remove`.
+  - OPEN for the gate: deleting meetingsync's own fresh copy in `_fehler` would be a deletion and needs Mark's approval (Global Constraint). Ask before choosing an option that deletes it.
 - Scope: `moveFile`, `fail` in `app.go`, tests.
 - Depends on: M0. Findings: S-14, A-11.
 - Model: opus, file atomicity.
@@ -433,7 +436,7 @@ Logging stays `*log.Logger` with identical texts. Named constants (A-17) and rea
 ### M3 Security hardening
 
 Goal: enforce trust boundaries; close the decided CLI and secrets changes.
-Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, S-18, S-20, S-21, A-14 closed; golden unchanged except R-M3-12 (scenarios with `fuer_mich`), R-M3-13 (`exit.txt` of G10 with ✗), R-M3-14 (new scenario) and R-M3-16 (count line of G16b).
+Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, S-18, S-20, S-21, A-14 closed; golden unchanged except R-M3-12 (scenarios with `fuer_mich`), R-M3-13 (`exit.txt` of G10 with ✗), R-M3-14 (new scenario) and R-M3-16 (count line of G16b); R-M3-17 leaves the golden outputs unchanged.
 
 #### R-M3-01 llm.base_url loopback only ⚠
 ⚠ Behavior change, decided by Mark on 2026-11-01 (D3).
@@ -576,6 +579,21 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 - Model: sonnet, small counting change; the golden diff is the proof.
 - Reviews: CR, QA. ADR: none assigned yet (open, see section 9).
 
+#### R-M3-17 No duplicate page after an ambiguous CreatePage failure ⚠
+⚠ Behavior change, decided by Mark on 2026-11-02 (OD-05 residual risk, ADR 0004).
+- Goal: after a `CreatePage` failure where the page may exist, do not create a second page.
+- Ambiguous failures: Notion 5xx, network error, 60 s client timeout, 2xx with an unreadable or unparsable body. Today the ledger gets `verworfen` and the retry can create up to `max_attempts` pages (2xx with unreadable body: a certain second page).
+- Acceptance:
+  - Before retrying after an ambiguous failure, look up whether the page already exists (for example query the Notes data source by a unique marker such as the file hash, or title + date) and reuse it instead of creating a new one. The marker and lookup are set in the task.
+  - Tests: each ambiguous failure (5xx, network error, timeout, unreadable 2xx body) produces exactly one page.
+  - Golden outputs unchanged for the non-failure scenarios.
+  - ADR 0004 updated (residual risk OD-05 removed or narrowed).
+- Scope: `app.go` (`handle`, `process`) or the pipeline package after M2, `notion.go` (lookup), tests.
+- Out of scope: Notion database changes unless the task shows the marker needs one (then ask Mark first, see ADR 0004 alternatives).
+- Depends on: R-M1-02; M2 pipeline split preferred.
+- Model: opus, crash and retry semantics.
+- Reviews: CR, SR, QA. Update ADR 0004.
+
 ### M4 Repo hygiene
 
 Goal: no real IDs or personal data in the public repo.
@@ -700,7 +718,7 @@ Style like `docs/adr/0001-yaml-dependency.md` (Context, Decision, Alternatives c
 | --- | --- | --- | --- |
 | 0002 | Toolchain pin, CI and supply chain | R-M0-01, extended by R-M0-04 | only install a newer Go locally |
 | 0003 | Golden test strategy | R-M0-05 | unit tests only / snapshots without normalization |
-| 0004 | Ledger states and crash behavior | R-M1-01, extended by R-M1-02 | idempotency marker in Notion (rejected by Mark: no DB change) |
+| 0004 | Ledger states and crash behavior | R-M1-01, extended by R-M1-02 and R-M3-17 | idempotency marker in Notion (rejected by Mark: no DB change) |
 | 0005 | Package split and dependency direction | R-M2-01 | flat `package main` with one file per topic |
 | 0006 | Interfaces and dependency injection | R-M2-09 | package variables/monkeypatching for tests |
 | 0007 | LLM over loopback only | R-M3-01 | warning instead of abort |

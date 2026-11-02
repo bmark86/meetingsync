@@ -34,6 +34,11 @@ type App struct {
 	warned map[string]bool
 	cache  map[string]cachedKind
 
+	// interruptedNow: Hashes, die in diesem Durchlauf per Neustart-Regel nach
+	// _fehler gingen. Nur je Durchlauf, damit eine von Mark zurückgelegte
+	// Datei auch ohne Neustart des Prozesses wieder normal läuft (ADR 0004).
+	interruptedNow map[string]bool
+
 	projects   []pageRef
 	projectsAt time.Time
 }
@@ -197,6 +202,7 @@ func (a *App) Pass(ctx context.Context, now time.Time) {
 		a.log.Printf("Ordner nicht lesbar: %v", err)
 		return
 	}
+	a.interruptedNow = map[string]bool{}
 	var transcripts, summaries, unstable []*entry
 	for _, e := range entries {
 		switch {
@@ -274,16 +280,57 @@ func (a *App) handle(ctx context.Context, j job, now time.Time) {
 		a.archive(j.files()...)
 		return
 	}
+	if a.ledger.Started(hash) || a.interruptedNow[hash] {
+		a.interrupted(j, hash)
+		return
+	}
 	a.log.Printf("→ %s (%s, %d KB)", p.Name, map[bool]string{true: "nur Zusammenfassung", false: "Transkript"}[j.summaryOnly], p.Size/1024)
-	url, err := a.process(ctx, j)
+	url, err := a.process(ctx, j, hash)
 	if err == nil {
-		_ = a.ledger.Add(LedgerEntry{Hash: hash, File: p.Name, ModTime: p.ModTime, URL: url, At: time.Now()})
+		if err := a.ledger.Add(LedgerEntry{Hash: hash, File: p.Name, ModTime: p.ModTime, URL: url, At: time.Now()}); err != nil {
+			// Die Notiz existiert. Im Speicher gilt der Hash als fertig (keine
+			// zweite Seite in diesem Prozess), die Dateien gehen ins Archiv.
+			a.log.Printf("   ⚠️  Protokoll nicht geschrieben (Notiz existiert: %s): %v", url, err)
+		}
 		a.archive(j.files()...)
 		delete(a.state, p.Path)
 		return
 	}
 
 	a.handleError(ctx, j, err, now)
+}
+
+// errUnterbrochen steht in .fehler.txt, wenn ein früherer Lauf nach
+// "begonnen" abgebrochen ist (ADR 0004).
+var errUnterbrochen = errors.New("Notion-Seite existiert evtl. schon – bitte in Notion prüfen. " +
+	"Die Verarbeitung wurde beim Anlegen der Seite unterbrochen (Absturz oder Abbruch). " +
+	"Fehlt die Seite in Notion, die Datei(en) zurück in den Exportordner legen; sie werden dann neu verarbeitet.")
+
+// interrupted: Der letzte Eintrag zu hash ist "begonnen", der Lauf davor
+// endete also zwischen "begonnen" und "fertig". Die Seite kann existieren:
+// nicht neu anlegen, sondern nach _fehler zur Prüfung durch Mark.
+func (a *App) interrupted(j job, hash string) {
+	p := j.primary
+	a.log.Printf("✗ %s: letzter Lauf wurde beim Anlegen in Notion unterbrochen → %s (bitte in Notion prüfen)", p.Name, a.cfg.FailedDir)
+	// Partner zuerst, das Transkript zuletzt, Stopp beim ersten Fehler: bleibt
+	// etwas liegen, dann immer das Transkript mit "begonnen". So legt nie eine
+	// allein liegende Zusammenfassung eine zweite Seite an.
+	files := j.files()
+	for i := len(files) - 1; i >= 0; i-- {
+		if !a.fail(errUnterbrochen, files[i]) {
+			return // bleibt "begonnen": der nächste Durchlauf versucht es erneut
+		}
+	}
+	delete(a.state, p.Path)
+	// Kopien mit demselben Hash in diesem Durchlauf gehen ebenfalls nach _fehler.
+	a.interruptedNow[hash] = true
+	if !a.ledger.Started(hash) {
+		return // Kopie: verworfen steht schon im Protokoll
+	}
+	// verworfen: legt Mark die Datei zurück, läuft sie normal.
+	if err := a.ledger.Add(LedgerEntry{Hash: hash, Status: StatusVerworfen, File: p.Name, ModTime: p.ModTime, At: time.Now()}); err != nil {
+		a.log.Printf("   ⚠️  Protokoll nicht geschrieben: %v", err)
+	}
 }
 
 // handleError zählt vorübergehende und andere Fehler gemeinsam gegen max_attempts.
@@ -318,7 +365,8 @@ func (a *App) handleError(ctx context.Context, j job, err error, now time.Time) 
 }
 
 // process: Text aufbereiten → lokales LLM → Notion-Seite + Tasks.
-func (a *App) process(ctx context.Context, j job) (string, error) {
+// hash != "": vor CreatePage "begonnen" ins Protokoll (ADR 0004); leer bei -file.
+func (a *App) process(ctx context.Context, j job, hash string) (string, error) {
 	p := j.primary
 	var text string
 	var dur time.Duration
@@ -382,8 +430,27 @@ func (a *App) process(ctx context.Context, j job) (string, error) {
 		return "dry-run", nil
 	}
 
+	le := LedgerEntry{Hash: hash, Status: StatusBegonnen, File: p.Name, ModTime: p.ModTime, At: time.Now()}
+	if hash != "" {
+		if err := a.ledger.Add(le); err != nil {
+			// Ohne "begonnen" keine Notion-Anfrage. verworfen setzt den Speicher
+			// zurück, damit der nächste Versuch normal läuft.
+			le.Status = StatusVerworfen
+			_ = a.ledger.Add(le) // gemeldet wird der erste Fehler; bleibt auf Platte "begonnen", greift beim Neustart die Prüfregel (sicher)
+			return "", fmt.Errorf("Protokoll nicht schreibbar, Notion-Seite nicht angelegt: %w", err)
+		}
+	}
 	pageID, url, err := a.notion.CreatePage(ctx, a.notesDS, a.noteProps(title, project, len(reasons) > 0), blocks)
 	if err != nil {
+		// Antwort mit Fehler: neuer Versuch wie bisher (OD-05), also verworfen.
+		// Bei Abbruch per Kontext bleibt "begonnen": die Anfrage kann Notion
+		// erreicht haben, der Neustart schickt die Datei zur Prüfung.
+		if hash != "" && ctx.Err() == nil {
+			le.Status, le.At = StatusVerworfen, time.Now()
+			if lerr := a.ledger.Add(le); lerr != nil {
+				a.log.Printf("   ⚠️  Protokoll nicht geschrieben: %v", lerr)
+			}
+		}
 		return "", err
 	}
 	mine := a.createTasks(ctx, note, pageID, project, title)
@@ -495,7 +562,7 @@ func (a *App) ProcessSingleFile(ctx context.Context, path string) error {
 	if e.Kind == KindUnsupported {
 		return fmt.Errorf("Dateityp %s wird nicht unterstützt", filepath.Ext(path))
 	}
-	url, err := a.process(ctx, job{primary: e, summaryOnly: e.Kind == KindSummary})
+	url, err := a.process(ctx, job{primary: e, summaryOnly: e.Kind == KindSummary}, "")
 	if err != nil {
 		return err
 	}
@@ -621,19 +688,23 @@ func (a *App) archive(files ...*entry) {
 	}
 }
 
-func (a *App) fail(cause error, files ...*entry) {
+// fail verschiebt die Dateien nach _fehler; ok=false, wenn eine liegen blieb.
+func (a *App) fail(cause error, files ...*entry) (ok bool) {
+	ok = true
 	if a.dry {
-		return
+		return ok
 	}
 	for _, f := range files {
 		dst, err := moveFile(f.Path, a.cfg.FailedDir)
 		if err != nil {
 			a.log.Printf("   ⚠️  %s konnte nicht verschoben werden: %v", f.Name, err)
+			ok = false
 			continue
 		}
 		delete(a.cache, f.Path)
 		_ = os.WriteFile(dst+".fehler.txt", []byte(fmt.Sprintf("%s\n%v\n", time.Now().Format(time.RFC3339), cause)), 0o644)
 	}
+	return ok
 }
 
 func (a *App) warnOnce(key, format string, args ...any) {
@@ -762,6 +833,9 @@ func LoadLedger(path string, persist bool) (*Ledger, error) {
 // Has meldet, ob der letzte Eintrag zu hash fertig ist.
 func (l *Ledger) Has(hash string) bool { return l.byHash[hash].Status == StatusFertig }
 
+// Started meldet, ob der letzte Eintrag zu hash "begonnen" ist.
+func (l *Ledger) Started(hash string) bool { return l.byHash[hash].Status == StatusBegonnen }
+
 // HasNear meldet, ob ein fertiger Eintrag eine mtime im Fenster um t hat.
 func (l *Ledger) HasNear(t time.Time, window time.Duration) bool {
 	for _, e := range l.byHash {
@@ -773,8 +847,9 @@ func (l *Ledger) HasNear(t time.Time, window time.Duration) bool {
 }
 
 // Add übernimmt e sofort in den Speicher und hängt danach eine Zeile an die
-// Datei an (mit fsync). Fehler von Write, Sync und Close kommen zurück; der
-// Eintrag im Speicher bleibt dann trotzdem stehen.
+// Datei an (mit fsync, beim ersten Anlegen auch des Ordners). Fehler von
+// Write, Sync und Close kommen zurück; der Eintrag im Speicher bleibt dann
+// trotzdem stehen.
 func (l *Ledger) Add(e LedgerEntry) error {
 	e = l.put(e)
 	if !l.persist {
@@ -793,15 +868,44 @@ func (l *Ledger) Add(e LedgerEntry) error {
 	if err := os.MkdirAll(filepath.Dir(l.path), 0o755); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(l.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	_, statErr := os.Lstat(l.path)
+	created := errors.Is(statErr, os.ErrNotExist)
+	f, err := os.OpenFile(l.path, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0o644)
 	if err != nil {
 		return err
 	}
-	_, err = f.Write(append(b, '\n'))
+	line := append(b, '\n')
+	// Abgerissene letzte Zeile (Absturz beim Schreiben): erst '\n', sonst
+	// verschmilzt die neue Zeile mit dem Rest und geht beim Laden verloren.
+	info, err := f.Stat()
+	if err == nil && info.Size() > 0 {
+		last := []byte{0}
+		if _, err = f.ReadAt(last, info.Size()-1); err == nil && last[0] != '\n' {
+			line = append([]byte{'\n'}, line...)
+		}
+	}
+	if err == nil {
+		_, err = f.Write(line)
+	}
 	if err == nil {
 		err = f.Sync()
 	}
 	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil && created {
+		err = syncDir(filepath.Dir(l.path)) // neuer Ordnereintrag soll den Absturz überstehen
+	}
+	return err
+}
+
+func syncDir(dir string) error {
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	err = d.Sync()
+	if cerr := d.Close(); err == nil {
 		err = cerr
 	}
 	return err

@@ -1,4 +1,4 @@
 _archiv/
-def693a4c25025694b581043450b209ac4e9c66221ed29a2f14134adc08319fd  _archiv/.meetingsync-ledger.jsonl (normalized)
+1131877d1efb868b1313bb635ccbd42d4ec562bb45cce4b2fbf6f40603de76b7  _archiv/.meetingsync-ledger.jsonl (normalized)
 _archiv/2026-10/
 98c1f6567d08beb434e31ef587eb723b828e2dd3fb0985051fd20d409b036355  2026-09-30T22:47:00Z  _archiv/2026-10/Lang.txt
