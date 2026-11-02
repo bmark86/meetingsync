@@ -14,19 +14,19 @@ Finding IDs (A-xx, S-xx) and decisions (D1-D13): [review report](../../reviews/2
 | M0 Safety net and tooling | R-M0-01 to R-M0-11 | 11 |
 | M1 Correct error paths | R-M1-01 to R-M1-07 | 7 |
 | M2 Package split | R-M2-01 to R-M2-10 | 10 |
-| M3 Security hardening | R-M3-01 to R-M3-17 | 17 |
+| M3 Security hardening | R-M3-01 to R-M3-19 | 19 |
 | M4 Repo hygiene | R-M4-01 to R-M4-03 | 3 |
 | M5 Performance and robustness | R-M5-01 to R-M5-03 | 3 |
 | M6 Documentation | R-M6-01 to R-M6-03 | 3 |
-| **Total** | | **54** |
+| **Total** | | **56** |
 
 | Model | Tasks |
 | --- | --- |
-| opus | 25 |
+| opus | 27 |
 | sonnet | 22 |
 | haiku | 7 |
 
-New in this version: R-M0-11 (raise the `go` directive, see ADR 0002), R-M3-13, R-M3-14, R-M3-15 (formerly optional R-OPT-02, R-OPT-03, R-OPT-04, now mandatory), R-M3-16 (to-do count, decided 2026-11-02), R-M3-17 (no duplicate page after an ambiguous `CreatePage` failure, decided 2026-11-02). R-M1-07 (follow-up of R-M1-04: archive backoff, regular files only). R-OPT-01 and R-OPT-05 are rejected, no task.
+New in this version: R-M0-11 (raise the `go` directive, see ADR 0002), R-M3-13, R-M3-14, R-M3-15 (formerly optional R-OPT-02, R-OPT-03, R-OPT-04, now mandatory), R-M3-16 (to-do count, decided 2026-11-02), R-M3-17 (no duplicate page after an ambiguous `CreatePage` failure, decided 2026-11-02). R-M1-07 (follow-up of R-M1-04: archive backoff, regular files only), R-M3-18 and R-M3-19 (follow-ups of R-M1-07, 2026-11-02). R-OPT-01 and R-OPT-05 are rejected, no task.
 
 ### Top guardrail: same output and outcome on the normal path
 
@@ -342,12 +342,13 @@ Exit: A-01, A-02, A-11, A-12, S-13, S-14, S-15 closed; golden unchanged except `
 #### R-M1-07 Archive backoff and regular files only
 - Goal: failures in `archive()` do not repeat every poll; only regular files are picked up.
 - Acceptance:
-  - (a) `archive()` failures (`Remove(src)` fails, folder fsync fails on the target volume) set a `nextTry` backoff like the restart rule, so neither log lines nor copies repeat every poll.
-  - (b) `listEntries` skips anything that is not a regular file (symlinks etc.).
-  - (c) OPEN, decide with Mark: should a failed folder fsync on the target volume warn and continue?
+  - (a) `archive()` failures (`Remove(src)` fails, any `moveFile` error) set a 2-min `nextTry` backoff like the restart rule on all archive paths (`Has`, processed, `HasNear`, orphan `archive`); not counted against `max_attempts`; state cleared on success. In `Pass` the retry gate for summaries now runs before `HasNear`.
+  - (b) `listEntries` skips anything that is not a regular file (symlinks, FIFOs, devices) before reading, logged once per path: `<name>: keine reguläre Datei (z. B. Symlink) → übersprungen`. Also fixes a hang: a FIFO with a supported extension blocked `ReadFile`.
+  - (c) decided by Mark, 2026-11-02: a failed folder fsync on the target volume after a synced copy warns and the move continues; `fail()` uses the same path (`.fehler.txt` still written).
   - Pass-level tests over 3 passes count files and log lines; golden unchanged.
 - Scope: `app.go` (`archive`, `listEntries`), tests.
 - Depends on: R-M1-05 (both change `app.go`, sequential). Findings: follow-up of R-M1-04.
+- Status: done 2026-11-02. ADR 0004, ADR 0005. Follow-ups: R-M3-18, R-M3-19, and the shared retry-state helper in R-M2-09.
 - Model: opus, file atomicity and retry state.
 - Reviews: CR, SR, QA.
 
@@ -431,7 +432,7 @@ Logging stays `*log.Logger` with identical texts. Named constants (A-17) and rea
 
 #### R-M2-09 pipeline
 - Goal: `handle`, `handleError`, `process`, `archive`, `fail`, `activeProjects` → `internal/pipeline`; Clock, FS, Summarizer, PageWriter, Notifier, Ledger injected; retry policy as its own type.
-- Acceptance: no `time.Now()` and no `os.*` in `pipeline`; retry tests use the constructor (no struct literal like app_retry_test.go:26); golden unchanged; coverage of `pipeline` ≥ 85 %.
+- Acceptance: no `time.Now()` and no `os.*` in `pipeline`; the three copies of "get or create the file state, `nextTry` = now + 2 min" (`interrupted`, `archiveAt`, `handleError`) are merged into one helper (follow-up of R-M1-07); retry tests use the constructor (no struct literal like app_retry_test.go:26); golden unchanged; coverage of `pipeline` ≥ 85 %.
   - Replace the temporary package variable `sleepFn` (notion.go, from R-M0-09) by dependency injection.
   - Switch the test helper `newFlowApp` (app_flow_test.go, builds App with notion=nil) to the new interface fakes.
 - Scope: `app.go`, `app_retry_test.go`, new `internal/pipeline/`.
@@ -450,7 +451,7 @@ Logging stays `*log.Logger` with identical texts. Named constants (A-17) and rea
 ### M3 Security hardening
 
 Goal: enforce trust boundaries; close the decided CLI and secrets changes.
-Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, S-18, S-20, S-21, A-14 closed; golden unchanged except R-M3-12 (scenarios with `fuer_mich`), R-M3-13 (`exit.txt` of G10 with ✗), R-M3-14 (new scenario) and R-M3-16 (count line of G16b); R-M3-17 leaves the golden outputs unchanged.
+Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, S-18, S-20, S-21, A-14 closed; golden unchanged except R-M3-12 (scenarios with `fuer_mich`), R-M3-13 (`exit.txt` of G10 with ✗), R-M3-14 (new scenario) and R-M3-16 (count line of G16b); R-M3-17, R-M3-18 and R-M3-19 leave the golden outputs unchanged.
 
 #### R-M3-01 llm.base_url loopback only ⚠
 ⚠ Behavior change, decided by Mark on 2026-11-01 (D3).
@@ -607,6 +608,23 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 - Depends on: R-M1-02; M2 pipeline split preferred.
 - Model: opus, crash and retry semantics.
 - Reviews: CR, SR, QA. Update ADR 0004.
+
+#### R-M3-18 Keep the attempt count when the move to _fehler fails
+- Goal: a failed move to `_fehler` does not reset `max_attempts`.
+- Problem: `handleError` deletes the retry state even when `fail()` returns false, so the file is reprocessed on the next poll and the count restarts from 0 (pre-existing since v1.0.0). Found in R-M1-07.
+- Acceptance: use the 2-min `nextTry` pattern (as in R-M1-04/R-M1-07); attempts preserved; Pass-level test (failing move, several passes); golden unchanged.
+- Scope: `app.go` (`handleError`) or the pipeline package after M2, tests.
+- Depends on: R-M1-07.
+- Model: opus, retry state.
+- Reviews: CR, SR, QA.
+
+#### R-M3-19 Open export files with O_NOFOLLOW
+- Goal: a regular file swapped for a symlink between `ReadDir` and `ReadFile` is not followed.
+- Acceptance: open with `O_NOFOLLOW` and check `fstat` `IsRegular`; test with a swap between listing and reading; golden unchanged. Risk low, local only.
+- Scope: `app.go` (`listEntries`), tests.
+- Depends on: R-M1-07.
+- Model: opus, file atomicity.
+- Reviews: CR, SR, QA.
 
 ### M4 Repo hygiene
 

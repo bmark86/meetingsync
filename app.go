@@ -251,21 +251,22 @@ func (a *App) Pass(ctx context.Context, now time.Time) {
 		if near(unstable, s.ModTime, window) {
 			continue // vielleicht wird das passende Transkript gerade geschrieben
 		}
+		// vor HasNear: auch ein fehlgeschlagenes Archivieren wartet (R-M1-07)
+		if st := a.state[s.Path]; st != nil && now.Before(st.nextTry) {
+			continue
+		}
 		if a.ledger.HasNear(s.ModTime, window) {
 			a.log.Printf("📎 %s gehört zu einem bereits verarbeiteten Transkript → Archiv", s.Name)
-			a.archive(s)
+			a.archiveAt(now, s)
 			continue
 		}
 		if now.Sub(s.ModTime) < orphanWait {
 			continue
 		}
-		if st := a.state[s.Path]; st != nil && now.Before(st.nextTry) {
-			continue
-		}
 		switch a.cfg.OrphanSummaryAction {
 		case "archive":
 			a.log.Printf("📎 %s: kein Transkript gefunden → Archiv (orphan_summary_action=archive)", s.Name)
-			a.archive(s)
+			a.archiveAt(now, s)
 		case "keep":
 			a.warnOnce(s.Path, "%s: kein Transkript gefunden, bleibt liegen (orphan_summary_action=keep)", s.Name)
 		default:
@@ -279,7 +280,7 @@ func (a *App) handle(ctx context.Context, j job, now time.Time) {
 	hash := sha256Hex(p.Content)
 	if a.ledger.Has(hash) {
 		a.log.Printf("↺ %s wurde schon verarbeitet → Archiv", p.Name)
-		a.archiveJob(j)
+		a.archiveJob(j, now)
 		return
 	}
 	if a.ledger.Started(hash) || a.interruptedNow[hash] {
@@ -296,8 +297,9 @@ func (a *App) handle(ctx context.Context, j job, now time.Time) {
 			// zweite Seite in diesem Prozess), die Dateien gehen ins Archiv.
 			a.log.Printf("   ⚠️  Protokoll nicht geschrieben (Notiz existiert: %s): %v", url, err)
 		}
-		a.archiveJob(j)
+		// vor archiveJob: ein Archiv-Fehler setzt eine neue Wartezeit
 		delete(a.state, p.Path)
+		a.archiveJob(j, now)
 		return
 	}
 
@@ -635,6 +637,10 @@ func (a *App) listEntries(now time.Time) ([]*entry, error) {
 			continue
 		}
 		path := filepath.Join(a.cfg.WatchDir, name)
+		if !d.Type().IsRegular() {
+			a.warnOnce(path, "%s: keine reguläre Datei (z. B. Symlink) → übersprungen", name)
+			continue
+		}
 		ext := strings.ToLower(filepath.Ext(name))
 		if !isSupportedExt(ext, a.cfg) {
 			a.warnOnce(path, "Ignoriere %s (Dateityp %s wird nicht verarbeitet)", name, ext)
@@ -709,32 +715,63 @@ func near(list []*entry, t time.Time, window time.Duration) bool {
 	return false
 }
 
-func (a *App) archive(files ...*entry) {
+// archive verschiebt die Dateien ins Archiv und liefert die, die liegen
+// blieben. Erfolg löscht den Retry-Zustand der Datei.
+func (a *App) archive(files ...*entry) (failed []*entry) {
 	if a.dry {
-		return
+		return nil
 	}
 	for _, f := range files {
 		dir := filepath.Join(a.cfg.ArchiveDir, f.ModTime.In(a.cfg.loc).Format("2006-01"))
-		if dst, err := moveFile(f.Path, dir); err != nil {
+		if dst, err := a.move(f, dir); err != nil {
 			a.log.Printf("   ⚠️  %s konnte nicht archiviert werden: %v", f.Name, err)
+			failed = append(failed, f)
 		} else {
 			delete(a.cache, f.Path)
+			delete(a.state, f.Path)
 			a.log.Printf("   📦 %s → %s", f.Name, dst)
 		}
 	}
+	return failed
+}
+
+// archiveAt archiviert; bleibt eine Datei liegen, neuer Versuch erst in 2 min
+// statt bei jedem Durchlauf (Logzeile und Kopie nicht alle
+// poll_interval_seconds). Zählt nicht gegen max_attempts (R-M1-07).
+func (a *App) archiveAt(now time.Time, files ...*entry) {
+	for _, f := range a.archive(files...) {
+		st := a.state[f.Path]
+		if st == nil {
+			st = &fileState{}
+			a.state[f.Path] = st
+		}
+		st.nextTry = now.Add(2 * time.Minute)
+	}
+}
+
+// move ruft moveFile; scheitert nur der Sync des Zielordners, ist die Datei
+// verschoben: Warnung, kein Fehler (Mark, 2026-11-02).
+func (a *App) move(f *entry, dir string) (string, error) {
+	dst, err := moveFile(f.Path, dir)
+	var se *dirSyncError
+	if errors.As(err, &se) {
+		a.log.Printf("   ⚠️  %s: %v", f.Name, err)
+		return dst, nil
+	}
+	return dst, err
 }
 
 // archiveJob archiviert die Dateien des Jobs. TOCTOU (S-15): nur die primäre
 // Datei wird neu geprüft, denn der Ledger-Schlüssel ist ihr Hash. Geändert →
 // bleibt liegen, der nächste Durchlauf sieht den neuen Hash. Partner gehen wie
 // bisher ins Archiv (liegen gelassen würden sie zur Waise, ggf. zweite Notiz).
-func (a *App) archiveJob(j job) {
+func (a *App) archiveJob(j job, now time.Time) {
 	files := j.files()
 	if !a.dry && changedSinceRead(j.primary) {
 		a.log.Printf("   ⚠️  %s wurde seit dem Einlesen geändert → nicht archiviert, bleibt im Exportordner (nächster Durchlauf prüft sie erneut)", j.primary.Name)
 		files = files[1:]
 	}
-	a.archive(files...)
+	a.archiveAt(now, files...)
 }
 
 // changedSinceRead meldet, ob Größe oder mtime von f nicht mehr zu den Werten
@@ -755,7 +792,7 @@ func (a *App) fail(cause error, files ...*entry) (ok bool) {
 		return ok
 	}
 	for _, f := range files {
-		dst, err := moveFile(f.Path, a.cfg.FailedDir)
+		dst, err := a.move(f, a.cfg.FailedDir)
 		if err != nil {
 			a.log.Printf("   ⚠️  %s konnte nicht verschoben werden: %v", f.Name, err)
 			ok = false
@@ -812,13 +849,31 @@ var renameFn = func(src, dst string) error {
 // copyFn kopiert den Inhalt; nur Tests tauschen sie aus.
 var copyFn = io.Copy
 
+// syncDirFn synchronisiert den Zielordner in moveFile; nur Tests tauschen sie aus.
+var syncDirFn = syncDir
+
+// dirSyncError: Kopie liegt in dst, das Original ist gelöscht, nur der Sync
+// des Zielordners schlug fehl. moveFile liefert dst mit diesem Fehler.
+type dirSyncError struct {
+	dst string
+	err error
+}
+
+func (e *dirSyncError) Error() string {
+	return fmt.Sprintf("Zielordner nicht synchronisiert, trotzdem verschoben nach %s: %v", e.dst, e.err)
+}
+
+func (e *dirSyncError) Unwrap() error { return e.err }
+
 // moveFile verschiebt src nach dir, ohne vorhandene Dateien zu überschreiben.
 // Gleiches Volume: atomares Umbenennen mit RENAME_EXCL (ein Symlink wird als
 // Symlink verschoben). Anderes Volume oder Flag nicht unterstützt: Kopie mit
 // O_EXCL, Zielordner sync, dann src löschen, aber nur, wenn src noch die
 // kopierte Datei ist. Ist der Name belegt, "stem (n).ext". Gelöscht wird
 // außer src nur die eigene, eben angelegte Kopie (von Mark erlaubt,
-// 2026-11-02), und nur nach Identitätsprüfung.
+// 2026-11-02), und nur nach Identitätsprüfung. Scheitert nur der Sync des
+// Zielordners, geht es weiter wie sonst; dann kommen dst und ein
+// *dirSyncError zurück (Mark, 2026-11-02).
 func moveFile(src, dir string) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
@@ -855,10 +910,9 @@ func moveFile(src, dir string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		// Ordnereintrag der Kopie muss einen Absturz überstehen, bevor src weg ist.
-		if err := syncDir(dir); err != nil {
-			return "", fmt.Errorf("Zielordner nicht synchronisiert, Original und Kopie %s bleiben liegen: %w", dst, err)
-		}
+		// Ordnereintrag der Kopie soll einen Absturz überstehen, bevor src weg ist.
+		// Scheitert das, trotzdem weiter (Kopie selbst ist synchronisiert).
+		syncErr := syncDirFn(dir)
 		cur, err := os.Lstat(src)
 		if err != nil || !os.SameFile(cur, srcInfo) {
 			msg := fmt.Sprintf("Quelle %s während des Kopierens ersetzt oder entfernt, Quelle und Kopie %s bleiben liegen", src, dst)
@@ -874,6 +928,9 @@ func moveFile(src, dir string) (string, error) {
 				return "", fmt.Errorf("Quelle nicht löschbar, Original bleibt liegen: %w; eigene Kopie %s nicht entfernt: %v", err, dst, rerr)
 			}
 			return "", fmt.Errorf("Quelle nicht löschbar, Original bleibt liegen, eigene Kopie entfernt: %w", err)
+		}
+		if syncErr != nil {
+			return dst, &dirSyncError{dst: dst, err: syncErr}
 		}
 		return dst, nil
 	}
