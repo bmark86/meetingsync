@@ -33,6 +33,8 @@
 | R-M2-06 | `internal/notify` (`Notifier`, `New()` osascript notifier, unexported runner seam); command/escaping byte-identical; `App.notifier`; arch_test rule (stdlib only); gosec G204 exclusion extended to `internal/notify/notify.go` (removal in R-M3-07); golden byte-identical; CR and SR approved. QA: fake notifier injected in golden/flow tests (pre-existing gap: scenarios ran with `Notify=true`). Next: R-M2-07 config and TokenSource (opus, security-relevant: secrets; Mark approved M2 incl. R-M2-07 at the gate) | done | 2026-11-02 |
 | R-M2-07 | `internal/config` (`Load` returns warnings; `Default`, `DefaultPath`, `Finalize`, `ExpandHome` exported; no `os/exec`, no `loc`) and `internal/secret` (`TokenSource`, Keychain lookup, unexported runner seam); time zone resolved in `main`, `NewApp(cfg, loc, tokens, logger, dry)`; arch rules; gosec G204 path `internal/secret/secret.go`. Coverage config 92.1 %, secret 100 %. Golden byte-identical; CR and SR approved. Next: R-M2-08 | done | 2026-11-02 |
 | R-M2-08 | `internal/watch` (`Lister`, `PairSummary`, `Near`, `FS`/`OS` read side, `Mover{Rename, Copy, SyncDir}` atomic move unchanged; nil fields = real functions). Decision: coordinator: FS covers ReadDir/ReadFile/Lstat only, the move is not rebuilt on an FS abstraction (`os.SameFile`/`RENAME_EXCL` risk, ADR 0015); arch rule; gosec G30[126]/G304 paths moved to `internal/watch`. Coverage 96.2 %, tests 216 → 231, golden byte-identical, CR and SR approved. Next: R-M2-09 pipeline (opus) | done | 2026-11-02 |
+| R-M2-09a | `internal/pipeline` core: flow, retry policy type, archive, fail moved from `app.go`; injection via `Deps` (clock, FS, Mover, Summarizer, Notion port, Notifier port, `*ledger.Ledger`); state helpers merged (follow-up 21); ADR 0006. Decisions: coordinator: split R-M2-09 into 09a/09b; concrete `*ledger.Ledger` accepted; own `Notifier` port (arch rule); `handleError` computes its own backoff. Coverage 93.5 % own / 98.8 % combined, tests 231 → 251, golden byte-identical, CR and SR approved. Incident: a reviewer ran `git stash` and popped it at once; working tree verified intact. Next: R-M2-09b (opus) | done | 2026-11-02 |
+| R-M2-09b | Rest of R-M2-09: `sleepFn` DI, `newFlowApp`/`hookNotion` rewrite, `mustJSON` merge, `FormatTitle`/`deadlineLabel`, `watchtest` FS, `Normalize` placement, nil-guards in `pipeline.New` | open | |
 
 ## M1 summary (complete 2026-11-02: R-M1-01 to R-M1-07 + R-M1-EXIT)
 
@@ -66,7 +68,7 @@ Decisions taken in M1:
 | Coordinator | `go 1.26.0` accepted | R-M1-04 |
 | Coordinator | No deletion after an identity mismatch (and after a syncDir error, see above) | R-M1-04 |
 
-Next: M2 package split, R-M2-09 pipeline (opus).
+Next: M2 package split, R-M2-09b (opus).
 
 ## Open follow-ups
 
@@ -92,5 +94,5 @@ Next: M2 package split, R-M2-09 pipeline (opus).
 | 18 | Plan ADR numbering for the package split (was 0005, now taken by `golang.org/x/sys`) | open | done (ADR 0015, Mark at the M2 gate, 2026-11-02) |
 | 19 | `handleError` deletes the retry state even when the move to `_fehler` fails: the file is reprocessed and `max_attempts` restarts from 0 (pre-existing since v1.0.0) | open | planned (R-M3-18) |
 | 20 | A regular file swapped for a symlink between `ReadDir` and `ReadFile` is still followed (low risk, local only) | open | planned (R-M3-19) |
-| 21 | Three copies of "get or create state, `nextTry` = now + 2 min" (`interrupted`, `archiveAt`, `handleError`) | open | planned (R-M2-09) |
+| 21 | Three copies of "get or create state, `nextTry` = now + 2 min" (`interrupted`, `archiveAt`, `handleError`) | open | done (R-M2-09a) |
 | 22 | A German date followed by an underscore and a time (`Weekly 07.01.2026_08-45.txt`) is misparsed: `reDateISO` matches `2026_08-45`, `dateFromName` never tries `reDateDE`, the meeting date falls back to an estimate (pre-existing since v1.0.0, found by QA in R-M2-02). Ask Mark at the M3 gate | Mark | planned (R-M3-20) |

@@ -8,6 +8,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -21,7 +23,7 @@ import (
 
 	"meetingsync/internal/config"
 	"meetingsync/internal/ledger"
-	"meetingsync/internal/watch"
+	"meetingsync/internal/pipeline"
 )
 
 // flowM ist die mtime der Eingaben (UTC, Archivmonat 2026-09).
@@ -77,7 +79,6 @@ func newFlowApp(t *testing.T, mod func(*config.Config)) *flowEnv {
 	}
 	app := &App{
 		cfg: cfg, loc: time.UTC, log: logger, llm: newLLMClient(cfg, logger, nil), ledger: l,
-		state: map[string]*fileState{}, warned: map[string]bool{}, cache: watch.Cache{},
 		notifier: &fakeNotifier{},
 	}
 	return &flowEnv{app: app, watch: cfg.WatchDir, archive: cfg.ArchiveDir, logBuf: buf, hits: hits, status: status}
@@ -96,6 +97,14 @@ func (e *flowEnv) write(t *testing.T, name, content string, mtime time.Time) str
 }
 
 func exists(p string) bool { _, err := os.Stat(p); return err == nil }
+
+// states ist der Wiederholungszustand der Pipeline der App.
+func (a *App) states() map[string]*pipeline.FileState { return a.pipe().States() }
+
+func sha256Hex(b []byte) string {
+	h := sha256.Sum256(b)
+	return hex.EncodeToString(h[:])
+}
 
 func (e *flowEnv) archived(name string) string { return filepath.Join(e.archive, "2026-09", name) }
 
@@ -205,7 +214,7 @@ func TestPassOrphanNoteRespectsNextTry(t *testing.T) {
 	env, p := orphanEnv(t, "note")
 	now := flowM.Add(time.Hour)
 	retryAt := now.Add(2 * time.Minute)
-	env.app.state[p] = &fileState{attempts: 1, nextTry: retryAt}
+	env.app.states()[p] = &pipeline.FileState{Attempts: 1, NextTry: retryAt}
 	env.app.Pass(context.Background(), now)
 	env.app.Pass(context.Background(), retryAt.Add(-time.Second))
 	if env.hits.Load() != 0 {
@@ -288,8 +297,8 @@ func TestPassGatingByNextTry(t *testing.T) {
 	t0 := flowM.Add(5 * time.Minute)
 
 	env.app.Pass(context.Background(), t0) // 503 → transient, 1 min Wartezeit
-	st := env.app.state[p]
-	if env.hits.Load() != 1 || st == nil || st.attempts != 1 || !st.nextTry.Equal(t0.Add(time.Minute)) {
+	st := env.app.states()[p]
+	if env.hits.Load() != 1 || st == nil || st.Attempts != 1 || !st.NextTry.Equal(t0.Add(time.Minute)) {
 		t.Fatalf("nach Fehler: hits=%d state=%+v", env.hits.Load(), st)
 	}
 	env.app.Pass(context.Background(), t0.Add(59*time.Second))
@@ -297,8 +306,8 @@ func TestPassGatingByNextTry(t *testing.T) {
 		t.Fatal("vor nextTry darf nicht erneut versucht werden")
 	}
 	env.app.Pass(context.Background(), t0.Add(time.Minute))
-	if env.hits.Load() != 2 || env.app.state[p].attempts != 2 {
-		t.Fatalf("genau ab nextTry wird erneut versucht: hits=%d state=%+v", env.hits.Load(), env.app.state[p])
+	if env.hits.Load() != 2 || env.app.states()[p].Attempts != 2 {
+		t.Fatalf("genau ab nextTry wird erneut versucht: hits=%d state=%+v", env.hits.Load(), env.app.states()[p])
 	}
 }
 
@@ -310,13 +319,13 @@ func TestPassSuccessClearsStateAndFillsLedger(t *testing.T) {
 	env := newFlowApp(t, func(c *config.Config) { c.MaxAttempts = 5 })
 	env.app.dry = true // Notion fehlt: Dry-Run liefert "dry-run" als Ergebnis
 	p := env.write(t, "Sitzung.srt", goldenSRT, flowM)
-	env.app.state[p] = &fileState{attempts: 2, transient: 2}
+	env.app.states()[p] = &pipeline.FileState{Attempts: 2, Transient: 2}
 	env.status.Store(200)
 
 	now := flowM.Add(5 * time.Minute)
 	env.app.Pass(context.Background(), now)
-	if env.app.state[p] != nil {
-		t.Fatalf("state nach Erfolg: %+v", env.app.state[p])
+	if env.app.states()[p] != nil {
+		t.Fatalf("state nach Erfolg: %+v", env.app.states()[p])
 	}
 	if !env.app.ledger.Has(sha256Hex([]byte(goldenSRT))) {
 		t.Fatal("Ledger enthält den Hash nicht")
@@ -341,7 +350,7 @@ func TestPassGivesUpAfterMaxAttempts(t *testing.T) {
 	if exists(p) || !exists(filepath.Join(env.app.cfg.FailedDir, "Sitzung.srt")) || !exists(filepath.Join(env.app.cfg.FailedDir, "Sitzung.srt.fehler.txt")) {
 		t.Fatal("Datei und .fehler.txt müssen in _fehler liegen")
 	}
-	if env.app.state[p] != nil {
+	if env.app.states()[p] != nil {
 		t.Fatal("state muss gelöscht sein")
 	}
 }
@@ -361,8 +370,8 @@ func TestPassCanceledContextDoesNothing(t *testing.T) {
 	if env.hits.Load() != 0 || !exists(tr) || !exists(sum) {
 		t.Fatalf("nichts darf passieren: hits=%d tr=%v sum=%v", env.hits.Load(), exists(tr), exists(sum))
 	}
-	if len(env.app.state) != 0 {
-		t.Fatalf("kein state erwartet: %v", env.app.state)
+	if len(env.app.states()) != 0 {
+		t.Fatalf("kein state erwartet: %v", env.app.states())
 	}
 	if strings.Contains(env.logBuf.String(), "→ Sitzung.srt (") {
 		t.Fatalf("handle darf nicht anlaufen:\n%s", env.logBuf.String())

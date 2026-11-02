@@ -78,7 +78,7 @@ func TestArchiveRemoveFailsBackoff(t *testing.T) {
 			if notes, _ := e.pages(); notes != 1 {
 				t.Fatalf("Notizen = %d, want 1", notes)
 			}
-			if st := e.app.state[locked]; st == nil || !st.nextTry.Equal(now.Add(2*time.Minute)) || st.attempts != 0 {
+			if st := e.app.states()[locked]; st == nil || !st.NextTry.Equal(now.Add(2*time.Minute)) || st.Attempts != 0 {
 				t.Fatalf("state = %+v, want nextTry now+2min, attempts 0", st)
 			}
 
@@ -98,7 +98,7 @@ func TestArchiveRemoveFailsBackoff(t *testing.T) {
 			if a, f, x := e.counts(t); a != 2 || f != 0 || x != 0 {
 				t.Fatalf("nach Entsperren: Archiv %d, _fehler %d, Export %d; want 2, 0, 0", a, f, x)
 			}
-			if st := e.app.state[locked]; st != nil {
+			if st := e.app.states()[locked]; st != nil {
 				t.Fatalf("state nach Erfolg: %+v", st)
 			}
 			if notes, _ := e.pages(); notes != 1 {
@@ -129,8 +129,8 @@ func TestArchiveOrphanRemoveFailsBackoff(t *testing.T) {
 	}
 	unlockFile(t, p)
 	env.app.Pass(context.Background(), now.Add(2*time.Minute))
-	if exists(p) || !exists(env.archived("Notizen.md")) || env.app.state[p] != nil {
-		t.Fatalf("nach Backoff archiviert und state gelöscht: exists=%v state=%+v", exists(p), env.app.state[p])
+	if exists(p) || !exists(env.archived("Notizen.md")) || env.app.states()[p] != nil {
+		t.Fatalf("nach Backoff archiviert und state gelöscht: exists=%v state=%+v", exists(p), env.app.states()[p])
 	}
 }
 
@@ -166,7 +166,7 @@ func TestArchiveDirSyncFailsWarnsAndMoves(t *testing.T) {
 	if notes, _ := e.pages(); notes != 1 {
 		t.Fatalf("Notizen = %d, want 1", notes)
 	}
-	if st := e.app.state[e.tr]; st != nil {
+	if st := e.app.states()[e.tr]; st != nil {
 		t.Fatalf("state = %+v, want nil", st)
 	}
 }

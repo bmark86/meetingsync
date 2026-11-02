@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"meetingsync/internal/ledger"
+	"meetingsync/internal/pipeline"
 )
 
 // Kopierpfad + Sync-Fehler beim Verschieben nach _fehler: Warnung, Datei liegt
@@ -31,7 +32,7 @@ func TestFailPathDirSyncWarnsAndMoves(t *testing.T) {
 			if err := e.app.ledger.Add(ledger.Entry{Hash: e.hash(), Status: ledger.StatusBegonnen, File: "x", ModTime: flowM}); err != nil {
 				t.Fatal(err)
 			}
-		}, errUnterbrochen.Error()},
+		}, pipeline.ErrUnterbrochen.Error()},
 		{"max_attempts", func(_ *testing.T, e *crashEnv) {
 			e.app.cfg.MaxAttempts = 1
 			e.app.llm = newLLMClient(e.app.cfg, e.app.log, e.rt)
@@ -75,7 +76,7 @@ func TestFailPathDirSyncWarnsAndMoves(t *testing.T) {
 			if strings.Contains(e.log.String(), "konnte nicht verschoben werden") {
 				t.Fatalf("Sync-Fehler gilt als Verschiebe-Fehler:\n%s", e.log.String())
 			}
-			if st := e.app.state[e.tr]; st != nil {
+			if st := e.app.states()[e.tr]; st != nil {
 				t.Fatalf("state = %+v, want nil", st)
 			}
 			if tc.name == "max_attempts" && strings.Count(e.log.String(), "gebe auf") != 1 {

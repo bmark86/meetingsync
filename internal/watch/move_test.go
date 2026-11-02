@@ -8,6 +8,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -334,5 +335,27 @@ func TestMoverZeroValueRenames(t *testing.T) {
 	checkMoved(t, src, dst, "a.txt")
 	if after, err := os.Lstat(dst); err != nil || !os.SameFile(before, after) {
 		t.Fatalf("Ziel ist eine Kopie, kein Umbenennen: %v", err)
+	}
+}
+
+// Fängt: WriteFehlerTxt überschreibt einen vorhandenen Hinweis, nummeriert
+// falsch, schreibt Zeit oder Ursache nicht oder meldet Schreibfehler nicht.
+func TestWriteFehlerTxt(t *testing.T) {
+	dst := filepath.Join(t.TempDir(), "a.txt")
+	at := time.Date(2026, 11, 2, 9, 30, 0, 0, time.UTC)
+	if err := os.WriteFile(dst+".fehler.txt", []byte("alt"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteFehlerTxt(dst, at, errors.New("Ursache")); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(dst + ".fehler.txt"); string(b) != "alt" { //nolint:gosec // G304: Pfad unter t.TempDir()
+		t.Fatalf("vorhandener Hinweis überschrieben: %q", b)
+	}
+	if b, _ := os.ReadFile(dst + " (2).fehler.txt"); string(b) != "2026-11-02T09:30:00Z\nUrsache\n" { //nolint:gosec // G304: Pfad unter t.TempDir()
+		t.Fatalf("neuer Hinweis = %q", b)
+	}
+	if err := WriteFehlerTxt(filepath.Join(t.TempDir(), "fehlt", "a.txt"), at, errors.New("x")); err == nil {
+		t.Fatal("Schreibfehler nicht gemeldet")
 	}
 }

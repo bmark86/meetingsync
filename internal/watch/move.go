@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -208,4 +209,27 @@ func syncDir(dir string) error {
 		err = cerr
 	}
 	return err
+}
+
+// WriteFehlerTxt legt dst.fehler.txt mit Zeitpunkt at und Ursache an, ohne
+// einen vorhandenen Hinweis zu überschreiben; ist der Name belegt,
+// "dst (n).fehler.txt".
+func WriteFehlerTxt(dst string, at time.Time, cause error) error {
+	data := []byte(fmt.Sprintf("%s\n%v\n", at.Format(time.RFC3339), cause))
+	name := dst + ".fehler.txt"
+	for i := 2; ; i++ {
+		f, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644) //nolint:gosec // G304: Pfad aus Mover.Move unter failed_dir; G302: 0o644 für .fehler.txt, Dateirechte geplant in S-12 / R-M3-04 (Entfernung geplant)
+		if errors.Is(err, os.ErrExist) {
+			name = fmt.Sprintf("%s (%d).fehler.txt", dst, i)
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		_, err = f.Write(data)
+		if cerr := f.Close(); err == nil {
+			err = cerr
+		}
+		return err
+	}
 }

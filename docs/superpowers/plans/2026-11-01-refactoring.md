@@ -451,12 +451,23 @@ Logging stays `*log.Logger` with identical texts. Named constants (A-17) and rea
 - Depends on: R-M2-02 to R-M2-08. Findings: A-04, A-05.
 - Model: opus, state, retry and ledger order.
 - Reviews: CR, SR, QA. ADR 0006.
+- Split by the coordinator (2026-11-02) into 09a and 09b. The goal and acceptance above stay the overall target.
+- **09a: done 2026-11-02.** `Pass`, `handle`, `interrupted`, `handleError`, `process`, `createTasks`, `archive`/`archiveAt`/`archiveJob`, `fail`, `listEntries`, `changedSinceRead` (via `FS.Lstat`), `ActiveProjects` and the per-file retry state moved to `internal/pipeline` (`pipeline.go`, `files.go`, `retry.go`). Injected via `Deps`: `Now`, `watch.FS`, `watch.Mover`, `llm.Summarizer`, Notion port (`PageWriter` + `ActiveProjects`), own `Notifier` port (pipeline may not import `internal/notify`: `os/exec` arch rule), `*ledger.Ledger` (concrete; plan said "injected", coordinator accepted), `*log.Logger`, dry-run printer. Retry policy is its own type (values unchanged). Three state copies merged into `state()`, `retryLater()` for `interrupted` and archive failure (follow-up 21 closed). `writeFehlerTxt` moved to `internal/watch` as `WriteFehlerTxt`. `package main` keeps `Init`, `Check`, `Run`, `ProcessSingleFile`, `printDryRun`, `mustJSON`; `App.pipe()` builds the pipeline lazily (temporary). Exported only for main tests: `FileState`, `States()`, `ErrUnterbrochen`. Coverage `pipeline` 93.5 % own / 98.8 % combined, tests 231 → 251, golden byte-identical, CR and SR approved. ADR 0006.
+- **09b: open (opus).** Remaining from the list above:
+  - `sleepFn` in `internal/notion` replaced by dependency injection.
+  - Rewrite `newFlowApp` and `hookNotion` on the new fakes/transport injection.
+  - Merge the `mustJSON` copies (`app.go`, `internal/llm`).
+  - Place `FormatTitle` and `deadlineLabel`.
+  - In-memory FS with `Move` (e.g. `watchtest`) for pipeline tests.
+  - Decide where `Normalize` lives (inside `Summarize` or not).
+  - Nil-guards for `Deps.DryRun` and `Deps.Notifier` in `pipeline.New`.
 
 #### R-M2-10 Entry point and wiring
 - Goal: `App` dissolved; `Pass`/`Run`, `Check`, dry-run output, `ProcessSingleFile` moved to their place; entry point per OD-06.
 - Acceptance: OD-06 option A (decided: proposal): `main.go` in the module root stays the only `package main`; `go build -o ~/bin/meetingsync .` works unchanged; README/CLAUDE.md/plist unchanged. (Option B `cmd/meetingsync` is not chosen.) stdout/exit codes of `-check`, `-dry-run`, `-file` unchanged (G09, G10); `e2e_test.go` runs through the adapter.
 - Scope: `main.go`, `app.go` (rest, then deleted), tests.
 - Depends on: R-M2-09. Findings: A-03, A-04, A-13.
+- Acceptance (from R-M2-09a): replace the lazy `App.pipe()` by direct construction of the pipeline; re-check whether the exported `FileState`, `States()` and `ErrUnterbrochen` are still needed.
 - Note (from R-M2-07): one helper for the `Load` → `loadLocation` → tokens → `NewApp` wiring (repeated in `main.go`, `golden_adapter_test.go`, `e2e_test.go`); re-check whether `config.Finalize` must stay exported.
 - Model: sonnet, wiring.
 - Reviews: CR, QA.
