@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -70,7 +69,7 @@ func ncNotion(t *testing.T, replies ...ncReply) (*Notion, *ncServer) {
 	s := &ncServer{replies: replies}
 	srv := httptest.NewServer(s)
 	t.Cleanup(srv.Close)
-	n := NewNotion(NotionConfig{BaseURL: srv.URL + "/", APIVersion: "2025-09-03"}, "tok", log.New(io.Discard, "", 0))
+	n := NewNotion(NotionConfig{BaseURL: srv.URL + "/", APIVersion: "2025-09-03"}, "tok")
 	return n, s
 }
 

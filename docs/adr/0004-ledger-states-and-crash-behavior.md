@@ -1,6 +1,6 @@
 # 0004 Ledger states and crash behavior
 
-Status: draft (R-M1-01, extended by R-M1-02), 2026-11-02. Decided by Mark on 2026-11-01 (D1, OD-03, OD-05).
+Status: draft (R-M1-01, extended by R-M1-02 and R-M1-03), 2026-11-02. Decided by Mark on 2026-11-01 (D1, OD-03, OD-05).
 
 ## Context
 - The ledger (`.meetingsync-ledger.jsonl` in the archive folder) stops a file from being processed twice. In `v1.0.0` a line is written only after the Notion page and the tasks exist.
@@ -16,7 +16,7 @@ Status: draft (R-M1-01, extended by R-M1-02), 2026-11-02. Decided by Mark on 202
 - Lines without a status (all `v1.0.0` lines) count as `fertig`. `Add` without a status also means `fertig`. A `sha256` line without a status also counts as `fertig`.
 - An unknown status counts as "not `fertig`" and also not as `begonnen`: the file runs again.
 - File format:
-  - `fertig` lines stay exactly as in `v1.0.0`: `{"hash":…,"file":…,"mtime":…,"url":…,"at":…}`, no status field.
+  - `fertig` lines stay exactly as in `v1.0.0`: `{"hash":…,"file":…,"mtime":…,"url":…,"at":…}`, no status field. Since R-M1-03 they may also carry the optional `omitempty` fields `todos_fehlen` and `bloecke_fehler`; on the normal path the line is still byte-identical to `v1.0.0`.
   - `begonnen` and `verworfen` lines put the hash in the field `sha256` and add `status`, for example `{"sha256":…,"status":"begonnen",…}`. They have no `hash` field, so `v1.0.0` skips them.
 - `Add` first updates the entry in memory, then appends one line, calls `Sync` and `Close`. The first error of Write, Sync or Close is returned. The entry in memory stays even if writing fails.
 - Torn last line: if the file is not empty and does not end with a newline (crash while writing), `Add` first writes a newline. So the new line does not merge with the broken rest. The normal path writes exactly the same bytes as before.
@@ -33,6 +33,14 @@ Status: draft (R-M1-01, extended by R-M1-02), 2026-11-02. Decided by Mark on 202
 6. Page created → tasks → write `fertig` with the URL → archive.
    - If writing `fertig` fails: the error is logged with the page URL (`Protokoll nicht geschrieben (Notiz existiert: <url>): …`, ledger not written, note exists). The hash counts as done in memory, so this process makes no second page. The files are still archived.
 - `-file` (`ProcessSingleFile`) still writes no ledger line. That changes in R-M3-14.
+
+### Missing tasks and blocks (R-M1-03, OD-04)
+- Once the page exists, the `fertig` line also records what is missing in Notion: `todos_fehlen` (tasks not created, because of an error or a context cancel) and `bloecke_fehler` (failed append of the blocks after the first 100; at most 1 per page). Both fields use `omitempty`, so a complete note gives the same bytes as `v1.0.0`. `v1.0.0` ignores the extra fields and counts the line as done.
+- The missing parts are only recorded and logged (file name and counts), never made up later. The files are archived as usual.
+- A context cancel during the tasks or the append stops further task requests, but still writes `fertig` with the URL and the counts. Keeping `begonnen` would send a note that already exists to `_fehler` after the restart.
+- `CreatePage` returns ID, URL and an error that wraps `errUnvollstaendig` when the append fails. The caller treats this as success with a gap, so there is no retry and no second page.
+- `todos_fehlen` is an upper bound: a task request cancelled in flight may have reached Notion, so at most 1 task may exist although it is counted.
+- `LoadLedger` does not read the gap fields back; they are for humans only.
 
 ### Restart rule (D1, OD-03)
 - If a pass finds a file whose hash has `begonnen` as its last status, the run before stopped between `begonnen` and `fertig`. The page may exist.

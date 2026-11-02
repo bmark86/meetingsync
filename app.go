@@ -91,7 +91,7 @@ func NewApp(cfg *Config, logger *log.Logger, dry bool) (*App, error) {
 	token, err := cfg.NotionToken()
 	switch {
 	case err == nil:
-		a.notion = NewNotion(cfg.Notion, token, logger)
+		a.notion = NewNotion(cfg.Notion, token)
 	case dry:
 		logger.Printf("Hinweis: %v – Dry-Run läuft ohne Notion (keine Projektliste).", err)
 	default:
@@ -285,9 +285,11 @@ func (a *App) handle(ctx context.Context, j job, now time.Time) {
 		return
 	}
 	a.log.Printf("→ %s (%s, %d KB)", p.Name, map[bool]string{true: "nur Zusammenfassung", false: "Transkript"}[j.summaryOnly], p.Size/1024)
-	url, err := a.process(ctx, j, hash)
+	url, g, err := a.process(ctx, j, hash)
 	if err == nil {
-		if err := a.ledger.Add(LedgerEntry{Hash: hash, File: p.Name, ModTime: p.ModTime, URL: url, At: time.Now()}); err != nil {
+		// Auch nach einem Abbruch in createTasks: die Seite existiert, also fertig
+		// (mit den Lücken), sonst schickt der Neustart sie nach _fehler (ADR 0004).
+		if err := a.ledger.Add(LedgerEntry{Hash: hash, File: p.Name, ModTime: p.ModTime, URL: url, At: time.Now(), MissingTasks: g.tasks, BlockErrors: g.blocks}); err != nil {
 			// Die Notiz existiert. Im Speicher gilt der Hash als fertig (keine
 			// zweite Seite in diesem Prozess), die Dateien gehen ins Archiv.
 			a.log.Printf("   ⚠️  Protokoll nicht geschrieben (Notiz existiert: %s): %v", url, err)
@@ -364,9 +366,17 @@ func (a *App) handleError(ctx context.Context, j job, err error, now time.Time) 
 	a.log.Printf("   ✗ %v (Versuch %d/%d)", err, st.attempts, a.cfg.MaxAttempts)
 }
 
+// gaps zählt, was nach dem Anlegen der Notiz in Notion fehlt (OD-04: nur
+// protokollieren, nicht nachholen).
+type gaps struct {
+	tasks  int // nicht angelegte To-dos (Fehler oder Abbruch)
+	blocks int // Fehler beim Anhängen der restlichen Blöcke
+}
+
 // process: Text aufbereiten → lokales LLM → Notion-Seite + Tasks.
 // hash != "": vor CreatePage "begonnen" ins Protokoll (ADR 0004); leer bei -file.
-func (a *App) process(ctx context.Context, j job, hash string) (string, error) {
+// Ist die Seite angelegt, ist der Fehler nil, auch wenn Teile fehlen (gaps).
+func (a *App) process(ctx context.Context, j job, hash string) (string, gaps, error) {
 	p := j.primary
 	var text string
 	var dur time.Duration
@@ -376,7 +386,7 @@ func (a *App) process(ctx context.Context, j job, hash string) (string, error) {
 		text, dur = transcriptText(p.Path, p.Content)
 	}
 	if text == "" {
-		return "", errors.New("Datei ist leer")
+		return "", gaps{}, errors.New("Datei ist leer")
 	}
 	timing := meetingTiming(p.Name, p.ModTime, dur, a.cfg.loc)
 
@@ -399,7 +409,7 @@ func (a *App) process(ctx context.Context, j job, hash string) (string, error) {
 	a.log.Printf("   LLM läuft (%d Zeichen, Modell %s) …", len(text), a.cfg.LLM.Model)
 	note, err := a.llm.Summarize(ctx, in)
 	if err != nil {
-		return "", err
+		return "", gaps{}, err
 	}
 	normalizeNote(note)
 	a.log.Printf("   LLM fertig nach %s: %q", time.Since(start).Round(time.Second), note.Titel)
@@ -427,7 +437,7 @@ func (a *App) process(ctx context.Context, j job, hash string) (string, error) {
 
 	if a.dry {
 		a.printDryRun(title, project, note, reasons, len(blocks))
-		return "dry-run", nil
+		return "dry-run", gaps{}, nil
 	}
 
 	le := LedgerEntry{Hash: hash, Status: StatusBegonnen, File: p.Name, ModTime: p.ModTime, At: time.Now()}
@@ -437,10 +447,16 @@ func (a *App) process(ctx context.Context, j job, hash string) (string, error) {
 			// zurück, damit der nächste Versuch normal läuft.
 			le.Status = StatusVerworfen
 			_ = a.ledger.Add(le) // gemeldet wird der erste Fehler; bleibt auf Platte "begonnen", greift beim Neustart die Prüfregel (sicher)
-			return "", fmt.Errorf("Protokoll nicht schreibbar, Notion-Seite nicht angelegt: %w", err)
+			return "", gaps{}, fmt.Errorf("Protokoll nicht schreibbar, Notion-Seite nicht angelegt: %w", err)
 		}
 	}
+	var g gaps
 	pageID, url, err := a.notion.CreatePage(ctx, a.notesDS, a.noteProps(title, project, len(reasons) > 0), blocks)
+	if errors.Is(err, errUnvollstaendig) {
+		// Seite existiert: kein Fehler, sonst entsteht beim nächsten Versuch eine Dublette.
+		a.log.Printf("   ⚠️  %v", err)
+		g.blocks, err = 1, nil
+	}
 	if err != nil {
 		// Antwort mit Fehler: neuer Versuch wie bisher (OD-05), also verworfen.
 		// Bei Abbruch per Kontext bleibt "begonnen": die Anfrage kann Notion
@@ -451,10 +467,14 @@ func (a *App) process(ctx context.Context, j job, hash string) (string, error) {
 				a.log.Printf("   ⚠️  Protokoll nicht geschrieben: %v", lerr)
 			}
 		}
-		return "", err
+		return "", gaps{}, err
 	}
-	mine := a.createTasks(ctx, note, pageID, project, title)
+	mine, missing := a.createTasks(ctx, note, pageID, project, title)
+	g.tasks = missing
 	a.log.Printf("   ✓ Notion: %s (%d To-dos für dich%s) %s", title, mine, map[bool]string{true: ", ⚠️ prüfen", false: ""}[len(reasons) > 0], url)
+	if g.tasks > 0 || g.blocks > 0 {
+		a.log.Printf("   ⚠️  %s: Notiz unvollständig – %d To-do(s) nicht angelegt, %d Fehler beim Anhängen von Blöcken (nicht nachgeholt)", p.Name, g.tasks, g.blocks)
+	}
 
 	if a.cfg.Notify && (len(reasons) > 0 || mine > 0) {
 		msg := note.Titel
@@ -466,7 +486,7 @@ func (a *App) process(ctx context.Context, j job, hash string) (string, error) {
 		}
 		notify("Neue Meeting-Notiz", msg)
 	}
-	return url, nil
+	return url, g, nil
 }
 
 func (a *App) noteProps(title string, project *pageRef, review bool) map[string]any {
@@ -488,15 +508,19 @@ func (a *App) noteProps(title string, project *pageRef, review bool) map[string]
 }
 
 // createTasks legt To-dos in der Tasks-Datenbank an und verknüpft sie mit der Notiz.
-func (a *App) createTasks(ctx context.Context, n *MeetingNote, noteID string, project *pageRef, title string) int {
+// Liefert die Zahl der angelegten und der fehlenden To-dos (Fehler oder Abbruch).
+func (a *App) createTasks(ctx context.Context, n *MeetingNote, noteID string, project *pageRef, title string) (created, missing int) {
 	mode := a.cfg.Notion.CreateTasksFor
 	if a.tasksDS == "" || mode == "none" {
-		return 0
+		return 0, 0
 	}
 	tp, types := a.cfg.Notion.Tasks, a.tasksTypes
-	created := 0
 	for _, act := range n.NextActions {
 		if mode == "me" && !act.FuerMich {
+			continue
+		}
+		if ctx.Err() != nil {
+			missing++ // Abbruch: keine weiteren Anfragen, nur zählen
 			continue
 		}
 		props := map[string]any{tp.Title: map[string]any{"title": rt(act.Aufgabe)}}
@@ -521,11 +545,12 @@ func (a *App) createTasks(ctx context.Context, n *MeetingNote, noteID string, pr
 		}
 		if _, _, err := a.notion.CreatePage(ctx, a.tasksDS, props, nil); err != nil {
 			a.log.Printf("   ⚠️  To-do %q nicht angelegt: %v", act.Aufgabe, err)
+			missing++
 			continue
 		}
 		created++
 	}
-	return created
+	return created, missing
 }
 
 func (a *App) activeProjects(ctx context.Context) []pageRef {
@@ -562,7 +587,7 @@ func (a *App) ProcessSingleFile(ctx context.Context, path string) error {
 	if e.Kind == KindUnsupported {
 		return fmt.Errorf("Dateityp %s wird nicht unterstützt", filepath.Ext(path))
 	}
-	url, err := a.process(ctx, job{primary: e, summaryOnly: e.Kind == KindSummary}, "")
+	url, _, err := a.process(ctx, job{primary: e, summaryOnly: e.Kind == KindSummary}, "")
 	if err != nil {
 		return err
 	}
@@ -770,6 +795,10 @@ type LedgerEntry struct {
 	ModTime time.Time
 	URL     string
 	At      time.Time
+	// Nur bei fertig, 0 im Normalfall (R-M1-03, OD-04: nur protokolliert);
+	// nur für das Schreiben, LoadLedger liest sie nicht zurück.
+	MissingTasks int // nicht angelegte To-dos
+	BlockErrors  int // Fehler beim Anhängen der restlichen Blöcke
 }
 
 // ledgerLine ist das Zeilenformat auf Platte. Fertige Zeilen tragen den Hash
@@ -784,6 +813,10 @@ type ledgerLine struct {
 	ModTime time.Time `json:"mtime"`
 	URL     string    `json:"url"`
 	At      time.Time `json:"at"`
+	// omitempty: ohne Lücken bleibt die fertig-Zeile byte-gleich zu v1.0.0;
+	// v1.0.0 ignoriert die Zusatzfelder beim Lesen.
+	TodosFehlen   int `json:"todos_fehlen,omitempty"`
+	BloeckeFehler int `json:"bloecke_fehler,omitempty"`
 }
 
 type Ledger struct {
@@ -855,7 +888,7 @@ func (l *Ledger) Add(e LedgerEntry) error {
 	if !l.persist {
 		return nil
 	}
-	ln := ledgerLine{File: e.File, ModTime: e.ModTime, URL: e.URL, At: e.At}
+	ln := ledgerLine{File: e.File, ModTime: e.ModTime, URL: e.URL, At: e.At, TodosFehlen: e.MissingTasks, BloeckeFehler: e.BlockErrors}
 	if e.Status == StatusFertig {
 		ln.Hash = e.Hash
 	} else {
