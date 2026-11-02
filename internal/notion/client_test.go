@@ -19,17 +19,14 @@ import (
 
 // Hilfsmittel für die Notion-Client-Tests (Präfix nc).
 
-// ncSleeps ersetzt sleepFn: nichts wartet wirklich, die gewünschten Dauern
-// werden aufgezeichnet. ok bestimmt, ob "das Warten" gelingt (false = Abbruch).
-func ncSleeps(t *testing.T, ok bool) *[]time.Duration {
-	t.Helper()
+// ncSleeps ersetzt das Warten von n: nichts wartet wirklich, die gewünschten
+// Dauern werden aufgezeichnet. ok bestimmt, ob "das Warten" gelingt (false = Abbruch).
+func ncSleeps(n *Client, ok bool) *[]time.Duration {
 	var got []time.Duration
-	old := sleepFn
-	sleepFn = func(_ context.Context, d time.Duration) bool {
+	n.sleep = func(_ context.Context, d time.Duration) bool {
 		got = append(got, d)
 		return ok
 	}
-	t.Cleanup(func() { sleepFn = old })
 	return &got
 }
 
@@ -140,24 +137,24 @@ func TestSleepCtx(t *testing.T) {
 }
 
 // Fängt: Seam zeigt nicht auf die echte Funktion (Default = heutiges Verhalten).
-func TestSleepFnDefaultIsSleepCtx(t *testing.T) {
+func TestClientSleepDefaultIsSleepCtx(t *testing.T) {
 	// Funktionen sind nicht vergleichbar; Verhalten prüfen.
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if sleepFn(ctx, time.Hour) {
-		t.Error("Default von sleepFn muss sleepCtx sein (Abbruch -> false)")
+	if NewClient("http://x", "v", "t", nil).sleep(ctx, time.Hour) {
+		t.Error("Default von sleep muss sleepCtx sein (Abbruch -> false)")
 	}
 }
 
 // Fängt: 429 wird bei nicht-idempotenten Aufrufen nicht wiederholt, Retry-After
 // wird nicht genutzt, Payload geht beim Retry verloren.
 func TestDo429RetriedEvenWhenNotIdempotent(t *testing.T) {
-	sl := ncSleeps(t, true)
 	n, s := ncNotion(t,
 		ncReply{status: 429, header: map[string]string{"Retry-After": "3"}},
 		ncReply{status: 429}, // ohne Header -> backoff(1)
 		ncReply{status: 200, body: `{"id":"p1"}`},
 	)
+	sl := ncSleeps(n, true)
 	var out struct{ ID string }
 	if err := n.do(context.Background(), http.MethodPost, "/v1/pages", map[string]any{"a": 1}, &out, false); err != nil {
 		t.Fatalf("do: %v", err)
@@ -181,8 +178,8 @@ func TestDo429RetriedEvenWhenNotIdempotent(t *testing.T) {
 // Fängt: Obergrenze der Versuche (attempt < 4 -> genau 5 Requests, 4 Pausen)
 // und dass der Endfehler als transient klassifiziert wird.
 func TestDo429ExhaustedIsTransient(t *testing.T) {
-	sl := ncSleeps(t, true)
 	n, s := ncNotion(t, ncReply{status: 429, body: `{"code":"rate_limited","message":"slow down"}`})
+	sl := ncSleeps(n, true)
 	err := n.do(context.Background(), http.MethodGet, "/x", nil, nil, true)
 	if err == nil || !domain.IsTransient(err) {
 		t.Fatalf("erwartet transienten Fehler, bekam %v", err)
@@ -201,8 +198,8 @@ func TestDo429ExhaustedIsTransient(t *testing.T) {
 
 // Fängt: Retry trotz abgebrochenem Kontext (sleep liefert false -> sofort aufgeben).
 func TestDoStopsRetryWhenSleepIsCancelled(t *testing.T) {
-	sl := ncSleeps(t, false)
 	n, s := ncNotion(t, ncReply{status: 429}, ncReply{status: 200})
+	sl := ncSleeps(n, false)
 	err := n.do(context.Background(), http.MethodGet, "/x", nil, nil, true)
 	if err == nil || !domain.IsTransient(err) {
 		t.Fatalf("erwartet transienten 429-Fehler, bekam %v", err)
@@ -214,8 +211,8 @@ func TestDoStopsRetryWhenSleepIsCancelled(t *testing.T) {
 
 // Fängt: 5xx wird bei idempotenten Aufrufen nicht wiederholt.
 func TestDo5xxRetriedWhenIdempotent(t *testing.T) {
-	sl := ncSleeps(t, true)
 	n, s := ncNotion(t, ncReply{status: 503}, ncReply{status: 502}, ncReply{status: 200, body: `{}`})
+	sl := ncSleeps(n, true)
 	if err := n.do(context.Background(), http.MethodGet, "/x", nil, nil, true); err != nil {
 		t.Fatalf("do: %v", err)
 	}
@@ -226,8 +223,8 @@ func TestDo5xxRetriedWhenIdempotent(t *testing.T) {
 
 // Fängt: 5xx wird bei nicht-idempotenten Aufrufen wiederholt (doppelte Seiten!).
 func TestDo5xxNotRetriedWhenNotIdempotent(t *testing.T) {
-	sl := ncSleeps(t, true)
 	n, s := ncNotion(t, ncReply{status: 500, body: `{"code":"internal","message":"boom"}`}, ncReply{status: 200})
+	sl := ncSleeps(n, true)
 	err := n.do(context.Background(), http.MethodPost, "/v1/pages", map[string]any{}, nil, false)
 	var ae *apiError
 	if !errors.As(err, &ae) || ae.Status != 500 || !domain.IsTransient(err) {
@@ -242,8 +239,8 @@ func TestDo5xxNotRetriedWhenNotIdempotent(t *testing.T) {
 // idempotenten gar nicht oder zu oft (attempt < 3 -> 4 Versuche, Pausen 1/2/4 s).
 func TestDoNetworkErrorRetryOnlyWhenIdempotent(t *testing.T) {
 	for _, idem := range []bool{true, false} {
-		sl := ncSleeps(t, true)
 		n, _ := ncNotion(t, ncReply{status: 200})
+		sl := ncSleeps(n, true)
 		calls := 0
 		n.http.Transport = ncRoundTrip(func(*http.Request) (*http.Response, error) {
 			calls++
@@ -265,8 +262,8 @@ func TestDoNetworkErrorRetryOnlyWhenIdempotent(t *testing.T) {
 
 // Fängt: Netzwerkfehler-Retry bei abgebrochenem Kontext läuft weiter.
 func TestDoNetworkErrorStopsWhenSleepCancelled(t *testing.T) {
-	ncSleeps(t, false)
 	n, _ := ncNotion(t, ncReply{status: 200})
+	ncSleeps(n, false)
 	calls := 0
 	n.http.Transport = ncRoundTrip(func(*http.Request) (*http.Response, error) {
 		calls++
@@ -289,8 +286,8 @@ func TestDoStatusClassification(t *testing.T) {
 		{401, true, true}, {403, true, true}, {404, true, true},
 	}
 	for _, c := range cases {
-		sl := ncSleeps(t, true)
 		n, s := ncNotion(t, ncReply{status: c.status, body: `{"code":"c","message":"m"}`})
+		sl := ncSleeps(n, true)
 		err := n.do(context.Background(), http.MethodGet, "/x", nil, nil, true)
 		var ae *apiError
 		if !errors.As(err, &ae) || ae.Status != c.status || ae.Code != "c" || ae.Message != "m" {
@@ -376,11 +373,11 @@ func TestDoInvalidURL(t *testing.T) {
 	}
 }
 
-// Fängt: Retry-After wird bei 5xx (idempotent) ignoriert; sleepFn bekäme
+// Fängt: Retry-After wird bei 5xx (idempotent) ignoriert; sleep bekäme
 // dann backoff(0) = 1 s statt 9 s.
 func TestDoUsesRetryAfterHeaderFor5xx(t *testing.T) {
-	sl := ncSleeps(t, true)
 	n, _ := ncNotion(t, ncReply{status: 503, header: map[string]string{"Retry-After": strconv.Itoa(9)}}, ncReply{status: 200})
+	sl := ncSleeps(n, true)
 	if err := n.do(context.Background(), http.MethodGet, "/x", nil, nil, true); err != nil {
 		t.Fatal(err)
 	}

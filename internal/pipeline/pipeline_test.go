@@ -375,3 +375,27 @@ func TestFailDryRunMovesNothing(t *testing.T) {
 		t.Fatal("Dry-Run: fail ok und Datei bleibt")
 	}
 }
+
+// Fängt: fehlender Notifier führt bei Options.Notify zu einem nil-Zugriff.
+func TestNewNilNotifierIsNoop(t *testing.T) {
+	e := newEnv(t, func(o *Options, d *Deps) { o.Notify = true; d.Notifier = nil })
+	e.write(t, "Sitzung.srt", testSRT, testM)
+
+	e.p.Pass(context.Background(), e.clock)
+
+	if e.notion.count("notes-ds") != 1 {
+		t.Fatalf("Notiz nicht angelegt, Log:\n%s", e.log.String())
+	}
+}
+
+// Fängt: fehlendes DryRun führt im Dry-Run zu einem nil-Zugriff.
+func TestNewNilDryRunIsNoop(t *testing.T) {
+	e := newEnv(t, func(o *Options, d *Deps) { o.Dry = true; d.DryRun = nil })
+	e.write(t, "Sitzung.srt", testSRT, testM)
+
+	e.p.Pass(context.Background(), e.clock)
+
+	if len(e.llm.got) != 1 || e.notion.count("notes-ds") != 0 {
+		t.Fatalf("Dry-Run: LLM-Aufrufe %d, Notizen %d, Log:\n%s", len(e.llm.got), e.notion.count("notes-ds"), e.log.String())
+	}
+}

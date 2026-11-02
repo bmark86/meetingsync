@@ -24,6 +24,7 @@ type Client struct {
 	version string
 	token   string
 	http    *http.Client
+	sleep   func(ctx context.Context, d time.Duration) bool // Warten zwischen Versuchen; Tests setzen sie
 }
 
 // NewClient baut den Client. transport ist der HTTP-Transport; nil heißt
@@ -34,6 +35,7 @@ func NewClient(baseURL, apiVersion, token string, transport http.RoundTripper) *
 		version: apiVersion,
 		token:   token,
 		http:    &http.Client{Timeout: 60 * time.Second, Transport: transport},
+		sleep:   sleepCtx,
 	}
 }
 
@@ -78,7 +80,7 @@ func (n *Client) do(ctx context.Context, method, path string, in, out any, idemp
 		}
 		resp, err := n.http.Do(req)
 		if err != nil {
-			if idempotent && attempt < 3 && sleepFn(ctx, backoff(attempt)) {
+			if idempotent && attempt < 3 && n.sleep(ctx, backoff(attempt)) {
 				continue
 			}
 			return domain.Transient(fmt.Errorf("Notion nicht erreichbar: %w", err))
@@ -88,7 +90,7 @@ func (n *Client) do(ctx context.Context, method, path string, in, out any, idemp
 
 		if resp.StatusCode == http.StatusTooManyRequests ||
 			(idempotent && resp.StatusCode >= 500) {
-			if attempt < 4 && sleepFn(ctx, retryAfter(resp, attempt)) {
+			if attempt < 4 && n.sleep(ctx, retryAfter(resp, attempt)) {
 				continue
 			}
 		}
@@ -285,9 +287,6 @@ func retryAfter(resp *http.Response, attempt int) time.Duration {
 	}
 	return backoff(attempt)
 }
-
-// sleepFn ist die Warte-Funktion von do; nur Tests tauschen sie aus.
-var sleepFn = sleepCtx
 
 func sleepCtx(ctx context.Context, d time.Duration) bool {
 	t := time.NewTimer(d)

@@ -23,7 +23,6 @@ import (
 
 	"meetingsync/internal/config"
 	"meetingsync/internal/ledger"
-	"meetingsync/internal/notion"
 	"meetingsync/internal/pipeline"
 )
 
@@ -46,17 +45,6 @@ func (h *hookRT) RoundTrip(r *http.Request) (*http.Response, error) {
 		h.after(r)
 	}
 	return resp, err
-}
-
-// hookNotion ersetzt den Notion-Client der App durch einen gleich
-// konfigurierten mit dem Hook-Transport rt.
-func hookNotion(t *testing.T, app *App, rt http.RoundTripper) {
-	t.Helper()
-	token, err := notionTokens(app.cfg).Token()
-	if err != nil {
-		t.Fatal(err)
-	}
-	app.notion = notion.NewClient(app.cfg.Notion.BaseURL, app.cfg.Notion.APIVersion, token, rt)
 }
 
 // isNotePost: POST /v1/pages in die Notes-Datenbank (nicht Tasks).
@@ -105,10 +93,10 @@ type crashEnv struct {
 func newCrashEnv(t *testing.T) *crashEnv {
 	t.Helper()
 	f := &fakeServer{t: t, appends: map[string]int{}}
-	app, dir := setup(t, f)
-	e := &crashEnv{f: f, app: app, dir: dir, log: &hookLog{}, rt: &hookRT{}}
+	rt := &hookRT{}
+	app, dir := setupWith(t, f, rt)
+	e := &crashEnv{f: f, app: app, dir: dir, log: &hookLog{}, rt: rt}
 	app.log = log.New(e.log, "", 0)
-	hookNotion(t, app, e.rt)
 	e.tr = filepath.Join(dir, "Meeting 2026-10-28 14-00.txt")
 	e.sum = filepath.Join(dir, "Meeting 2026-10-28 14-00 (1).txt")
 	writeOld(t, e.tr, srtLikeText(), 5*time.Minute)
@@ -127,16 +115,15 @@ func (e *crashEnv) hash() string { return sha256Hex([]byte(srtLikeText())) }
 func (e *crashEnv) restart(t *testing.T) {
 	t.Helper()
 	e.log = &hookLog{}
-	app, err := NewApp(e.app.cfg, e.app.loc, notionTokens(e.app.cfg), log.New(e.log, "", 0), false)
+	e.rt = &hookRT{}
+	app, err := newApp(e.app.cfg, e.app.loc, notionTokens(e.app.cfg), log.New(e.log, "", 0), false,
+		appSeams{notionTransport: e.rt, notifier: &fakeNotifier{}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	app.notifier = &fakeNotifier{}
 	if err := app.Init(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	e.rt = &hookRT{}
-	hookNotion(t, app, e.rt)
 	e.app = app
 }
 

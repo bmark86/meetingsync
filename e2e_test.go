@@ -172,6 +172,12 @@ func checkPayload(t *testing.T, v any) {
 
 func setup(t *testing.T, f *fakeServer) (*App, string) {
 	t.Helper()
+	return setupWith(t, f, nil)
+}
+
+// setupWith ist setup mit eigenem Notion-Transport (nil: Standard).
+func setupWith(t *testing.T, f *fakeServer, rt http.RoundTripper) (*App, string) {
+	t.Helper()
 	srv := httptest.NewServer(f)
 	t.Cleanup(srv.Close)
 	t.Setenv("NOTION_TOKEN", "secret-test")
@@ -198,11 +204,10 @@ func setup(t *testing.T, f *fakeServer) (*App, string) {
 	if testing.Verbose() {
 		logger = log.New(os.Stdout, "    ", 0)
 	}
-	app, err := NewApp(cfg, loc, notionTokens(cfg), logger, false)
+	app, err := newApp(cfg, loc, notionTokens(cfg), logger, false, appSeams{notionTransport: rt, notifier: &fakeNotifier{}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	app.notifier = &fakeNotifier{}
 	if err := app.Init(context.Background()); err != nil {
 		t.Fatal(err)
 	}
