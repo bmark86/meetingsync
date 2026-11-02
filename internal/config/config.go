@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -301,10 +302,30 @@ func (c *Config) Finalize() (warnings []string, err error) {
 	if strings.TrimSpace(c.LLM.Model) == "" {
 		return nil, errors.New("llm.model fehlt – trag den Modell-Identifier aus LM Studio ein (siehe README)")
 	}
+	if !isLoopbackURL(c.LLM.BaseURL) {
+		// Ohne URL-Wert: er könnte Zugangsdaten enthalten (S-17).
+		return nil, errors.New("llm.base_url muss auf diesen Mac zeigen (localhost, 127.0.0.1 oder ::1)")
+	}
 	if strings.TrimSpace(c.Notion.NotesDataSourceID) == "" {
 		return nil, errors.New("notion.notes_data_source_id fehlt")
 	}
 	return warnings, nil
+}
+
+// isLoopbackURL prüft, dass das Transkript den Mac nicht verlässt (S-02, D3):
+// Schema http oder https, keine Zugangsdaten in der URL, Host genau
+// "localhost" (nur klein geschrieben, sonst umgeht Go den Proxy nicht),
+// 127.0.0.1 oder ::1.
+func isLoopbackURL(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u.User != nil {
+		return false
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return false
+	}
+	h := u.Hostname()
+	return h == "localhost" || h == "127.0.0.1" || h == "::1"
 }
 
 func clampWarning(key string, was, now int) string {

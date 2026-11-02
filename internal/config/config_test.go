@@ -256,3 +256,62 @@ func TestInvalidEnumErrorsHaveNoValues(t *testing.T) {
 		}
 	}
 }
+
+// Fängt: Transkript geht an einen fremden Host (S-02, D3) / URL-Wert im
+// Fehlertext (S-17).
+func TestLLMBaseURLLoopbackOnly(t *testing.T) {
+	cases := []struct {
+		url string
+		ok  bool
+	}{
+		{"http://localhost:1234/v1", true},
+		{"http://LOCALHOST:1234/v1", false},
+		{"http://Localhost:1234/v1", false},
+		{"http://localhoſt:1234", false},
+		{"http://127.0.0.1:1234/v1", true},
+		{"http://[::1]:1234", true},
+		{"https://localhost:1234/v1", true},
+		{"http://192.168.1.5:1234", false},
+		{"http://localhost.evil.com", false},
+		{"http://evil.com#@localhost", false},
+		{"http://user:pw@localhost", false},
+		{"http://@localhost:1234", false},
+		{"ftp://localhost", false},
+		{"localhost:1234", false},
+		{"http://", false},
+		{"http:///v1", false},
+		{"", false},
+		{"http://127.0.0.2", false},
+		{"http://0.0.0.0", false},
+		{"http://[::1%25en0]:1234", false},
+		{"http://localhost:1234\x7f", false},
+	}
+	const want = "llm.base_url muss auf diesen Mac zeigen (localhost, 127.0.0.1 oder ::1)"
+	for _, tc := range cases {
+		t.Run(tc.url, func(t *testing.T) {
+			c := Default()
+			c.WatchDir, c.LLM.Model, c.Notion.NotesDataSourceID = "/w", "m", "n"
+			c.LLM.BaseURL = tc.url
+			_, err := c.Finalize()
+			if tc.ok {
+				if err != nil {
+					t.Fatalf("Fehler = %v, want keiner", err)
+				}
+				return
+			}
+			if err == nil || err.Error() != want {
+				t.Fatalf("Fehler = %v, want %q", err, want)
+			}
+			if tc.url != "" && strings.Contains(err.Error(), tc.url) {
+				t.Fatalf("URL-Wert im Fehler: %v", err)
+			}
+		})
+	}
+}
+
+// Die Standard-URL muss die Prüfung bestehen.
+func TestLLMBaseURLDefaultPasses(t *testing.T) {
+	if !isLoopbackURL(Default().LLM.BaseURL) {
+		t.Fatal("Standard-llm.base_url wird abgelehnt")
+	}
+}
