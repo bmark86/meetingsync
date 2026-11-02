@@ -38,6 +38,13 @@ var archRules = []archRule{
 		},
 		forbidden: func(d string, _ bool) bool { return inPkg(d, modulePath+"/internal/pipeline") },
 	},
+	{
+		name:    "internal/transcript importiert nur Standardbibliothek und internal/domain",
+		applies: func(p string) bool { return inPkg(p, modulePath+"/internal/transcript") },
+		forbidden: func(d string, std bool) bool {
+			return !std && !inPkg(d, modulePath+"/internal/domain") && !inPkg(d, modulePath+"/internal/transcript")
+		},
+	},
 }
 
 type listedPkg struct {
@@ -135,6 +142,7 @@ func TestArchRulesDetectViolations(t *testing.T) {
 		{ImportPath: modulePath + "/internal/domain", Deps: []string{"errors", modulePath + "/internal/llm", "go.yaml.in/yaml/v3"}, TestImports: []string{"testing"}},
 		{ImportPath: modulePath + "/internal/notion", Deps: []string{modulePath + "/internal/domain"}, XTestImports: []string{modulePath + "/internal/pipeline"}},
 		{ImportPath: modulePath + "/internal/pipeline", Deps: []string{modulePath + "/internal/domain", modulePath + "/internal/notion"}},
+		{ImportPath: modulePath + "/internal/transcript", Deps: []string{"errors", modulePath + "/internal/domain", modulePath + "/internal/notion", "go.yaml.in/yaml/v3"}},
 		{ImportPath: modulePath, Deps: []string{modulePath + "/internal/pipeline"}},
 	}
 	got := archViolations(pkgs, archRules)
@@ -142,6 +150,8 @@ func TestArchRulesDetectViolations(t *testing.T) {
 		archRules[0].name + ": " + modulePath + "/internal/domain → " + modulePath + "/internal/llm",
 		archRules[0].name + ": " + modulePath + "/internal/domain → go.yaml.in/yaml/v3",
 		archRules[1].name + ": " + modulePath + "/internal/notion → " + modulePath + "/internal/pipeline",
+		archRules[2].name + ": " + modulePath + "/internal/transcript → " + modulePath + "/internal/notion",
+		archRules[2].name + ": " + modulePath + "/internal/transcript → go.yaml.in/yaml/v3",
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("Verstöße =\n%s\nerwartet\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))

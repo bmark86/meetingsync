@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"meetingsync/internal/domain"
+	"meetingsync/internal/transcript"
 )
 
 type App struct {
@@ -104,6 +106,11 @@ func NewApp(cfg *Config, logger *log.Logger, dry bool) (*App, error) {
 	return a, nil
 }
 
+// transcriptOpts reicht die konfigurierten Endungen an internal/transcript.
+func (a *App) transcriptOpts() transcript.Options {
+	return transcript.Options{TranscriptExtensions: a.cfg.TranscriptExtensions, SummaryExtensions: a.cfg.SummaryExtensions}
+}
+
 // Init prüft die Notion-Datenbanken und lädt das Verarbeitungsprotokoll.
 func (a *App) Init(ctx context.Context) error {
 	ledger, err := LoadLedger(filepath.Join(a.cfg.ArchiveDir, ".meetingsync-ledger.jsonl"), !a.dry)
@@ -172,7 +179,7 @@ func (a *App) Check(ctx context.Context) error {
 		fmt.Printf("✗ LM Studio nicht erreichbar unter %s: %v\n", a.cfg.LLM.BaseURL, err)
 		return nil
 	}
-	if contains(models, a.cfg.LLM.Model) {
+	if slices.Contains(models, a.cfg.LLM.Model) {
 		fmt.Printf("✓ LM Studio: Modell %q verfügbar\n", a.cfg.LLM.Model)
 	} else {
 		fmt.Printf("✗ LM Studio: Modell %q nicht gefunden. Verfügbar:\n", a.cfg.LLM.Model)
@@ -396,14 +403,14 @@ func (a *App) process(ctx context.Context, j job, hash string) (string, gaps, er
 	var text string
 	var dur time.Duration
 	if j.summaryOnly {
-		text = strings.TrimSpace(normalizeNewlines(string(p.Content)))
+		text = strings.TrimSpace(transcript.NormalizeNewlines(string(p.Content)))
 	} else {
-		text, dur = transcriptText(p.Path, p.Content)
+		text, dur = transcript.Text(p.Path, p.Content)
 	}
 	if text == "" {
 		return "", gaps{}, errors.New("Datei ist leer")
 	}
-	timing := meetingTiming(p.Name, p.ModTime, dur, a.cfg.loc)
+	timing := transcript.MeetingTiming(p.Name, p.ModTime, dur, a.cfg.loc)
 
 	in := NoteInput{
 		Text:        text,
@@ -597,7 +604,7 @@ func (a *App) ProcessSingleFile(ctx context.Context, path string) error {
 		return err
 	}
 	e := &entry{Path: path, Name: filepath.Base(path), ModTime: info.ModTime(), Size: info.Size(), Stable: true, Content: content}
-	e.Kind = classify(path, content, a.cfg)
+	e.Kind = transcript.Classify(path, content, a.transcriptOpts())
 	a.log.Printf("%s erkannt als: %s", e.Name, e.Kind)
 	if e.Kind == domain.KindUnsupported {
 		return fmt.Errorf("Dateityp %s wird nicht unterstützt", filepath.Ext(path))
@@ -644,7 +651,7 @@ func (a *App) listEntries(now time.Time) ([]*entry, error) {
 			continue
 		}
 		ext := strings.ToLower(filepath.Ext(name))
-		if !isSupportedExt(ext, a.cfg) {
+		if !transcript.IsSupportedExt(ext, a.transcriptOpts()) {
 			a.warnOnce(path, "Ignoriere %s (Dateityp %s wird nicht verarbeitet)", name, ext)
 			continue
 		}
@@ -665,7 +672,7 @@ func (a *App) listEntries(now time.Time) ([]*entry, error) {
 			if c, ok := a.cache[path]; ok && c.modTime.Equal(e.ModTime) && c.size == e.Size {
 				e.Kind = c.kind
 			} else {
-				e.Kind = classify(path, e.Content, a.cfg)
+				e.Kind = transcript.Classify(path, e.Content, a.transcriptOpts())
 				a.cache[path] = cachedKind{e.ModTime, e.Size, e.Kind}
 				a.log.Printf("Neu: %s → %s", name, e.Kind)
 			}

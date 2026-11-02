@@ -4,14 +4,14 @@ Go tool (macOS, stdlib plus `go.yaml.in/yaml/v3` and `golang.org/x/sys`, `go 1.2
 
 ## Flow
 
-Poll the export folder (10 s). A file must stay unchanged for `stable_seconds` → detect transcript or summary by extension and content (`classify.go`) → pair transcript and summary (`pair_window_seconds`); a summary without a partner is handled by `orphan_summary_action` → LLM extraction, long transcripts are split into chunks (`llm.go`) → Notion page and tasks (`blocks.go`, `notion.go`) → archive in `_archiv/JJJJ-MM` (JJJJ-MM = YYYY-MM), ledger against double processing (`app.go`).
+Poll the export folder (10 s). A file must stay unchanged for `stable_seconds` → detect transcript or summary by extension and content (`internal/transcript`) → pair transcript and summary (`pair_window_seconds`); a summary without a partner is handled by `orphan_summary_action` → LLM extraction, long transcripts are split into chunks (`llm.go`) → Notion page and tasks (`blocks.go`, `notion.go`) → archive in `_archiv/JJJJ-MM` (JJJJ-MM = YYYY-MM), ledger against double processing (`app.go`).
 
 Retry: temporary errors (LM Studio or Notion not reachable (including timeout), HTTP 429/5xx, LM Studio model not loaded, Notion 401/403/404) are retried with backoff (1/2/4/8 min, then every 16 min). All errors count together against `max_attempts` (default 10; other errors are retried every 2 min). After that the file goes to `_fehler`.
 
 ## Files
 
 - `main.go` flags, `config.go` config (YAML/JSON, defaults), `app.go` flow/ledger/archive
-- `classify.go`, `llm.go`, `blocks.go`, `notion.go` as described above
+- `internal/transcript`, `llm.go`, `blocks.go`, `notion.go` as described above
 - `config.example.yaml` commented reference of all options
 - Docs in `docs/`: `progress.md` (open items), `adr/`, `launchd.md`, `changelog.md`
 - Active plan: `docs/superpowers/plans/2026-11-01-refactoring.md`

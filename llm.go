@@ -10,12 +10,15 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"meetingsync/internal/domain"
 )
+
+var weekdaysLong = []string{"Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"}
 
 var meetingTypes = []string{"1:1", "Team", "Extern", "Lenkungskreis", "Sonstiges"}
 
@@ -374,7 +377,7 @@ func parseNote(raw string) (*domain.MeetingNote, error) {
 // normalizeNote räumt die Modellantwort auf (Leerzeilen, Dubletten, Längen).
 func normalizeNote(n *domain.MeetingNote) {
 	n.Titel = truncate(strings.Join(strings.Fields(n.Titel), " "), 120)
-	if !contains(meetingTypes, n.Typ) {
+	if !slices.Contains(meetingTypes, n.Typ) {
 		n.Typ = "Sonstiges"
 	}
 	n.Teilnehmer = cleanList(n.Teilnehmer)

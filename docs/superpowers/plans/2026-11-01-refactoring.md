@@ -14,19 +14,19 @@ Finding IDs (A-xx, S-xx) and decisions (D1-D13): [review report](../../reviews/2
 | M0 Safety net and tooling | R-M0-01 to R-M0-11 | 11 |
 | M1 Correct error paths | R-M1-01 to R-M1-07 | 7 |
 | M2 Package split | R-M2-01 to R-M2-10 | 10 |
-| M3 Security hardening | R-M3-01 to R-M3-19 | 19 |
+| M3 Security hardening | R-M3-01 to R-M3-20 | 20 |
 | M4 Repo hygiene | R-M4-01 to R-M4-03 | 3 |
 | M5 Performance and robustness | R-M5-01 to R-M5-03 | 3 |
 | M6 Documentation | R-M6-01 to R-M6-03 | 3 |
-| **Total** | | **56** |
+| **Total** | | **57** |
 
 | Model | Tasks |
 | --- | --- |
-| opus | 27 |
+| opus | 28 |
 | sonnet | 22 |
 | haiku | 7 |
 
-New in this version: R-M0-11 (raise the `go` directive, see ADR 0002), R-M3-13, R-M3-14, R-M3-15 (formerly optional R-OPT-02, R-OPT-03, R-OPT-04, now mandatory), R-M3-16 (to-do count, decided 2026-11-02), R-M3-17 (no duplicate page after an ambiguous `CreatePage` failure, decided 2026-11-02). R-M1-07 (follow-up of R-M1-04: archive backoff, regular files only), R-M3-18 and R-M3-19 (follow-ups of R-M1-07, 2026-11-02). R-OPT-01 and R-OPT-05 are rejected, no task.
+New in this version: R-M0-11 (raise the `go` directive, see ADR 0002), R-M3-13, R-M3-14, R-M3-15 (formerly optional R-OPT-02, R-OPT-03, R-OPT-04, now mandatory), R-M3-16 (to-do count, decided 2026-11-02), R-M3-17 (no duplicate page after an ambiguous `CreatePage` failure, decided 2026-11-02). R-M1-07 (follow-up of R-M1-04: archive backoff, regular files only), R-M3-18 and R-M3-19 (follow-ups of R-M1-07, 2026-11-02). R-M3-20 (follow-up of R-M2-02: German date with underscore time, 2026-11-02). R-OPT-01 and R-OPT-05 are rejected, no task.
 
 ### Top guardrail: same output and outcome on the normal path
 
@@ -382,6 +382,7 @@ Logging stays `*log.Logger` with identical texts. Named constants (A-17) and rea
 - Depends on: R-M2-01. Findings: A-03, A-06.
 - Model: sonnet, a move without logic change, golden protects it.
 - Reviews: CR, QA.
+- Status: done 2026-11-02. `internal/transcript` (Options, Classify, IsSupportedExt, Text, MeetingTiming, NormalizeNewlines), imports stdlib + `internal/domain` only (arch_test rule); coverage 100 %; golden byte-identical. Follow-up: R-M3-20.
 
 #### R-M2-03 ledger
 - Goal: ledger from `app.go` to `internal/ledger`.
@@ -452,7 +453,7 @@ Logging stays `*log.Logger` with identical texts. Named constants (A-17) and rea
 ### M3 Security hardening
 
 Goal: enforce trust boundaries; close the decided CLI and secrets changes.
-Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, S-18, S-20, S-21, A-14 closed; golden unchanged except R-M3-12 (scenarios with `fuer_mich`), R-M3-13 (`exit.txt` of G10 with ✗), R-M3-14 (new scenario) and R-M3-16 (count line of G16b); R-M3-17, R-M3-18 and R-M3-19 leave the golden outputs unchanged.
+Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, S-18, S-20, S-21, A-14 closed; golden unchanged except R-M3-12 (scenarios with `fuer_mich`), R-M3-13 (`exit.txt` of G10 with ✗), R-M3-14 (new scenario) and R-M3-16 (count line of G16b); R-M3-17, R-M3-18, R-M3-19 and R-M3-20 leave the golden outputs unchanged.
 
 #### R-M3-01 llm.base_url loopback only ⚠
 ⚠ Behavior change, decided by Mark on 2026-11-01 (D3).
@@ -625,6 +626,18 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 - Scope: `app.go` (`listEntries`), tests.
 - Depends on: R-M1-07.
 - Model: opus, file atomicity.
+- Reviews: CR, SR, QA.
+
+#### R-M3-20 German date with underscore time is misparsed ⚠
+⚠ Output change for affected file names only. Ask Mark at the M3 gate.
+- Problem: in a name like `Weekly 07.01.2026_08-45.txt`, `reDateISO` matches `2026_08-45` as year 2026 / month 08 / day 45; `dateFromName` returns ok=false and never tries `reDateDE`, so the meeting date falls back to an estimate (pre-existing since v1.0.0). Found by QA in R-M2-02.
+- Acceptance:
+  - Test for `Weekly 07.01.2026_08-45.txt` → 2026-01-07 08:45.
+  - Table test: MacWhisper names such as `Meeting - Teams 2026-11-01 01_33_06` and all existing name formats keep their current result.
+  - Golden unchanged.
+- Scope: `internal/transcript` (date parsing), tests.
+- Depends on: R-M2-02.
+- Model: opus, parsing.
 - Reviews: CR, SR, QA.
 
 ### M4 Repo hygiene

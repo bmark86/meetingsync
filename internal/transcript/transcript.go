@@ -1,10 +1,13 @@
-package main
+// Package transcript klassifiziert Exportdateien und bereitet Transkripte auf.
+// Reine Funktionen: keine Datei-, Netz- oder Log-Zugriffe.
+package transcript
 
 import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -34,16 +37,23 @@ var (
 	reDateDE  = regexp.MustCompile(`(\d{1,2})\.(\d{1,2})\.(20\d{2})(?:[ _,-]+(\d{1,2})[-_.:h](\d{2}))?`)
 )
 
-// classify entscheidet anhand von Endung und Inhalt, ob eine Datei ein
+// Options enthält die konfigurierten Endungen (klein geschrieben, mit Punkt).
+// Sie erzwingen die Art einer Datei unabhängig vom Inhalt.
+type Options struct {
+	TranscriptExtensions []string
+	SummaryExtensions    []string
+}
+
+// Classify entscheidet anhand von Endung und Inhalt, ob eine Datei ein
 // Transkript oder eine Zusammenfassung ist. Die Dateinamen von MacWhisper
 // verraten das nicht, der Inhalt schon: nur Transkripte haben Zeitstempel
 // bzw. Sprecher-Labels in nennenswerter Menge.
-func classify(path string, content []byte, cfg *Config) domain.Kind {
+func Classify(path string, content []byte, opts Options) domain.Kind {
 	ext := strings.ToLower(filepath.Ext(path))
-	if contains(cfg.TranscriptExtensions, ext) {
+	if slices.Contains(opts.TranscriptExtensions, ext) {
 		return domain.KindTranscript
 	}
-	if contains(cfg.SummaryExtensions, ext) {
+	if slices.Contains(opts.SummaryExtensions, ext) {
 		return domain.KindSummary
 	}
 	if !supportedExt[ext] {
@@ -64,14 +74,15 @@ func classify(path string, content []byte, cfg *Config) domain.Kind {
 	return domain.KindSummary
 }
 
-func isSupportedExt(ext string, cfg *Config) bool {
+// IsSupportedExt meldet, ob die Endung (mit Punkt) verarbeitet wird.
+func IsSupportedExt(ext string, opts Options) bool {
 	ext = strings.ToLower(ext)
-	return supportedExt[ext] || contains(cfg.TranscriptExtensions, ext) || contains(cfg.SummaryExtensions, ext)
+	return supportedExt[ext] || slices.Contains(opts.TranscriptExtensions, ext) || slices.Contains(opts.SummaryExtensions, ext)
 }
 
 func looksLikeTranscriptText(s string) bool {
 	lines, hits := 0, 0
-	for _, l := range strings.Split(normalizeNewlines(s), "\n") {
+	for _, l := range strings.Split(NormalizeNewlines(s), "\n") {
 		l = strings.TrimSpace(l)
 		if l == "" {
 			continue
@@ -136,9 +147,9 @@ func jsonSegments(b []byte) []segment {
 	return out
 }
 
-// transcriptText macht aus einer Transkriptdatei kompakte Zeilen
+// Text macht aus einer Transkriptdatei kompakte Zeilen
 // "[hh:mm:ss] Sprecher: Text" und liefert die ungefähre Dauer.
-func transcriptText(path string, content []byte) (string, time.Duration) {
+func Text(path string, content []byte) (string, time.Duration) {
 	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {
 	case ".json":
@@ -160,7 +171,7 @@ func transcriptText(path string, content []byte) (string, time.Duration) {
 	case ".srt", ".vtt":
 		return cueText(string(content))
 	}
-	s := strings.TrimSpace(normalizeNewlines(string(content)))
+	s := strings.TrimSpace(NormalizeNewlines(string(content)))
 	return s, maxLeadingTimestamp(s)
 }
 
@@ -175,7 +186,7 @@ func cueText(s string) (string, time.Duration) {
 		}
 		cur, inCue = nil, false
 	}
-	for _, raw := range strings.Split(normalizeNewlines(s), "\n") {
+	for _, raw := range strings.Split(NormalizeNewlines(s), "\n") {
 		line := strings.TrimSpace(raw)
 		if m := reCueTiming.FindStringSubmatch(line); m != nil {
 			flush()
@@ -226,9 +237,9 @@ func maxLeadingTimestamp(s string) time.Duration {
 	return max
 }
 
-// meetingTiming nimmt Datum/Uhrzeit aus dem Dateinamen, sonst den
+// MeetingTiming nimmt Datum/Uhrzeit aus dem Dateinamen, sonst den
 // Exportzeitpunkt minus Transkriptdauer.
-func meetingTiming(name string, mtime time.Time, dur time.Duration, loc *time.Location) domain.Timing {
+func MeetingTiming(name string, mtime time.Time, dur time.Duration, loc *time.Location) domain.Timing {
 	mtime = mtime.In(loc)
 	if y, mo, d, h, mi, hasTime, ok := dateFromName(name); ok {
 		if hasTime {
@@ -291,11 +302,10 @@ func validDate(y, mo, d int) bool {
 	return t.Day() == d
 }
 
-var weekdaysLong = []string{"Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"}
-
 // --- kleine Helfer ---------------------------------------------------------
 
-func normalizeNewlines(s string) string {
+// NormalizeNewlines entfernt ein BOM und vereinheitlicht Zeilenenden auf \n.
+func NormalizeNewlines(s string) string {
 	s = strings.TrimPrefix(s, "\uFEFF")
 	return strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n")
 }
@@ -326,15 +336,6 @@ func sameDay(a, b time.Time) bool {
 	ay, am, ad := a.Date()
 	by, bm, bd := b.Date()
 	return ay == by && am == bm && ad == bd
-}
-
-func contains(list []string, s string) bool {
-	for _, x := range list {
-		if x == s {
-			return true
-		}
-	}
-	return false
 }
 
 func firstOf(m map[string]any, keys ...string) any {
