@@ -279,7 +279,7 @@ func (a *App) handle(ctx context.Context, j job, now time.Time) {
 	hash := sha256Hex(p.Content)
 	if a.ledger.Has(hash) {
 		a.log.Printf("↺ %s wurde schon verarbeitet → Archiv", p.Name)
-		a.archive(j.files()...)
+		a.archiveJob(j)
 		return
 	}
 	if a.ledger.Started(hash) || a.interruptedNow[hash] {
@@ -296,7 +296,7 @@ func (a *App) handle(ctx context.Context, j job, now time.Time) {
 			// zweite Seite in diesem Prozess), die Dateien gehen ins Archiv.
 			a.log.Printf("   ⚠️  Protokoll nicht geschrieben (Notiz existiert: %s): %v", url, err)
 		}
-		a.archive(j.files()...)
+		a.archiveJob(j)
 		delete(a.state, p.Path)
 		return
 	}
@@ -722,6 +722,30 @@ func (a *App) archive(files ...*entry) {
 			a.log.Printf("   📦 %s → %s", f.Name, dst)
 		}
 	}
+}
+
+// archiveJob archiviert die Dateien des Jobs. TOCTOU (S-15): nur die primäre
+// Datei wird neu geprüft, denn der Ledger-Schlüssel ist ihr Hash. Geändert →
+// bleibt liegen, der nächste Durchlauf sieht den neuen Hash. Partner gehen wie
+// bisher ins Archiv (liegen gelassen würden sie zur Waise, ggf. zweite Notiz).
+func (a *App) archiveJob(j job) {
+	files := j.files()
+	if !a.dry && changedSinceRead(j.primary) {
+		a.log.Printf("   ⚠️  %s wurde seit dem Einlesen geändert → nicht archiviert, bleibt im Exportordner (nächster Durchlauf prüft sie erneut)", j.primary.Name)
+		files = files[1:]
+	}
+	a.archive(files...)
+}
+
+// changedSinceRead meldet, ob Größe oder mtime von f nicht mehr zu den Werten
+// aus listEntries passen (Lstat wie d.Info). Fehlt die Datei, entscheidet
+// moveFile wie bisher.
+func changedSinceRead(f *entry) bool {
+	info, err := os.Lstat(f.Path)
+	if err != nil {
+		return false
+	}
+	return info.Size() != f.Size || !info.ModTime().Equal(f.ModTime)
 }
 
 // fail verschiebt die Dateien nach _fehler; ok=false, wenn eine liegen blieb.
