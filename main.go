@@ -5,12 +5,17 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"meetingsync/internal/cli"
 	"meetingsync/internal/config"
+	"meetingsync/internal/llm"
+	"meetingsync/internal/notify"
+	"meetingsync/internal/notion"
 	"meetingsync/internal/secret"
 )
 
@@ -33,11 +38,7 @@ func main() {
 	flag.Parse()
 
 	logger := log.New(os.Stdout, "", log.LstdFlags)
-	cfg, warnings, err := config.Load(*cfgPath)
-	if err != nil {
-		logger.Fatalf("Konfiguration: %v", err)
-	}
-	loc, err := loadLocation(cfg.Timezone)
+	cfg, loc, warnings, err := loadConfig(*cfgPath)
 	if err != nil {
 		logger.Fatalf("Konfiguration: %v", err)
 	}
@@ -49,29 +50,45 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	app, err := NewApp(cfg, loc, notionTokens(cfg), logger, *dryRun)
+	env, err := newEnv(cfg, loc, logger, *dryRun, nil)
 	if err != nil {
 		logger.Fatalf("%v", err)
 	}
 	if *check {
-		if err := app.Check(ctx); err != nil {
+		if err := cli.Check(ctx, env); err != nil {
 			os.Exit(1)
 		}
 		return
 	}
-	if err := app.Init(ctx); err != nil {
+	s, err := cli.Init(ctx, env)
+	if err != nil {
 		logger.Fatalf("Start fehlgeschlagen: %v", err)
 	}
+	p := cli.NewPipeline(env, s)
 	switch {
 	case *file != "":
-		if err := app.ProcessSingleFile(ctx, *file); err != nil {
+		if err := cli.ProcessSingleFile(ctx, env, p, *file); err != nil {
 			logger.Fatalf("%v", err)
 		}
 	case *once:
-		app.Pass(ctx, time.Now())
+		p.Pass(ctx, time.Now())
 	default:
-		app.Run(ctx)
+		cli.Run(ctx, env, p)
 	}
+}
+
+// loadConfig lädt die Config und löst ihre Zeitzone auf. Beide Fehler meldet
+// main als Config-Fehler.
+func loadConfig(path string) (*config.Config, *time.Location, []string, error) {
+	cfg, warnings, err := config.Load(path)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	loc, err := loadLocation(cfg.Timezone)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return cfg, loc, warnings, nil
 }
 
 // loadLocation löst die Zeitzone aus der Config auf. Fehlertext wie früher in
@@ -87,4 +104,42 @@ func loadLocation(tz string) (*time.Location, error) {
 // notionTokens baut die Token-Quelle aus den Notion-Einstellungen der Config.
 func notionTokens(cfg *config.Config) secret.TokenSource {
 	return secret.NewNotion(cfg.Notion.TokenKeychainService, cfg.Notion.Token)
+}
+
+// newLLMClient baut den LM-Studio-Client aus der Konfiguration. transport nil
+// heißt http.DefaultTransport.
+func newLLMClient(cfg *config.Config, logger *log.Logger, transport http.RoundTripper) *llm.Client {
+	return llm.NewClient(llm.Options{
+		BaseURL:          cfg.LLM.BaseURL,
+		Model:            cfg.LLM.Model,
+		APIKey:           cfg.LLM.APIKey,
+		Temperature:      cfg.LLM.Temperature,
+		Timeout:          time.Duration(cfg.LLM.TimeoutMinutes) * time.Minute,
+		MaxChunkChars:    cfg.LLM.MaxChunkChars,
+		StructuredOutput: cfg.LLM.StructuredOutput,
+	}, logger, transport)
+}
+
+// newEnv verdrahtet die Clients für internal/cli: LM Studio, Mac-Mitteilung,
+// Notion-Token und Notion. Ohne Token läuft nur der Dry-Run (ohne Notion).
+// notionTransport nil heißt http.DefaultTransport; Tests setzen eigene Hooks.
+func newEnv(cfg *config.Config, loc *time.Location, logger *log.Logger, dry bool, notionTransport http.RoundTripper) (cli.Env, error) {
+	e := cli.Env{
+		Cfg:      cfg,
+		Loc:      loc,
+		Dry:      dry,
+		Log:      logger,
+		LLM:      newLLMClient(cfg, logger, nil),
+		Notifier: notify.New(),
+	}
+	token, err := notionTokens(cfg).Token()
+	switch {
+	case err == nil:
+		e.Notion = notion.NewClient(cfg.Notion.BaseURL, cfg.Notion.APIVersion, token, notionTransport)
+	case dry:
+		logger.Printf("Hinweis: %v – Dry-Run läuft ohne Notion (keine Projektliste).", err)
+	default:
+		return cli.Env{}, err
+	}
+	return e, nil
 }

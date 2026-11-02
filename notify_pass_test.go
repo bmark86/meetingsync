@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"meetingsync/internal/cli"
 )
 
 // fakeNotifier zeichnet Aufrufe als {Titel, Text} auf.
@@ -27,10 +29,11 @@ func (f *fakeNotifier) Notify(title, msg string) {
 func runNotifyPass(t *testing.T, notifyOn bool) [][2]string {
 	t.Helper()
 	f := &fakeServer{t: t, appends: map[string]int{}}
-	app, dir := setup(t, f)
-	app.cfg.Notify = notifyOn
 	fn := &fakeNotifier{}
-	app.notifier = fn
+	app, dir := setup(t, f, func(e *cli.Env) {
+		e.Cfg.Notify = notifyOn
+		e.Notifier = fn
+	})
 	writeOld(t, filepath.Join(dir, "Meeting 2026-10-28 14-00.txt"), srtLikeText(), 5*time.Minute)
 	app.Pass(context.Background(), time.Now())
 	if len(f.pages) != 2 {

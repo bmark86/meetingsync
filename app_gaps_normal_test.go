@@ -4,13 +4,14 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"meetingsync/internal/cli"
 )
 
 // Normalpfad (R-M1-03 A5): kein Fehler, also weder Lücken-Felder in der
 // fertig-Zeile noch ein Lücken-Hinweis im Log.
 func TestNormalPassHasNoGapFields(t *testing.T) {
-	e := newCrashEnv(t)
-	e.app.cfg.Notion.CreateTasksFor = "all"
+	e := newCrashEnv(t, func(_ *crashEnv, env *cli.Env) { env.Cfg.Notion.CreateTasksFor = "all" })
 	e.pass(time.Now())
 	if n, k := e.pages(); n != 1 || k != 2 {
 		t.Fatalf("%d Notizen, %d Tasks; want 1, 2", n, k)

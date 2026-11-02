@@ -16,7 +16,10 @@ import (
 	"testing"
 	"time"
 
+	"meetingsync/internal/cli"
 	"meetingsync/internal/config"
+	"meetingsync/internal/ledger"
+	"meetingsync/internal/pipeline"
 )
 
 // goldenMainEnv startet im Kindprozess main() statt der Tests (Re-Exec für CLI-Szenarien).
@@ -54,33 +57,58 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// goldenApp ist die einzige Sicht der Szenarien auf die App.
-type goldenApp struct{ app *App }
-
-// goldenStart lädt die Config wie das Binary (config.Load, Zeitzone), baut die App und
-// ruft Init auf. Der Logger schreibt ohne Zeitstempel.
-func goldenStart(ctx context.Context, cfgPath string, logger *log.Logger, dry bool) (*goldenApp, error) {
-	cfg, _, err := config.Load(cfgPath)
-	if err != nil {
-		return nil, err
-	}
-	loc, err := loadLocation(cfg.Timezone)
-	if err != nil {
-		return nil, err
-	}
-	app, err := NewApp(cfg, loc, notionTokens(cfg), logger, dry)
-	if err != nil {
-		return nil, err
-	}
-	app.notifier = &fakeNotifier{} // nie das echte osascript
-	if err := app.Init(ctx); err != nil {
-		return nil, err
-	}
-	return &goldenApp{app: app}, nil
+// testApp ist die Sicht der Root-Tests (Golden, e2e, Ablauf) auf die
+// Verdrahtung nach Init: dieselben Schritte wie main (cli.Init, cli.NewPipeline).
+// Env wird vor dem Start angepasst, danach nicht mehr.
+type testApp struct {
+	env    cli.Env
+	cfg    *config.Config // = env.Cfg
+	loc    *time.Location // = env.Loc
+	log    *log.Logger    // = env.Log, derselbe Logger wie in der Pipeline
+	ledger *ledger.Ledger // Protokoll der Pipeline
+	p      *pipeline.Pipeline
 }
 
-// Pass nutzt den vorhandenen Seam: now kommt vom Szenario.
-func (g *goldenApp) Pass(ctx context.Context, now time.Time) { g.app.Pass(ctx, now) }
+// newTestApp baut die Pipeline aus env und dem Ergebnis von Init.
+func newTestApp(env cli.Env, s cli.Setup) *testApp {
+	return &testApp{env: env, cfg: env.Cfg, loc: env.Loc, log: env.Log, ledger: s.Ledger, p: cli.NewPipeline(env, s)}
+}
+
+// startTestApp ruft Init auf und baut die Pipeline.
+func startTestApp(ctx context.Context, env cli.Env) (*testApp, error) {
+	s, err := cli.Init(ctx, env)
+	if err != nil {
+		return nil, err
+	}
+	return newTestApp(env, s), nil
+}
+
+// Pass nutzt den vorhandenen Seam: now kommt vom Test.
+func (a *testApp) Pass(ctx context.Context, now time.Time) { a.p.Pass(ctx, now) }
+
+// states ist der Wiederholungszustand der Pipeline.
+func (a *testApp) states() map[string]*pipeline.FileState { return a.p.States() }
+
+func (a *testApp) Run(ctx context.Context) { cli.Run(ctx, a.env, a.p) }
+
+func (a *testApp) ProcessSingleFile(ctx context.Context, path string) error {
+	return cli.ProcessSingleFile(ctx, a.env, a.p, path)
+}
+
+// goldenStart lädt die Config wie das Binary (loadConfig), verdrahtet wie main
+// (newEnv) und ruft Init auf. Der Logger schreibt ohne Zeitstempel.
+func goldenStart(ctx context.Context, cfgPath string, logger *log.Logger, dry bool) (*testApp, error) {
+	cfg, loc, _, err := loadConfig(cfgPath)
+	if err != nil {
+		return nil, err
+	}
+	env, err := newEnv(cfg, loc, logger, dry, nil)
+	if err != nil {
+		return nil, err
+	}
+	env.Notifier = &fakeNotifier{} // nie das echte osascript
+	return startTestApp(ctx, env)
+}
 
 // goldenRunCLI startet main() per Re-Exec des Testbinaries (kein go build).
 // env ersetzt die Umgebung vollständig. GOCOVERDIR kommt dazu (äußerer Wert,

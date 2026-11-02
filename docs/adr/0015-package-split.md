@@ -25,7 +25,7 @@ Status: accepted (Mark approved M2 at the gate, 2026-11-02), R-M2-01. Number 001
 | R-M2-07 | `config` |
 | R-M2-08 | `watch` |
 | R-M2-09 | `pipeline` |
-| R-M2-10 | entry point stays `main.go` in package `main` |
+| R-M2-10 | `cli` (wiring, `Check`, `Run`, `ProcessSingleFile`); entry point stays `main.go` in package `main` |
 
 - Dependency rules, enforced by `arch_test.go` (hermetic `go list -deps -json`, extendable list `archRules`):
   1. `internal/domain` imports only stdlib and itself.
@@ -53,6 +53,7 @@ Status: accepted (Mark approved M2 at the gate, 2026-11-02), R-M2-01. Number 001
 - Golden unchanged over M2 is the safety net; a deviation ends the task.
 - More packages mean more exported names and some boilerplate for options structs and interfaces.
 - Interfaces and injection are decided separately (ADR 0006, R-M2-09).
+- R-M2-10: `app.go` is deleted. `internal/cli` holds the wiring and is exempt from rule 2 (it imports `pipeline`); infra packages must not import `cli`. `TestArchRootPackageOnlyMain` keeps the module root to `main.go`. Build command `go build -o ~/bin/meetingsync .` is unchanged (OD-06 option A).
 
 ## OPEN
 - None.

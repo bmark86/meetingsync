@@ -32,11 +32,14 @@ var archRules = []archRule{
 		forbidden: func(d string, std bool) bool { return !std && !inPkg(d, modulePath+"/internal/domain") },
 	},
 	{
-		name: "Infra-Pakete (internal/* außer pipeline) importieren internal/pipeline nicht",
+		// internal/cli ist die Schicht über der Pipeline (Einstiegspunkte), kein Infra-Paket.
+		name: "Infra-Pakete (internal/* außer pipeline und cli) importieren internal/pipeline und internal/cli nicht",
 		applies: func(p string) bool {
-			return inPkg(p, modulePath+"/internal") && !inPkg(p, modulePath+"/internal/pipeline")
+			return inPkg(p, modulePath+"/internal") && !inPkg(p, modulePath+"/internal/pipeline") && !inPkg(p, modulePath+"/internal/cli")
 		},
-		forbidden: func(d string, _ bool) bool { return inPkg(d, modulePath+"/internal/pipeline") },
+		forbidden: func(d string, _ bool) bool {
+			return inPkg(d, modulePath+"/internal/pipeline") || inPkg(d, modulePath+"/internal/cli")
+		},
 	},
 	{
 		name:    "internal/transcript importiert nur Standardbibliothek und internal/domain",
@@ -121,11 +124,29 @@ var archRules = []archRule{
 			return true
 		},
 	},
+	{
+		// Ohne internal/notify und internal/secret (os/exec): Token und
+		// Mitteilung baut main. go.yaml.in/yaml/v3 kommt transitiv über internal/config.
+		name:    "internal/cli importiert nur Standardbibliothek, golang.org/x/sys/unix, go.yaml.in/yaml/v3 und internal/{config,domain,transcript,ledger,watch,llm,notion,pipeline}",
+		applies: func(p string) bool { return inPkg(p, modulePath+"/internal/cli") },
+		forbidden: func(d string, std bool) bool {
+			if std || d == "golang.org/x/sys/unix" || inPkg(d, "go.yaml.in/yaml/v3") {
+				return false
+			}
+			for _, ok := range []string{"config", "domain", "transcript", "ledger", "watch", "llm", "notion", "pipeline", "cli"} {
+				if inPkg(d, modulePath+"/internal/"+ok) {
+					return false
+				}
+			}
+			return true
+		},
+	},
 }
 
 type listedPkg struct {
 	ImportPath   string
 	Standard     bool
+	GoFiles      []string
 	Deps         []string
 	TestImports  []string
 	XTestImports []string
@@ -217,7 +238,7 @@ func TestArchRulesDetectViolations(t *testing.T) {
 		{ImportPath: "go.yaml.in/yaml/v3"},
 		{ImportPath: modulePath + "/internal/domain", Deps: []string{"errors", modulePath + "/internal/llm", "go.yaml.in/yaml/v3"}, TestImports: []string{"testing"}},
 		{ImportPath: modulePath + "/internal/notion", Deps: []string{modulePath + "/internal/domain", "go.yaml.in/yaml/v3"}, XTestImports: []string{modulePath + "/internal/pipeline"}},
-		{ImportPath: modulePath + "/internal/pipeline", Deps: []string{modulePath + "/internal/domain", modulePath + "/internal/notion", "golang.org/x/sys/unix", modulePath + "/internal/config", modulePath + "/internal/notify"}, TestImports: []string{"go.yaml.in/yaml/v3"}},
+		{ImportPath: modulePath + "/internal/pipeline", Deps: []string{modulePath + "/internal/domain", modulePath + "/internal/notion", "golang.org/x/sys/unix", modulePath + "/internal/config", modulePath + "/internal/notify", modulePath + "/internal/cli"}, TestImports: []string{"go.yaml.in/yaml/v3"}},
 		{ImportPath: modulePath + "/internal/transcript", Deps: []string{"errors", modulePath + "/internal/domain", modulePath + "/internal/notion", "go.yaml.in/yaml/v3"}},
 		{ImportPath: modulePath + "/internal/ledger", Deps: []string{"errors", modulePath + "/internal/domain", "go.yaml.in/yaml/v3"}},
 		{ImportPath: modulePath + "/internal/llm", Deps: []string{"errors", modulePath + "/internal/domain", modulePath + "/internal/notion", "go.yaml.in/yaml/v3"}},
@@ -225,8 +246,9 @@ func TestArchRulesDetectViolations(t *testing.T) {
 		{ImportPath: modulePath + "/internal/config", Deps: []string{"os", "go.yaml.in/yaml/v3", modulePath + "/internal/secret"}, TestImports: []string{"os/exec"}},
 		{ImportPath: modulePath + "/internal/secret", Deps: []string{"os/exec", "go.yaml.in/yaml/v3", modulePath + "/internal/config"}},
 		{ImportPath: modulePath + "/internal/watch", Deps: []string{"golang.org/x/sys/unix", modulePath + "/internal/domain", modulePath + "/internal/transcript", modulePath + "/internal/notion", "golang.org/x/sys/cpu"}},
-		{ImportPath: modulePath + "/internal/llm/sub", Deps: []string{"os/exec"}},
-		{ImportPath: modulePath, Deps: []string{modulePath + "/internal/pipeline"}},
+		{ImportPath: modulePath + "/internal/llm/sub", Deps: []string{"os/exec", modulePath + "/internal/cli"}},
+		{ImportPath: modulePath + "/internal/cli", Deps: []string{modulePath + "/internal/pipeline", modulePath + "/internal/config", "go.yaml.in/yaml/v3", "golang.org/x/sys/unix", modulePath + "/internal/notify", "os/exec"}, XTestImports: []string{modulePath + "/internal/secret"}},
+		{ImportPath: modulePath, Deps: []string{modulePath + "/internal/pipeline", modulePath + "/internal/cli", "os/exec"}},
 	}
 	got := archViolations(pkgs, archRules)
 	want := []string{
@@ -237,6 +259,7 @@ func TestArchRulesDetectViolations(t *testing.T) {
 		archRules[4].name + ": " + modulePath + "/internal/notion → " + modulePath + "/internal/pipeline",
 		archRules[11].name + ": " + modulePath + "/internal/pipeline → " + modulePath + "/internal/config",
 		archRules[11].name + ": " + modulePath + "/internal/pipeline → " + modulePath + "/internal/notify",
+		archRules[11].name + ": " + modulePath + "/internal/pipeline → " + modulePath + "/internal/cli",
 		archRules[11].name + ": " + modulePath + "/internal/pipeline → go.yaml.in/yaml/v3",
 		archRules[2].name + ": " + modulePath + "/internal/transcript → " + modulePath + "/internal/notion",
 		archRules[2].name + ": " + modulePath + "/internal/transcript → go.yaml.in/yaml/v3",
@@ -252,9 +275,29 @@ func TestArchRulesDetectViolations(t *testing.T) {
 		archRules[8].name + ": " + modulePath + "/internal/secret → " + modulePath + "/internal/config",
 		archRules[10].name + ": " + modulePath + "/internal/watch → " + modulePath + "/internal/notion",
 		archRules[10].name + ": " + modulePath + "/internal/watch → golang.org/x/sys/cpu",
+		archRules[1].name + ": " + modulePath + "/internal/llm/sub → " + modulePath + "/internal/cli",
+		archRules[5].name + ": " + modulePath + "/internal/llm/sub → " + modulePath + "/internal/cli",
 		archRules[9].name + ": " + modulePath + "/internal/llm/sub → os/exec",
+		archRules[9].name + ": " + modulePath + "/internal/cli → os/exec",
+		archRules[12].name + ": " + modulePath + "/internal/cli → " + modulePath + "/internal/notify",
+		archRules[12].name + ": " + modulePath + "/internal/cli → " + modulePath + "/internal/secret",
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("Verstöße =\n%s\nerwartet\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
+}
+
+// Fängt: Code außer dem Einstieg im Root-Paket (M2-Exit: package main enthält
+// nur main.go mit Flags, Verdrahtung und Exit-Codes; OD-06 Option A).
+func TestArchRootPackageOnlyMain(t *testing.T) {
+	for _, p := range goListPackages(t) {
+		if p.ImportPath != modulePath {
+			continue
+		}
+		if strings.Join(p.GoFiles, ",") != "main.go" {
+			t.Fatalf("Root-Paket enthält %v, erwartet nur main.go", p.GoFiles)
+		}
+		return
+	}
+	t.Fatalf("go list liefert %s nicht", modulePath)
 }

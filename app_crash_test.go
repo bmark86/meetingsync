@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"meetingsync/internal/cli"
 	"meetingsync/internal/config"
 	"meetingsync/internal/ledger"
 	"meetingsync/internal/pipeline"
@@ -81,7 +82,7 @@ func (h *hookLog) String() string { h.mu.Lock(); defer h.mu.Unlock(); return h.b
 
 type crashEnv struct {
 	f     *fakeServer
-	app   *App
+	app   *testApp
 	dir   string
 	log   *hookLog
 	rt    *hookRT
@@ -90,13 +91,18 @@ type crashEnv struct {
 	sum   string // Zusammenfassung (Partner)
 }
 
-func newCrashEnv(t *testing.T) *crashEnv {
+// newCrashEnv: opts passen Env vor Init an (nach dem Hook-Logger).
+func newCrashEnv(t *testing.T, opts ...func(e *crashEnv, env *cli.Env)) *crashEnv {
 	t.Helper()
 	f := &fakeServer{t: t, appends: map[string]int{}}
-	rt := &hookRT{}
-	app, dir := setupWith(t, f, rt)
-	e := &crashEnv{f: f, app: app, dir: dir, log: &hookLog{}, rt: rt}
-	app.log = log.New(e.log, "", 0)
+	e := &crashEnv{f: f, log: &hookLog{}, rt: &hookRT{}}
+	app, dir := setupWith(t, f, e.rt, func(env *cli.Env) {
+		env.Log = log.New(e.log, "", 0)
+		for _, o := range opts {
+			o(e, env)
+		}
+	})
+	e.app, e.dir = app, dir
 	e.tr = filepath.Join(dir, "Meeting 2026-10-28 14-00.txt")
 	e.sum = filepath.Join(dir, "Meeting 2026-10-28 14-00 (1).txt")
 	writeOld(t, e.tr, srtLikeText(), 5*time.Minute)
@@ -116,12 +122,13 @@ func (e *crashEnv) restart(t *testing.T) {
 	t.Helper()
 	e.log = &hookLog{}
 	e.rt = &hookRT{}
-	app, err := newApp(e.app.cfg, e.app.loc, notionTokens(e.app.cfg), log.New(e.log, "", 0), false,
-		appSeams{notionTransport: e.rt, notifier: &fakeNotifier{}})
+	env, err := newEnv(e.app.cfg, e.app.loc, log.New(e.log, "", 0), false, e.rt)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := app.Init(context.Background()); err != nil {
+	env.Notifier = &fakeNotifier{}
+	app, err := startTestApp(context.Background(), env)
+	if err != nil {
 		t.Fatal(err)
 	}
 	e.app = app

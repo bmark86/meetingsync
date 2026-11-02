@@ -25,7 +25,7 @@ Status: accepted (coordinator, R-M2-09a, 2026-11-02).
 - Retry policy is its own type; values unchanged: transient errors 1/2/4/8/16 min, then 16 min; other errors 2 min; `max_attempts`; context cancel is not counted.
 - The three state copies are merged into `state()`; `retryLater()` (now + 2 min) serves `interrupted` and archive failures. `handleError` uses `state()` and `retryPolicy.record`, which computes its own backoff by error class.
 - `writeFehlerTxt` moved to `internal/watch` as `WriteFehlerTxt` (needs `os.OpenFile`), so `pipeline` has no `os.*` and no `time.Now()`.
-- Stays in `package main` until R-M2-10: `Init`, `Check`, `Run` (ticker, `time.Now`), `ProcessSingleFile`, `printDryRun`, `mustJSON`. `App.pipe()` builds the pipeline lazily after `Init` and is reset by every `Init` (temporary).
+- `Init`, `Check`, `Run` (ticker, `time.Now`), `ProcessSingleFile`, `printDryRun` and `mustJSON` moved to `internal/cli` in R-M2-10.
 
 ## Alternatives considered
 | Alternative | Why not |
@@ -38,5 +38,6 @@ Status: accepted (coordinator, R-M2-09a, 2026-11-02).
 - Pipeline tests inject fakes; coverage `pipeline` 93.5 % own / 98.8 % combined; golden byte-identical.
 - Trade-off: `pipeline` is coupled to `*ledger.Ledger`; a fake ledger is not possible, tests use a real one in a temp dir.
 - Trade-off: `Notifier` is declared twice (`internal/notify` and `pipeline`); `main` wires one into the other.
-- Temporary: lazy `App.pipe()`; `FileState`, `States()` and `ErrUnterbrochen` are exported only for `package main` tests (review in R-M2-10).
+- `FileState`, `States()` and `ErrUnterbrochen` are exported only for root tests (still so after R-M2-10; follow-up R-M4-04).
 - R-M2-09b (coordinator, 2026-11-02): `sleepFn` became the field `Client.sleep` in `internal/notion`; tests inject the Notion transport via the unexported `appSeams`. Rejected: a shared `mustJSON` (needs an artificial common package, so two copies stay in `internal/llm` and `main`) and an exported in-memory `watchtest` FS (pipeline tests use real temp dirs at 93.5 % coverage, so it would be speculative). `llm.Normalize` stays a separate call after `Summarize`; `FormatTitle`/`deadlineLabel` stay in `internal/notion`.
+- R-M2-10 (coordinator, 2026-11-02): lazy `App.pipe()` and `appSeams` are gone. `internal/cli` builds the pipeline directly in `NewPipeline` (`time.Now` injected there); `cli.Notion` is an interface, so `Init`/`Check` are tested with fakes. `main.go` constructs notify, secret, LLM and Notion in `newEnv` (the `os/exec` arch rule stays unchanged). Two wiring helpers (`loadConfig`, `newEnv`) instead of one, because a combined helper would move the `Konfiguration:` line and change stdout.

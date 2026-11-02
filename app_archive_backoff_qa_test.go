@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"meetingsync/internal/cli"
 	"meetingsync/internal/ledger"
 	"meetingsync/internal/pipeline"
 )
@@ -25,17 +26,19 @@ func TestFailPathDirSyncWarnsAndMoves(t *testing.T) {
 	const syncWarn = "Zielordner nicht synchronisiert"
 	for _, tc := range []struct {
 		name string
+		wire func(e *crashEnv, env *cli.Env) // vor Init
 		arm  func(t *testing.T, e *crashEnv)
 		want string // Ursache im .fehler.txt
 	}{
-		{"Neustart-Regel", func(t *testing.T, e *crashEnv) {
+		{"Neustart-Regel", nil, func(t *testing.T, e *crashEnv) {
 			if err := e.app.ledger.Add(ledger.Entry{Hash: e.hash(), Status: ledger.StatusBegonnen, File: "x", ModTime: flowM}); err != nil {
 				t.Fatal(err)
 			}
 		}, pipeline.ErrUnterbrochen.Error()},
-		{"max_attempts", func(_ *testing.T, e *crashEnv) {
-			e.app.cfg.MaxAttempts = 1
-			e.app.llm = newLLMClient(e.app.cfg, e.app.log, e.rt)
+		{"max_attempts", func(e *crashEnv, env *cli.Env) {
+			env.Cfg.MaxAttempts = 1
+			env.LLM = newLLMClient(env.Cfg, env.Log, e.rt)
+		}, func(_ *testing.T, e *crashEnv) {
 			e.rt.before = func(r *http.Request) (*http.Response, error) {
 				if strings.Contains(r.URL.Path, "/chat/") {
 					return &http.Response{StatusCode: http.StatusBadRequest, Status: "400 Bad Request", Proto: "HTTP/1.1",
@@ -46,14 +49,18 @@ func TestFailPathDirSyncWarnsAndMoves(t *testing.T) {
 		}, "gebe auf"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			e := newCrashEnv(t)
+			calls := 0
+			e := newCrashEnv(t, func(e *crashEnv, env *cli.Env) {
+				if tc.wire != nil {
+					tc.wire(e, env)
+				}
+				env.Mover.Rename = noRename
+				env.Mover.SyncDir = func(string) error { calls++; return errors.New("EIO") }
+			})
 			if err := os.Remove(e.sum); err != nil { // eine Datei → genau eine Sync-Warnung
 				t.Fatal(err)
 			}
 			tc.arm(t, e)
-			e.app.mover.Rename = noRename
-			calls := 0
-			e.app.mover.SyncDir = func(string) error { calls++; return errors.New("EIO") }
 
 			e.threePasses(time.Now())
 

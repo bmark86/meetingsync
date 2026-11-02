@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"meetingsync/internal/cli"
 	"meetingsync/internal/ledger"
 )
 
@@ -43,8 +44,7 @@ func lastLedgerLine(t *testing.T, e *crashEnv) map[string]any {
 // fertig): begonnen bleibt stehen und der Neustart schickt die angelegte Notiz
 // nach _fehler.
 func TestCreateTasksCancelStopsRequests(t *testing.T) {
-	e := newCrashEnv(t)
-	e.app.cfg.Notion.CreateTasksFor = "all" // 2 To-dos
+	e := newCrashEnv(t, func(_ *crashEnv, env *cli.Env) { env.Cfg.Notion.CreateTasksFor = "all" }) // 2 To-dos
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var mu sync.Mutex
@@ -97,8 +97,7 @@ func TestCreateTasksCancelStopsRequests(t *testing.T) {
 // Fängt (Mutation: missing++ im Fehlerzweig von createTasks entfernt): ein
 // abgelehntes To-do wird nicht gezählt. Das zweite To-do läuft trotzdem.
 func TestCreateTasksErrorCounted(t *testing.T) {
-	e := newCrashEnv(t)
-	e.app.cfg.Notion.CreateTasksFor = "all"
+	e := newCrashEnv(t, func(_ *crashEnv, env *cli.Env) { env.Cfg.Notion.CreateTasksFor = "all" })
 	first := true
 	e.rt.before = func(r *http.Request) (*http.Response, error) {
 		if isTaskPost(r) && first {
