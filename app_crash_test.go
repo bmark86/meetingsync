@@ -24,6 +24,7 @@ import (
 	"meetingsync/internal/config"
 	"meetingsync/internal/ledger"
 	"meetingsync/internal/notion"
+	"meetingsync/internal/pipeline"
 )
 
 type crash struct{}
@@ -351,7 +352,7 @@ func TestCrashAfterEachStepNoSecondPage(t *testing.T) {
 				t.Fatalf("_fehler: %v + %d Hinweise, want beide Dateien mit Hinweis", data, len(notes))
 			}
 			for _, n := range notes {
-				if !strings.Contains(n, errUnterbrochen.Error()) {
+				if !strings.Contains(n, pipeline.ErrUnterbrochen.Error()) {
 					t.Fatalf(".fehler.txt ohne Hinweis:\n%s", n)
 				}
 			}
@@ -508,7 +509,7 @@ func TestRestartRuleIdenticalCopyToFailed(t *testing.T) {
 		t.Fatalf("_fehler: %v + %d Hinweise, want 3 Dateien mit Hinweis", data, len(notes))
 	}
 	for _, n := range notes {
-		if !strings.Contains(n, errUnterbrochen.Error()) {
+		if !strings.Contains(n, pipeline.ErrUnterbrochen.Error()) {
 			t.Fatalf(".fehler.txt ohne Hinweis:\n%s", n)
 		}
 	}
@@ -552,12 +553,12 @@ func TestRestartRuleClearsRetryState(t *testing.T) {
 	if err := e.app.ledger.Add(ledger.Entry{Hash: e.hash(), Status: ledger.StatusBegonnen, File: "x", ModTime: flowM}); err != nil {
 		t.Fatal(err)
 	}
-	e.app.state[e.tr] = &fileState{attempts: e.app.cfg.MaxAttempts - 1}
+	e.app.states()[e.tr] = &pipeline.FileState{Attempts: e.app.cfg.MaxAttempts - 1}
 	e.pass(time.Now())
 	if exists(e.tr) {
 		t.Fatal("Transkript muss nach _fehler verschoben sein")
 	}
-	if st := e.app.state[e.tr]; st != nil {
+	if st := e.app.states()[e.tr]; st != nil {
 		t.Fatalf("Fehlerzähler nicht gelöscht: %+v", st)
 	}
 }
@@ -592,7 +593,7 @@ func TestBeginLedgerErrorNoNotionRequest(t *testing.T) {
 	if posts != 0 {
 		t.Fatalf("POST /v1/pages = %d, want 0", posts)
 	}
-	if st := e.app.state[e.tr]; st == nil || st.attempts != 1 {
+	if st := e.app.states()[e.tr]; st == nil || st.Attempts != 1 {
 		t.Fatalf("Fehler muss als Versuch zählen: %+v", st)
 	}
 	if !exists(e.tr) || !strings.Contains(e.log.String(), "Protokoll nicht schreibbar, Notion-Seite nicht angelegt") {
@@ -695,7 +696,7 @@ func TestCreatePageCanceledKeepsBegonnen(t *testing.T) {
 	if got := e.lastStatus(t, e.hash()); got != ledger.StatusBegonnen {
 		t.Fatalf("Status = %q, want begonnen", got)
 	}
-	if st := e.app.state[e.tr]; st != nil && st.attempts != 0 {
+	if st := e.app.states()[e.tr]; st != nil && st.Attempts != 0 {
 		t.Fatalf("Abbruch darf nicht zählen: %+v", st)
 	}
 	e.restart(t)

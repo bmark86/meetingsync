@@ -4,7 +4,6 @@ package main
 // reine Zusammenfassung sowie Dry-Run.
 
 import (
-	"log"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -16,7 +15,7 @@ const toctouFragment = "seit dem Einlesen geändert"
 
 func (e *toctouEnv) resetLog() {
 	e.log = &hookLog{}
-	e.app.log = log.New(e.log, "", 0)
+	e.app.log.SetOutput(e.log) // derselbe Logger wie in der Pipeline
 }
 
 // Paar, Transkript während des LLM-Laufs geändert: der zweite Durchlauf

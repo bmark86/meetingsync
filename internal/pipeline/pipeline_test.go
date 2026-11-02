@@ -1,0 +1,377 @@
+package pipeline
+
+// Unit-Tests des Ablaufs mit Fakes für LLM, Notion und Mitteilung auf echten
+// Temp-Ordnern. Die Integrationstests über App, HTTP-Fakes und Absturz liegen
+// im Paket main (app_*_test.go, e2e_test.go, golden).
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"meetingsync/internal/domain"
+	"meetingsync/internal/ledger"
+	"meetingsync/internal/notion"
+	"meetingsync/internal/watch"
+)
+
+const testSummary = "Zusammenfassung\n\nEs ging um die Pipeline.\n"
+
+// ledgerLines liest die Ledger-Datei roh (eine Map je Zeile).
+func (e *testEnv) ledgerLines(t *testing.T) []map[string]any {
+	t.Helper()
+	var out []map[string]any
+	for _, raw := range strings.Split(strings.TrimSpace(mustRead(t, filepath.Join(e.o.ArchiveDir, ".meetingsync-ledger.jsonl"))), "\n") {
+		var m map[string]any
+		if err := json.Unmarshal([]byte(raw), &m); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, m)
+	}
+	return out
+}
+
+// Fängt: begonnen nach statt vor CreatePage, fertig fehlt, Zeit nicht von der
+// injizierten Uhr, Partner nicht archiviert, Mitteilung, Projekt und
+// Zusammenfassung als Kontext fehlen.
+func TestPassPairLedgerOrderAndArchive(t *testing.T) {
+	e := newEnv(t, func(o *Options, _ *Deps) { o.Notify = true; o.UseSummaryAsContext = true })
+	e.notion.projects = []notion.Page{{ID: "p1", Name: "Sirius"}}
+	var atCreate []map[string]any
+	e.notion.onCreate = func(ds string) error {
+		if ds == "notes-ds" {
+			atCreate = e.ledgerLines(t)
+		}
+		return nil
+	}
+	tr := e.write(t, "Sitzung.srt", testSRT, testM)
+	sum := e.write(t, "Sitzung.md", testSummary, testM.Add(time.Minute))
+
+	e.p.Pass(context.Background(), e.clock)
+
+	if len(atCreate) != 1 || atCreate[0]["status"] != ledger.StatusBegonnen {
+		t.Fatalf("Ledger bei CreatePage = %v, want genau begonnen", atCreate)
+	}
+	lines := e.ledgerLines(t)
+	if len(lines) != 2 || lines[1]["hash"] != sha256Hex([]byte(testSRT)) || lines[1]["url"] != "https://notion.so/page-1" || lines[1]["status"] != nil {
+		t.Fatalf("Ledger = %v, want begonnen + fertig", lines)
+	}
+	for _, ln := range lines {
+		if at, _ := time.Parse(time.RFC3339Nano, ln["at"].(string)); !at.Equal(e.clock) {
+			t.Fatalf("at = %v, want Uhr der Pipeline %v", ln["at"], e.clock)
+		}
+	}
+	if e.notion.count("notes-ds") != 1 || e.notion.count("tasks-ds") != 1 {
+		t.Fatalf("Seiten = %+v, want 1 Notiz + 1 eigenes To-do", e.notion.pages)
+	}
+	if exists(tr) || exists(sum) || !exists(e.archived("Sitzung.srt")) || !exists(e.archived("Sitzung.md")) {
+		t.Fatal("Paar nicht archiviert")
+	}
+	if len(e.llm.got) != 1 || e.llm.got[0].SummaryText != testSummary || len(e.llm.got[0].Projects) != 1 {
+		t.Fatalf("LLM-Eingabe = %+v", e.llm.got)
+	}
+	if len(e.notifier.calls) != 1 || e.notifier.calls[0] != [2]string{"Neue Meeting-Notiz", "Sync · 1 To-do(s) für dich"} {
+		t.Fatalf("Mitteilungen = %v", e.notifier.calls)
+	}
+	if len(e.p.States()) != 0 {
+		t.Fatalf("Zustand nach Erfolg: %v", e.p.States())
+	}
+
+	// Zweiter Durchlauf mit identischer Kopie: schon verarbeitet → Archiv, kein LLM.
+	e.write(t, "Kopie.srt", testSRT, testM)
+	e.p.Pass(context.Background(), e.clock)
+	if len(e.llm.got) != 1 || !exists(e.archived("Kopie.srt")) || !strings.Contains(e.log.String(), "↺ Kopie.srt wurde schon verarbeitet") {
+		t.Fatalf("Kopie: LLM %d, Log:\n%s", len(e.llm.got), e.log)
+	}
+}
+
+// Fängt: Neustart-Regel legt neu an, Reihenfolge Partner vor Transkript,
+// verworfen fehlt, Kopie im selben Durchlauf läuft normal.
+func TestPassInterruptedToFailed(t *testing.T) {
+	e := newEnv(t, nil)
+	hash := sha256Hex([]byte(testSRT))
+	if err := e.ledger.Add(ledger.Entry{Hash: hash, Status: ledger.StatusBegonnen, File: "x", ModTime: testM}); err != nil {
+		t.Fatal(err)
+	}
+	e.write(t, "A.srt", testSRT, testM)
+	e.write(t, "A.md", testSummary, testM.Add(time.Second))
+	e.write(t, "B.srt", testSRT, testM.Add(time.Hour)) // Kopie, eigenes Paar-Fenster
+	e.p.Pass(context.Background(), e.clock.Add(time.Hour))
+
+	if len(e.llm.got) != 0 || len(e.notion.pages) != 0 {
+		t.Fatal("Neustart-Regel darf weder LLM noch Notion fragen")
+	}
+	for _, n := range []string{"A.srt", "A.md", "B.srt"} {
+		if got := mustRead(t, filepath.Join(e.o.FailedDir, n+".fehler.txt")); !strings.Contains(got, ErrUnterbrochen.Error()) {
+			t.Fatalf("%s.fehler.txt = %q", n, got)
+		}
+	}
+	lines := e.ledgerLines(t)
+	if len(lines) != 2 || lines[1]["status"] != ledger.StatusVerworfen {
+		t.Fatalf("Ledger = %v, want begonnen + genau ein verworfen", lines)
+	}
+}
+
+// Fängt: Verschieben nach _fehler scheitert, trotzdem verworfen; kein Backoff.
+func TestInterruptedMoveFailsRetriesLater(t *testing.T) {
+	e := newEnv(t, func(_ *Options, d *Deps) {
+		d.Mover = watch.Mover{Rename: func(string, string) error { return os.ErrPermission }}
+	})
+	hash := sha256Hex([]byte(testSRT))
+	if err := e.ledger.Add(ledger.Entry{Hash: hash, Status: ledger.StatusBegonnen, File: "x", ModTime: testM}); err != nil {
+		t.Fatal(err)
+	}
+	tr := e.write(t, "A.srt", testSRT, testM)
+	e.p.Pass(context.Background(), e.clock)
+	st := e.p.States()[tr]
+	if st == nil || st.Attempts != 0 || !st.NextTry.Equal(e.clock.Add(2*time.Minute)) || !e.ledger.Started(hash) {
+		t.Fatalf("state = %+v, Started = %v; want NextTry +2 min, begonnen", st, e.ledger.Started(hash))
+	}
+	e.p.Pass(context.Background(), e.clock.Add(time.Minute))
+	if n := strings.Count(e.log.String(), "unterbrochen"); n != 1 {
+		t.Fatalf("Neustart-Regel vor Ablauf der Wartezeit erneut (%d)", n)
+	}
+}
+
+// Fängt: Waisen-Aktionen vertauscht, Wartezeit ignoriert, HasNear ohne Archiv.
+func TestPassOrphanActions(t *testing.T) {
+	for _, tc := range []struct {
+		action   string
+		archived bool
+		llm      int
+		log      string
+	}{
+		{"archive", true, 0, "orphan_summary_action=archive"},
+		{"keep", false, 0, "orphan_summary_action=keep"},
+		{"note", true, 1, "→ Notizen.md (nur Zusammenfassung"},
+	} {
+		t.Run(tc.action, func(t *testing.T) {
+			e := newEnv(t, func(o *Options, _ *Deps) { o.OrphanAction = tc.action })
+			p := e.write(t, "Notizen.md", testSummary, testM)
+			e.p.Pass(context.Background(), testM.Add(9*time.Minute))
+			if !exists(p) || len(e.llm.got) != 0 {
+				t.Fatal("vor Ablauf der Wartezeit passiert nichts")
+			}
+			e.p.Pass(context.Background(), testM.Add(10*time.Minute))
+			if exists(e.archived("Notizen.md")) != tc.archived || len(e.llm.got) != tc.llm || !strings.Contains(e.log.String(), tc.log) {
+				t.Fatalf("archiviert=%v LLM=%d Log:\n%s", exists(e.archived("Notizen.md")), len(e.llm.got), e.log)
+			}
+			if tc.llm == 1 && !strings.Contains(e.llm.got[0].Text, "Es ging um die Pipeline.") {
+				t.Fatalf("Text = %q", e.llm.got[0].Text)
+			}
+		})
+	}
+	t.Run("HasNear", func(t *testing.T) {
+		e := newEnv(t, nil)
+		if err := e.ledger.Add(ledger.Entry{Hash: "h", File: "x.srt", ModTime: testM}); err != nil {
+			t.Fatal(err)
+		}
+		e.write(t, "Notizen.md", testSummary, testM.Add(time.Minute))
+		e.p.Pass(context.Background(), e.clock)
+		if !exists(e.archived("Notizen.md")) || len(e.llm.got) != 0 {
+			t.Fatal("Zusammenfassung zu verarbeitetem Transkript muss ins Archiv")
+		}
+	})
+}
+
+// Fängt: Dry-Run legt Seiten an, schreibt Protokoll oder verschiebt.
+func TestPassDryRunCallsPrinter(t *testing.T) {
+	var gotTitle string
+	var gotProject *notion.Page
+	e := newEnv(t, func(o *Options, d *Deps) {
+		o.Dry = true
+		d.DryRun = func(title string, project *notion.Page, _ *domain.MeetingNote, _ []string, blocks int) {
+			gotTitle, gotProject = title, project
+			if blocks == 0 {
+				t.Error("keine Blöcke")
+			}
+		}
+	})
+	e.notion.projects = []notion.Page{{ID: "p1", Name: "sirius"}}
+	p := e.write(t, "Sitzung.srt", testSRT, testM)
+	e.p.Pass(context.Background(), e.clock)
+	if gotTitle == "" || gotProject == nil || gotProject.ID != "p1" {
+		t.Fatalf("DryRun: Titel %q, Projekt %+v", gotTitle, gotProject)
+	}
+	if len(e.notion.pages) != 0 || !exists(p) || exists(e.archived("Sitzung.srt")) {
+		t.Fatal("Dry-Run hat Seiten angelegt oder verschoben")
+	}
+	if !e.ledger.Has(sha256Hex([]byte(testSRT))) {
+		t.Fatal("im Speicher gilt der Hash als fertig")
+	}
+}
+
+// Fängt: -file schreibt Protokoll oder erkennt Zusammenfassungen nicht.
+func TestProcessFileNoLedger(t *testing.T) {
+	e := newEnv(t, nil)
+	p := e.write(t, "Notizen.md", testSummary, testM)
+	url, err := e.p.ProcessFile(context.Background(), &watch.Entry{Path: p, Name: "Notizen.md", ModTime: testM, Kind: domain.KindSummary, Content: []byte(testSummary)})
+	if err != nil || url != "https://notion.so/page-1" {
+		t.Fatalf("url=%q err=%v", url, err)
+	}
+	if !e.llm.got[0].SummaryOnly || exists(filepath.Join(e.o.ArchiveDir, ".meetingsync-ledger.jsonl")) || !exists(p) {
+		t.Fatal("-file: nur Zusammenfassung, kein Protokoll, Datei bleibt")
+	}
+	if _, err := e.p.ProcessFile(context.Background(), &watch.Entry{Path: p, Name: "leer.md", Kind: domain.KindSummary, Content: []byte(" \n")}); err == nil || err.Error() != "Datei ist leer" {
+		t.Fatalf("leere Datei: err=%v", err)
+	}
+}
+
+// Fängt: Cache der Projektliste ignoriert die Uhr; Fehler verwirft die alte Liste.
+func TestActiveProjectsCache(t *testing.T) {
+	e := newEnv(t, nil)
+	e.notion.projects = []notion.Page{{ID: "p1", Name: "A"}}
+	if got := e.p.ActiveProjects(context.Background()); len(got) != 1 || e.notion.projCalls != 1 {
+		t.Fatalf("erster Abruf: %v, Aufrufe %d", got, e.notion.projCalls)
+	}
+	e.clock = e.clock.Add(projectsTTL - time.Second)
+	e.p.ActiveProjects(context.Background())
+	if e.notion.projCalls != 1 {
+		t.Fatal("innerhalb der TTL kein neuer Abruf")
+	}
+	e.clock = e.clock.Add(time.Second)
+	e.notion.projErr = errors.New("weg")
+	if got := e.p.ActiveProjects(context.Background()); len(got) != 1 || e.notion.projCalls != 2 || !strings.Contains(e.log.String(), "Projektliste nicht abrufbar: weg") {
+		t.Fatalf("nach TTL mit Fehler: %v, Aufrufe %d, Log:\n%s", got, e.notion.projCalls, e.log)
+	}
+	n := newEnv(t, func(_ *Options, d *Deps) { d.Notion = nil })
+	if n.p.ActiveProjects(context.Background()) != nil {
+		t.Fatal("ohne Notion keine Projekte")
+	}
+}
+
+// Fängt: Fehlerantwort von CreatePage lässt begonnen stehen; Lücken
+// (Blöcke, To-dos) nicht gezählt oder als Fehler gewertet.
+func TestProcessCreatePageErrorsAndGaps(t *testing.T) {
+	t.Run("Fehler", func(t *testing.T) {
+		e := newEnv(t, nil)
+		e.notion.onCreate = func(string) error { return errors.New("400") }
+		p := e.write(t, "Sitzung.srt", testSRT, testM)
+		e.p.Pass(context.Background(), e.clock)
+		lines := e.ledgerLines(t)
+		if len(lines) != 2 || lines[1]["status"] != ledger.StatusVerworfen || !exists(p) {
+			t.Fatalf("Ledger = %v, Datei bleibt = %v", lines, exists(p))
+		}
+		if st := e.p.States()[p]; st == nil || st.Attempts != 1 || !st.NextTry.Equal(e.clock.Add(2*time.Minute)) {
+			t.Fatalf("state = %+v", st)
+		}
+	})
+	t.Run("Lücken", func(t *testing.T) {
+		e := newEnv(t, func(o *Options, _ *Deps) { o.CreateTasksFor = "all" })
+		taskCalls := 0
+		e.notion.onCreate = func(ds string) error {
+			if ds == "notes-ds" {
+				return notion.ErrUnvollstaendig
+			}
+			if taskCalls++; taskCalls == 1 {
+				return errors.New("400")
+			}
+			return nil
+		}
+		e.write(t, "Sitzung.srt", testSRT, testM)
+		e.p.Pass(context.Background(), e.clock)
+		lines := e.ledgerLines(t)
+		if ln := lines[len(lines)-1]; ln["bloecke_fehler"] != 1.0 || ln["todos_fehlen"] != 1.0 {
+			t.Fatalf("fertig-Zeile = %v", ln)
+		}
+		if !strings.Contains(e.log.String(), "Sitzung.srt: Notiz unvollständig – 1 To-do(s) nicht angelegt, 1 Fehler beim Anhängen von Blöcken") {
+			t.Fatalf("Log:\n%s", e.log)
+		}
+	})
+	t.Run("ohne Tasks", func(t *testing.T) {
+		e := newEnv(t, func(o *Options, _ *Deps) { o.CreateTasksFor = "none" })
+		e.write(t, "Sitzung.srt", testSRT, testM)
+		e.p.Pass(context.Background(), e.clock)
+		if e.notion.count("tasks-ds") != 0 || e.notion.count("notes-ds") != 1 {
+			t.Fatalf("Seiten = %+v", e.notion.pages)
+		}
+	})
+}
+
+// Fängt: begonnen lässt sich nicht schreiben und CreatePage läuft trotzdem.
+func TestProcessBeginLedgerErrorNoCreatePage(t *testing.T) {
+	e := newEnv(t, nil)
+	if err := os.MkdirAll(filepath.Join(e.o.ArchiveDir, ".meetingsync-ledger.jsonl"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p := e.write(t, "Sitzung.srt", testSRT, testM)
+	e.p.Pass(context.Background(), e.clock)
+	if len(e.notion.pages) != 0 || !strings.Contains(e.log.String(), "Protokoll nicht schreibbar, Notion-Seite nicht angelegt") {
+		t.Fatalf("Seiten %d, Log:\n%s", len(e.notion.pages), e.log)
+	}
+	if e.ledger.Started(sha256Hex([]byte(testSRT))) || e.p.States()[p].Attempts != 1 {
+		t.Fatal("Speicher muss verworfen sein, Fehler zählt als Versuch")
+	}
+}
+
+// Fängt: Pass arbeitet trotz Abbruch oder bei unlesbarem Ordner weiter.
+func TestPassCanceledAndUnreadable(t *testing.T) {
+	e := newEnv(t, nil)
+	p := e.write(t, "Sitzung.srt", testSRT, testM)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	e.p.Pass(ctx, e.clock)
+	if len(e.llm.got) != 0 || !exists(p) {
+		t.Fatal("mit Abbruch keine Arbeit")
+	}
+	if err := os.RemoveAll(e.o.WatchDir); err != nil {
+		t.Fatal(err)
+	}
+	e.p.Pass(context.Background(), e.clock)
+	if !strings.Contains(e.log.String(), "Ordner nicht lesbar") {
+		t.Fatalf("Log:\n%s", e.log)
+	}
+}
+
+// statFS ist watch.OS mit fester Antwort von Lstat für einen Pfad.
+type statFS struct {
+	watch.OS
+	path  string
+	info  fs.FileInfo
+	calls int
+}
+
+func (s *statFS) Lstat(path string) (fs.FileInfo, error) {
+	if path == s.path {
+		s.calls++
+		return s.info, nil
+	}
+	return s.OS.Lstat(path)
+}
+
+// Fängt: changedSinceRead fragt nicht das injizierte FS (sondern os direkt).
+func TestChangedSinceReadUsesFS(t *testing.T) {
+	sfs := &statFS{}
+	e := newEnv(t, func(_ *Options, d *Deps) { d.FS = sfs })
+	p := e.write(t, "a.txt", "alt\n", testM)
+	other := e.write(t, "b.txt", "länger\n", testM.Add(time.Second))
+	info, err := os.Lstat(other)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sfs.path, sfs.info = p, info
+	if !e.p.changedSinceRead(&watch.Entry{Path: p, Size: 4, ModTime: testM}) || sfs.calls != 1 {
+		t.Fatalf("geändert laut FS nicht erkannt (Aufrufe %d)", sfs.calls)
+	}
+	if e.p.changedSinceRead(&watch.Entry{Path: other, Size: info.Size(), ModTime: info.ModTime()}) {
+		t.Fatal("unverändert als geändert gemeldet")
+	}
+	if e.p.changedSinceRead(&watch.Entry{Path: filepath.Join(e.o.WatchDir, "fehlt")}) {
+		t.Fatal("fehlende Datei gilt als unverändert")
+	}
+}
+
+// Fängt: Dry-Run verschiebt bei fail.
+func TestFailDryRunMovesNothing(t *testing.T) {
+	e := newEnv(t, func(o *Options, _ *Deps) { o.Dry = true })
+	p := e.write(t, "a.txt", "x", testM)
+	if !e.p.fail(errOther, &watch.Entry{Path: p, Name: "a.txt"}) || !exists(p) {
+		t.Fatal("Dry-Run: fail ok und Datei bleibt")
+	}
+}

@@ -105,6 +105,22 @@ var archRules = []archRule{
 				!inPkg(d, modulePath+"/internal/transcript") && !inPkg(d, modulePath+"/internal/watch")
 		},
 	},
+	{
+		// golang.org/x/sys/unix kommt transitiv über internal/watch.
+		name:    "internal/pipeline importiert nur Standardbibliothek, golang.org/x/sys/unix und internal/{domain,transcript,ledger,watch,llm,notion}",
+		applies: func(p string) bool { return inPkg(p, modulePath+"/internal/pipeline") },
+		forbidden: func(d string, std bool) bool {
+			if std || d == "golang.org/x/sys/unix" {
+				return false
+			}
+			for _, ok := range []string{"domain", "transcript", "ledger", "watch", "llm", "notion", "pipeline"} {
+				if inPkg(d, modulePath+"/internal/"+ok) {
+					return false
+				}
+			}
+			return true
+		},
+	},
 }
 
 type listedPkg struct {
@@ -201,7 +217,7 @@ func TestArchRulesDetectViolations(t *testing.T) {
 		{ImportPath: "go.yaml.in/yaml/v3"},
 		{ImportPath: modulePath + "/internal/domain", Deps: []string{"errors", modulePath + "/internal/llm", "go.yaml.in/yaml/v3"}, TestImports: []string{"testing"}},
 		{ImportPath: modulePath + "/internal/notion", Deps: []string{modulePath + "/internal/domain", "go.yaml.in/yaml/v3"}, XTestImports: []string{modulePath + "/internal/pipeline"}},
-		{ImportPath: modulePath + "/internal/pipeline", Deps: []string{modulePath + "/internal/domain", modulePath + "/internal/notion"}},
+		{ImportPath: modulePath + "/internal/pipeline", Deps: []string{modulePath + "/internal/domain", modulePath + "/internal/notion", "golang.org/x/sys/unix", modulePath + "/internal/config", modulePath + "/internal/notify"}, TestImports: []string{"go.yaml.in/yaml/v3"}},
 		{ImportPath: modulePath + "/internal/transcript", Deps: []string{"errors", modulePath + "/internal/domain", modulePath + "/internal/notion", "go.yaml.in/yaml/v3"}},
 		{ImportPath: modulePath + "/internal/ledger", Deps: []string{"errors", modulePath + "/internal/domain", "go.yaml.in/yaml/v3"}},
 		{ImportPath: modulePath + "/internal/llm", Deps: []string{"errors", modulePath + "/internal/domain", modulePath + "/internal/notion", "go.yaml.in/yaml/v3"}},
@@ -219,6 +235,9 @@ func TestArchRulesDetectViolations(t *testing.T) {
 		archRules[1].name + ": " + modulePath + "/internal/notion → " + modulePath + "/internal/pipeline",
 		archRules[4].name + ": " + modulePath + "/internal/notion → go.yaml.in/yaml/v3",
 		archRules[4].name + ": " + modulePath + "/internal/notion → " + modulePath + "/internal/pipeline",
+		archRules[11].name + ": " + modulePath + "/internal/pipeline → " + modulePath + "/internal/config",
+		archRules[11].name + ": " + modulePath + "/internal/pipeline → " + modulePath + "/internal/notify",
+		archRules[11].name + ": " + modulePath + "/internal/pipeline → go.yaml.in/yaml/v3",
 		archRules[2].name + ": " + modulePath + "/internal/transcript → " + modulePath + "/internal/notion",
 		archRules[2].name + ": " + modulePath + "/internal/transcript → go.yaml.in/yaml/v3",
 		archRules[3].name + ": " + modulePath + "/internal/ledger → " + modulePath + "/internal/domain",

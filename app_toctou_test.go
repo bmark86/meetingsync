@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"meetingsync/internal/ledger"
-	"meetingsync/internal/watch"
 )
 
 const toctouWarn = "seit dem Einlesen geändert → nicht archiviert"
@@ -144,7 +143,7 @@ func TestTOCTOUChangedDuringLLM(t *testing.T) {
 
 			// Nächster Durchlauf: neue Fassung = neuer Hash, normal verarbeitet.
 			e.log = &hookLog{}
-			e.app.log = log.New(e.log, "", 0)
+			e.app.log.SetOutput(e.log)
 			e.app.Pass(t.Context(), time.Now())
 			if n := e.notes(); n != 2 {
 				t.Fatalf("Notizen nach Durchlauf 2 = %d, will 2", n)
@@ -280,55 +279,5 @@ func TestTOCTOUPrimaryRemoved(t *testing.T) {
 	}
 	if s := e.status(t, sha256Hex([]byte(srtLikeText()))); s != ledger.StatusFertig {
 		t.Fatalf("Status = %q, will fertig", s)
-	}
-}
-
-// Weg "schon verarbeitet" (Has): Hash im Ledger, Datei danach geändert →
-// bleibt liegen mit Warnung. Fängt: Recheck nur auf dem Verarbeitungsweg.
-func TestTOCTOUAlreadyProcessedChanged(t *testing.T) {
-	e := newTOCTOUEnv(t)
-	p := filepath.Join(e.dir, "a.txt")
-	writeOld(t, p, "alt\n", 5*time.Minute)
-	st, err := os.Lstat(p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	stale := &watch.Entry{Path: p, Name: "a.txt", ModTime: st.ModTime(), Size: st.Size(), Content: []byte("alt\n")}
-	hash := sha256Hex(stale.Content)
-	if err := e.app.ledger.Add(ledger.Entry{Hash: hash, File: "a.txt", ModTime: st.ModTime(), At: time.Now()}); err != nil {
-		t.Fatal(err)
-	}
-	rewrite(t, p, "neu, länger\n", st.ModTime().Add(time.Second))
-
-	e.app.handle(t.Context(), job{primary: stale}, time.Now())
-
-	if r := remaining(t, e.dir); len(r) != 1 {
-		t.Fatalf("geänderte Datei archiviert, Exportordner = %v", r)
-	}
-	if !strings.Contains(e.log.String(), "a.txt wurde "+toctouWarn) {
-		t.Fatalf("Warnung fehlt:\n%s", e.log)
-	}
-}
-
-// archive selbst prüft nicht (HasNear, orphan_summary_action=archive): auch ein
-// veralteter Eintrag geht ins Archiv wie bisher. Fängt: Recheck in archive.
-func TestTOCTOUArchiveNoRecheck(t *testing.T) {
-	e := newTOCTOUEnv(t)
-	p := filepath.Join(e.dir, "a.txt")
-	writeOld(t, p, "alt\n", 5*time.Minute)
-	st, err := os.Lstat(p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	stale := &watch.Entry{Path: p, Name: "a.txt", ModTime: st.ModTime(), Size: st.Size()}
-	e.month = st.ModTime().In(e.app.loc).Format("2006-01")
-	rewrite(t, p, "neu, länger\n", st.ModTime().Add(time.Second))
-
-	e.app.archive(stale)
-	if a := e.archived(t); len(a) != 1 || a[0] != "a.txt" {
-		t.Fatalf("Archiv = %v, will a.txt", a)
-	}
-	if strings.Contains(e.log.String(), toctouWarn) {
-		t.Fatalf("Warnung in archive:\n%s", e.log)
 	}
 }
