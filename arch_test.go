@@ -73,6 +73,28 @@ var archRules = []archRule{
 			return !std && !inPkg(d, modulePath+"/internal/notify")
 		},
 	},
+	{
+		name:    "internal/config importiert nur Standardbibliothek und go.yaml.in/yaml/v3",
+		applies: func(p string) bool { return inPkg(p, modulePath+"/internal/config") },
+		forbidden: func(d string, std bool) bool {
+			return !std && !inPkg(d, "go.yaml.in/yaml/v3") && !inPkg(d, modulePath+"/internal/config")
+		},
+	},
+	{
+		name:    "internal/secret importiert nur Standardbibliothek",
+		applies: func(p string) bool { return inPkg(p, modulePath+"/internal/secret") },
+		forbidden: func(d string, std bool) bool {
+			return !std && !inPkg(d, modulePath+"/internal/secret")
+		},
+	},
+	{
+		// Prozessstart nur für Mitteilungen (notify) und Geheimnisse (secret).
+		name: "os/exec nur in internal/notify und internal/secret",
+		applies: func(p string) bool {
+			return inPkg(p, modulePath+"/internal") && !inPkg(p, modulePath+"/internal/notify") && !inPkg(p, modulePath+"/internal/secret")
+		},
+		forbidden: func(d string, _ bool) bool { return d == "os/exec" },
+	},
 }
 
 type listedPkg struct {
@@ -174,6 +196,9 @@ func TestArchRulesDetectViolations(t *testing.T) {
 		{ImportPath: modulePath + "/internal/ledger", Deps: []string{"errors", modulePath + "/internal/domain", "go.yaml.in/yaml/v3"}},
 		{ImportPath: modulePath + "/internal/llm", Deps: []string{"errors", modulePath + "/internal/domain", modulePath + "/internal/notion", "go.yaml.in/yaml/v3"}},
 		{ImportPath: modulePath + "/internal/notify", Deps: []string{"os/exec", modulePath + "/internal/domain", "go.yaml.in/yaml/v3"}},
+		{ImportPath: modulePath + "/internal/config", Deps: []string{"os", "go.yaml.in/yaml/v3", modulePath + "/internal/secret"}, TestImports: []string{"os/exec"}},
+		{ImportPath: modulePath + "/internal/secret", Deps: []string{"os/exec", "go.yaml.in/yaml/v3", modulePath + "/internal/config"}},
+		{ImportPath: modulePath + "/internal/llm/sub", Deps: []string{"os/exec"}},
 		{ImportPath: modulePath, Deps: []string{modulePath + "/internal/pipeline"}},
 	}
 	got := archViolations(pkgs, archRules)
@@ -191,6 +216,11 @@ func TestArchRulesDetectViolations(t *testing.T) {
 		archRules[5].name + ": " + modulePath + "/internal/llm → go.yaml.in/yaml/v3",
 		archRules[6].name + ": " + modulePath + "/internal/notify → " + modulePath + "/internal/domain",
 		archRules[6].name + ": " + modulePath + "/internal/notify → go.yaml.in/yaml/v3",
+		archRules[7].name + ": " + modulePath + "/internal/config → " + modulePath + "/internal/secret",
+		archRules[9].name + ": " + modulePath + "/internal/config → os/exec",
+		archRules[8].name + ": " + modulePath + "/internal/secret → go.yaml.in/yaml/v3",
+		archRules[8].name + ": " + modulePath + "/internal/secret → " + modulePath + "/internal/config",
+		archRules[9].name + ": " + modulePath + "/internal/llm/sub → os/exec",
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("Verstöße =\n%s\nerwartet\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))

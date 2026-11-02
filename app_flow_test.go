@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"meetingsync/internal/config"
 	"meetingsync/internal/ledger"
 )
 
@@ -36,7 +37,7 @@ type flowEnv struct {
 
 // newFlowApp baut eine App ohne Notion mit LLM-Fake. Der Fake antwortet mit
 // 503, solange status nicht auf 200 steht; 200 liefert eine gültige Notiz.
-func newFlowApp(t *testing.T, mod func(*Config)) *flowEnv {
+func newFlowApp(t *testing.T, mod func(*config.Config)) *flowEnv {
 	t.Helper()
 	hits, status := &atomic.Int32{}, &atomic.Int32{}
 	status.Store(503)
@@ -54,12 +55,11 @@ func newFlowApp(t *testing.T, mod func(*Config)) *flowEnv {
 	t.Cleanup(srv.Close)
 
 	root := t.TempDir()
-	cfg := defaultConfig()
+	cfg := config.Default()
 	cfg.WatchDir = filepath.Join(root, "watch")
 	cfg.ArchiveDir = filepath.Join(root, "archiv")
 	cfg.FailedDir = filepath.Join(root, "fehler")
 	cfg.Notify = false
-	cfg.loc = time.UTC
 	cfg.LLM.BaseURL = srv.URL + "/v1"
 	cfg.LLM.Model = "m"
 	if mod != nil {
@@ -75,7 +75,7 @@ func newFlowApp(t *testing.T, mod func(*Config)) *flowEnv {
 		t.Fatal(err)
 	}
 	app := &App{
-		cfg: cfg, log: logger, llm: newLLMClient(cfg, logger, nil), ledger: l,
+		cfg: cfg, loc: time.UTC, log: logger, llm: newLLMClient(cfg, logger, nil), ledger: l,
 		state: map[string]*fileState{}, warned: map[string]bool{}, cache: map[string]cachedKind{},
 		notifier: &fakeNotifier{},
 	}
@@ -144,7 +144,7 @@ func TestPassAfterRestartUsesLoadedLedger(t *testing.T) {
 // --- Orphan-Zusammenfassungen -------------------------------------------------------
 
 func orphanEnv(t *testing.T, action string) (*flowEnv, string) {
-	env := newFlowApp(t, func(c *Config) { c.OrphanSummaryAction = action })
+	env := newFlowApp(t, func(c *config.Config) { c.OrphanSummaryAction = action })
 	return env, env.write(t, "Notizen.md", goldenSummaryMD, flowM)
 }
 
@@ -264,7 +264,7 @@ func TestPassPairProcessedOnceNeighbourIsStable(t *testing.T) {
 // Fängt: near-Prüfung im Waisen-Zweig entfernt (Zusammenfassung wird archiviert,
 // obwohl ihr Transkript gerade noch geschrieben wird).
 func TestPassOrphanSummaryWaitsForUnstableTranscript(t *testing.T) {
-	env := newFlowApp(t, func(c *Config) { c.OrphanSummaryAction = "archive"; c.OrphanSummaryMinutes = 0 })
+	env := newFlowApp(t, func(c *config.Config) { c.OrphanSummaryAction = "archive"; c.OrphanSummaryMinutes = 0 })
 	sum := env.write(t, "Notizen.md", goldenSummaryMD, flowM)
 	trAt := flowM.Add(60 * time.Second)
 	env.write(t, "Sitzung.srt", goldenSRT, trAt)
@@ -306,7 +306,7 @@ func TestPassGatingByNextTry(t *testing.T) {
 // Speicher verhindert die Wiederholung). Der echte Erfolgspfad mit Archiv und
 // Ledger auf Platte ist durch die Golden-Szenarien (G01 u. a.) abgedeckt.
 func TestPassSuccessClearsStateAndFillsLedger(t *testing.T) {
-	env := newFlowApp(t, func(c *Config) { c.MaxAttempts = 5 })
+	env := newFlowApp(t, func(c *config.Config) { c.MaxAttempts = 5 })
 	env.app.dry = true // Notion fehlt: Dry-Run liefert "dry-run" als Ergebnis
 	p := env.write(t, "Sitzung.srt", goldenSRT, flowM)
 	env.app.state[p] = &fileState{attempts: 2, transient: 2}
@@ -332,7 +332,7 @@ func TestPassSuccessClearsStateAndFillsLedger(t *testing.T) {
 // Fängt: max_attempts im Pass nicht beachtet; Datei und Hinweis landen in _fehler,
 // state wird gelöscht.
 func TestPassGivesUpAfterMaxAttempts(t *testing.T) {
-	env := newFlowApp(t, func(c *Config) { c.MaxAttempts = 2 })
+	env := newFlowApp(t, func(c *config.Config) { c.MaxAttempts = 2 })
 	p := env.write(t, "Sitzung.srt", goldenSRT, flowM)
 	now := flowM.Add(5 * time.Minute)
 	env.app.Pass(context.Background(), now)
@@ -351,7 +351,7 @@ func TestPassGivesUpAfterMaxAttempts(t *testing.T) {
 // bleiben wegen des abgebrochenen Kontexts leer). Die Prüfung im
 // Zusammenfassungs-Zweig fängt TestPassCanceledContextSummaryBranch.
 func TestPassCanceledContextDoesNothing(t *testing.T) {
-	env := newFlowApp(t, func(c *Config) { c.OrphanSummaryAction = "archive" })
+	env := newFlowApp(t, func(c *config.Config) { c.OrphanSummaryAction = "archive" })
 	tr := env.write(t, "Sitzung.srt", goldenSRT, flowM)
 	sum := env.write(t, "Notizen.md", goldenSummaryMD, flowM.Add(time.Hour))
 	ctx, cancel := context.WithCancel(context.Background())
@@ -371,7 +371,7 @@ func TestPassCanceledContextDoesNothing(t *testing.T) {
 // Fängt: ctx-Prüfung in der Zusammenfassungs-Schleife entfernt (verwaiste
 // Zusammenfassung wird trotz Abbruch archiviert).
 func TestPassCanceledContextSummaryBranch(t *testing.T) {
-	env := newFlowApp(t, func(c *Config) { c.OrphanSummaryAction = "archive" })
+	env := newFlowApp(t, func(c *config.Config) { c.OrphanSummaryAction = "archive" })
 	sum := env.write(t, "Notizen.md", goldenSummaryMD, flowM)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -419,7 +419,7 @@ func TestRunWithCanceledContextReturns(t *testing.T) {
 
 // Fängt: Run führt keinen ersten Pass sofort aus (wartet auf den Ticker, hier 1 h).
 func TestRunPassesImmediatelyThenStopsOnCancel(t *testing.T) {
-	env := newFlowApp(t, func(c *Config) { c.PollIntervalSeconds = 3600 })
+	env := newFlowApp(t, func(c *config.Config) { c.PollIntervalSeconds = 3600 })
 	env.write(t, "Sitzung.srt", goldenSRT, time.Now().Add(-time.Hour))
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})

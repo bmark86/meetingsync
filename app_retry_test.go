@@ -12,13 +12,14 @@ import (
 	"testing"
 	"time"
 
+	"meetingsync/internal/config"
 	"meetingsync/internal/domain"
 )
 
 func retryApp(t *testing.T, max int) (*App, job, string) {
 	t.Helper()
 	dir := t.TempDir()
-	cfg := defaultConfig()
+	cfg := config.Default()
 	cfg.MaxAttempts = max
 	cfg.FailedDir = filepath.Join(dir, "_fehler")
 	path := filepath.Join(dir, "meeting.txt")
@@ -40,7 +41,7 @@ var (
 )
 
 func TestDefaultMaxAttempts(t *testing.T) {
-	if got := defaultConfig().MaxAttempts; got != 10 {
+	if got := config.Default().MaxAttempts; got != 10 {
 		t.Fatalf("MaxAttempts = %d, want 10", got)
 	}
 }

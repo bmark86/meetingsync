@@ -1,23 +1,23 @@
-package main
+// Package config lädt, prüft und ergänzt die Konfiguration (YAML oder JSON).
+// Kein Prozessstart, kein Laufzeitzustand: Zeitzone und Token löst main auf.
+package config
 
 import (
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"regexp"
 	"sort"
 	"strings"
-	"time"
 
 	"go.yaml.in/yaml/v3"
 )
 
 // Config wird aus einer JSON- oder YAML-Datei geladen. Alles, was dort fehlt,
-// behält den Standardwert aus defaultConfig().
+// behält den Standardwert aus Default().
 type Config struct {
 	WatchDir             string   `json:"watch_dir" yaml:"watch_dir"`
 	ArchiveDir           string   `json:"archive_dir" yaml:"archive_dir"`
@@ -40,12 +40,6 @@ type Config struct {
 
 	LLM    LLMConfig    `json:"llm" yaml:"llm"`
 	Notion NotionConfig `json:"notion" yaml:"notion"`
-
-	loc *time.Location
-
-	// warnings sammelt Hinweise aus dem Laden (unbekannte Schlüssel, geklemmte
-	// Werte). Sie enthalten nie Werte aus der Datei; main schreibt sie ins Log.
-	warnings []string
 }
 
 type LLMConfig struct {
@@ -99,7 +93,8 @@ type ProjectsProps struct {
 	Archive   string `json:"archive" yaml:"archive"`
 }
 
-func defaultConfig() *Config {
+// Default liefert die Standardwerte.
+func Default() *Config {
 	return &Config{
 		PollIntervalSeconds:  10,
 		StableSeconds:        20,
@@ -137,7 +132,8 @@ func defaultConfig() *Config {
 	}
 }
 
-func defaultConfigPath() string {
+// DefaultPath ist ~/.config/meetingsync/config.yaml, sonst config.json.
+func DefaultPath() string {
 	return configPathIn(filepath.Join(homeDir(), ".config", "meetingsync"))
 }
 
@@ -170,49 +166,54 @@ func yamlErrorMessage(path string, err error) string {
 	return msg
 }
 
-func LoadConfig(path string) (*Config, error) {
-	cfg := defaultConfig()
-	data, err := os.ReadFile(expandHome(path))
+// Load liest die Datei, ergänzt Standardwerte und prüft sie. warnings sind
+// Hinweise (unbekannte Schlüssel, dann geklemmte Werte) ohne Werte aus der
+// Datei; der Aufrufer schreibt sie ins Log.
+func Load(path string) (cfg *Config, warnings []string, err error) {
+	cfg = Default()
+	data, err := os.ReadFile(ExpandHome(path))
 	if err != nil {
-		return nil, fmt.Errorf("kann %s nicht lesen: %w", path, err)
+		return nil, nil, fmt.Errorf("kann %s nicht lesen: %w", path, err)
 	}
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".yaml", ".yml":
 		if err := yaml.Unmarshal(data, cfg); err != nil {
 			// Originaltext bewusst verworfen: yaml-Fehler können Werte aus der
 			// Datei enthalten (etwa Tokens). Nur die Zeilennummern bleiben.
-			return nil, errors.New(yamlErrorMessage(path, err))
+			return nil, nil, errors.New(yamlErrorMessage(path, err))
 		}
 		var raw map[string]any
 		if yaml.Unmarshal(data, &raw) == nil {
-			cfg.warnUnknownKeys(raw, false)
+			warnings = unknownKeyWarnings(raw, false)
 		}
 	default:
 		if err := json.Unmarshal(data, cfg); err != nil {
-			return nil, fmt.Errorf("ungültiges JSON in %s: %w", path, err)
+			return nil, nil, fmt.Errorf("ungültiges JSON in %s: %w", path, err)
 		}
 		var raw map[string]any
 		if json.Unmarshal(data, &raw) == nil {
-			cfg.warnUnknownKeys(raw, true)
+			warnings = unknownKeyWarnings(raw, true)
 		}
 	}
-	if err := cfg.finalize(); err != nil {
-		return nil, err
+	clamps, err := cfg.Finalize()
+	if err != nil {
+		return nil, nil, err
 	}
-	return cfg, nil
+	return cfg, append(warnings, clamps...), nil
 }
 
-// warnUnknownKeys meldet Schlüssel, die in der Datei stehen, aber nicht zu
+// unknownKeyWarnings meldet Schlüssel, die in der Datei stehen, aber nicht zu
 // Config gehören (Tippfehler wirken sonst nicht). Nur der Schlüsselpfad kommt
 // in die Meldung, nie ein Wert. JSON ordnet Schlüssel ohne Beachtung der
 // Groß-/Kleinschreibung zu, YAML exakt.
-func (c *Config) warnUnknownKeys(raw map[string]any, caseInsensitive bool) {
-	var found []string
-	collectUnknown(raw, reflect.TypeOf(*c), "", caseInsensitive, &found)
+func unknownKeyWarnings(raw map[string]any, caseInsensitive bool) []string {
+	var found, warnings []string
+	collectUnknown(raw, reflect.TypeOf(Config{}), "", caseInsensitive, &found)
 	sort.Strings(found)
 	for _, k := range found {
-		c.warnings = append(c.warnings, fmt.Sprintf("Konfiguration: unbekannter Schlüssel %q wird ignoriert", k))
+		warnings = append(warnings, fmt.Sprintf("Konfiguration: unbekannter Schlüssel %q wird ignoriert", k))
 	}
+	return warnings
 }
 
 // collectUnknown prüft nur Struct-Felder rekursiv, keine *Struct. Kommen in M2
@@ -252,83 +253,62 @@ func collectUnknown(raw map[string]any, t reflect.Type, prefix string, ci bool, 
 	}
 }
 
-func (c *Config) finalize() error {
+// Finalize ergänzt abgeleitete Werte (Ordner, Endungen), klemmt zu kleine
+// Zahlen und prüft Pflichtfelder. Load ruft es auf; wer eine Config im Code
+// baut, ruft es selbst. Liefert die Hinweise zu geklemmten Werten.
+func (c *Config) Finalize() (warnings []string, err error) {
 	if strings.TrimSpace(c.WatchDir) == "" {
-		return errors.New("watch_dir fehlt")
+		return nil, errors.New("watch_dir fehlt")
 	}
-	c.WatchDir = expandHome(c.WatchDir)
+	c.WatchDir = ExpandHome(c.WatchDir)
 	if c.ArchiveDir == "" {
 		c.ArchiveDir = filepath.Join(c.WatchDir, "_archiv")
 	}
 	if c.FailedDir == "" {
 		c.FailedDir = filepath.Join(c.WatchDir, "_fehler")
 	}
-	c.ArchiveDir = expandHome(c.ArchiveDir)
-	c.FailedDir = expandHome(c.FailedDir)
+	c.ArchiveDir = ExpandHome(c.ArchiveDir)
+	c.FailedDir = ExpandHome(c.FailedDir)
 	c.TranscriptExtensions = normExts(c.TranscriptExtensions)
 	c.SummaryExtensions = normExts(c.SummaryExtensions)
 
 	switch c.OrphanSummaryAction {
 	case "note", "archive", "keep":
 	default:
-		return fmt.Errorf("orphan_summary_action muss note, archive oder keep sein, nicht %q", c.OrphanSummaryAction)
+		return nil, fmt.Errorf("orphan_summary_action muss note, archive oder keep sein, nicht %q", c.OrphanSummaryAction)
 	}
 	switch c.Notion.CreateTasksFor {
 	case "me", "all", "none":
 	default:
-		return fmt.Errorf("create_tasks_for muss me, all oder none sein, nicht %q", c.Notion.CreateTasksFor)
+		return nil, fmt.Errorf("create_tasks_for muss me, all oder none sein, nicht %q", c.Notion.CreateTasksFor)
 	}
 	if c.PollIntervalSeconds < 2 {
-		c.warnClamp("poll_interval_seconds", c.PollIntervalSeconds, 2)
+		warnings = append(warnings, clampWarning("poll_interval_seconds", c.PollIntervalSeconds, 2))
 		c.PollIntervalSeconds = 2
 	}
 	if c.MaxAttempts < 1 {
-		c.warnClamp("max_attempts", c.MaxAttempts, 1)
+		warnings = append(warnings, clampWarning("max_attempts", c.MaxAttempts, 1))
 		c.MaxAttempts = 1
 	}
 	if c.LLM.MaxChunkChars < 5000 {
-		c.warnClamp("llm.max_chunk_chars", c.LLM.MaxChunkChars, 5000)
+		warnings = append(warnings, clampWarning("llm.max_chunk_chars", c.LLM.MaxChunkChars, 5000))
 		c.LLM.MaxChunkChars = 5000
 	}
 	if c.LLM.TimeoutMinutes < 1 {
-		c.warnClamp("llm.timeout_minutes", c.LLM.TimeoutMinutes, 1)
+		warnings = append(warnings, clampWarning("llm.timeout_minutes", c.LLM.TimeoutMinutes, 1))
 		c.LLM.TimeoutMinutes = 1
 	}
 	if strings.TrimSpace(c.LLM.Model) == "" {
-		return errors.New("llm.model fehlt – trag den Modell-Identifier aus LM Studio ein (siehe README)")
+		return nil, errors.New("llm.model fehlt – trag den Modell-Identifier aus LM Studio ein (siehe README)")
 	}
 	if strings.TrimSpace(c.Notion.NotesDataSourceID) == "" {
-		return errors.New("notion.notes_data_source_id fehlt")
+		return nil, errors.New("notion.notes_data_source_id fehlt")
 	}
-	loc, err := time.LoadLocation(c.Timezone)
-	if err != nil {
-		return fmt.Errorf("unbekannte Zeitzone %q: %w", c.Timezone, err)
-	}
-	c.loc = loc
-	return nil
+	return warnings, nil
 }
 
-func (c *Config) warnClamp(key string, was, now int) {
-	c.warnings = append(c.warnings, fmt.Sprintf("Konfiguration: %s=%d ist zu klein, verwende %d", key, was, now))
-}
-
-// NotionToken sucht den Token in dieser Reihenfolge:
-// Umgebungsvariable NOTION_TOKEN → macOS-Schlüsselbund → Config-Datei.
-func (c *Config) NotionToken() (string, error) {
-	if t := strings.TrimSpace(os.Getenv("NOTION_TOKEN")); t != "" {
-		return t, nil
-	}
-	if s := strings.TrimSpace(c.Notion.TokenKeychainService); s != "" {
-		out, err := exec.Command("security", "find-generic-password", "-s", s, "-w").Output()
-		if err != nil {
-			return "", fmt.Errorf("Notion-Token aus dem Schlüsselbund (%s) nicht lesbar: %w", s, err)
-		}
-		return strings.TrimSpace(string(out)), nil
-	}
-	if t := strings.TrimSpace(c.Notion.Token); t != "" {
-		return t, nil
-	}
-	return "", errors.New("kein Notion-Token: NOTION_TOKEN setzen oder token_keychain_service bzw. token in der Config angeben")
+func clampWarning(key string, was, now int) string {
+	return fmt.Sprintf("Konfiguration: %s=%d ist zu klein, verwende %d", key, was, now)
 }
 
 func normExts(in []string) []string {
@@ -354,7 +334,8 @@ func homeDir() string {
 	return h
 }
 
-func expandHome(p string) string {
+// ExpandHome ersetzt ein führendes ~ durch das Home-Verzeichnis.
+func ExpandHome(p string) string {
 	if p == "~" {
 		return homeDir()
 	}

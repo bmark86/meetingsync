@@ -15,6 +15,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"meetingsync/internal/config"
 )
 
 // goldenMainEnv startet im Kindprozess main() statt der Tests (Re-Exec für CLI-Szenarien).
@@ -55,14 +57,18 @@ func TestMain(m *testing.M) {
 // goldenApp ist die einzige Sicht der Szenarien auf die App.
 type goldenApp struct{ app *App }
 
-// goldenStart lädt die Config wie das Binary (LoadConfig), baut die App und
+// goldenStart lädt die Config wie das Binary (config.Load, Zeitzone), baut die App und
 // ruft Init auf. Der Logger schreibt ohne Zeitstempel.
 func goldenStart(ctx context.Context, cfgPath string, logger *log.Logger, dry bool) (*goldenApp, error) {
-	cfg, err := LoadConfig(cfgPath)
+	cfg, _, err := config.Load(cfgPath)
 	if err != nil {
 		return nil, err
 	}
-	app, err := NewApp(cfg, logger, dry)
+	loc, err := loadLocation(cfg.Timezone)
+	if err != nil {
+		return nil, err
+	}
+	app, err := NewApp(cfg, loc, notionTokens(cfg), logger, dry)
 	if err != nil {
 		return nil, err
 	}

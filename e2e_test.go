@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 	"unicode/utf8"
+
+	"meetingsync/internal/config"
 )
 
 // fakeServer simuliert LM Studio und die Notion-API in einem Server.
@@ -175,7 +177,7 @@ func setup(t *testing.T, f *fakeServer) (*App, string) {
 	t.Setenv("NOTION_TOKEN", "secret-test")
 
 	dir := t.TempDir()
-	cfg := defaultConfig()
+	cfg := config.Default()
 	cfg.WatchDir = dir
 	cfg.Notify = false
 	cfg.IncludeTranscript = true
@@ -185,14 +187,18 @@ func setup(t *testing.T, f *fakeServer) (*App, string) {
 	cfg.Notion.NotesDataSourceID = "notes-ds"
 	cfg.Notion.TasksDataSourceID = "tasks-ds"
 	cfg.Notion.ProjectsDataSourceID = "projects-ds"
-	if err := cfg.finalize(); err != nil {
+	if _, err := cfg.Finalize(); err != nil {
+		t.Fatal(err)
+	}
+	loc, err := loadLocation(cfg.Timezone)
+	if err != nil {
 		t.Fatal(err)
 	}
 	logger := log.New(io.Discard, "", 0)
 	if testing.Verbose() {
 		logger = log.New(os.Stdout, "    ", 0)
 	}
-	app, err := NewApp(cfg, logger, false)
+	app, err := NewApp(cfg, loc, notionTokens(cfg), logger, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,7 +245,7 @@ func TestEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	month := st.ModTime().In(app.cfg.loc).Format("2006-01")
+	month := st.ModTime().In(app.loc).Format("2006-01")
 
 	app.Pass(ctx, time.Now())
 

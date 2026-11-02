@@ -427,6 +427,7 @@ Logging stays `*log.Logger` with identical texts. Named constants (A-17) and rea
 - Depends on: R-M2-01. Findings: A-12, A-03.
 - Model: opus, secrets.
 - Reviews: CR, SR, QA.
+- Status: done 2026-11-02. `internal/config`: `Load(path)` returns `(cfg, warnings, err)`; `Default`, `DefaultPath`, `Finalize`, `ExpandHome` exported; no `os/exec`, no `loc`. `internal/secret`: `TokenSource` (`NewNotion`), unexported runner seam; call, trimming and error texts byte-identical. Time zone resolved in `main` right after `Load`; `NewApp(cfg, loc, tokens, logger, dry)`; token still read eagerly in `NewApp`. Arch rules: config stdlib + yaml, secret stdlib, `os/exec` only in `internal/notify` and `internal/secret`. G204 path now `internal/secret/secret.go`. Coverage config 92.1 %, secret 100 %. Golden byte-identical, CR and SR approved. SR LOW: PATH lookup of `security` (pre-existing) → R-M3-07.
 
 #### R-M2-08 watch with FS interface
 - Goal: `listEntries`, `isTempName`, `pairSummary`, `near`, `moveFile` → `internal/watch`; FS interface (ReadDir, Lstat, ReadFile, Link/Rename, exclusive Create).
@@ -454,6 +455,7 @@ Logging stays `*log.Logger` with identical texts. Named constants (A-17) and rea
 - Acceptance: OD-06 option A (decided: proposal): `main.go` in the module root stays the only `package main`; `go build -o ~/bin/meetingsync .` works unchanged; README/CLAUDE.md/plist unchanged. (Option B `cmd/meetingsync` is not chosen.) stdout/exit codes of `-check`, `-dry-run`, `-file` unchanged (G09, G10); `e2e_test.go` runs through the adapter.
 - Scope: `main.go`, `app.go` (rest, then deleted), tests.
 - Depends on: R-M2-09. Findings: A-03, A-04, A-13.
+- Note (from R-M2-07): one helper for the `Load` → `loadLocation` → tokens → `NewApp` wiring (repeated in `main.go`, `golden_adapter_test.go`, `e2e_test.go`); re-check whether `config.Finalize` must stay exported.
 - Model: sonnet, wiring.
 - Reviews: CR, QA.
 
@@ -513,8 +515,8 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 
 #### R-M3-07 Absolute paths and minimal environment
 - Goal: `/usr/bin/security`, `/usr/bin/osascript` with a minimal environment.
-- Acceptance: the runner gets an absolute path; environment only `HOME`, `USER`, `LANG`, `PATH=/usr/bin:/bin` (final list in the task); escaping for osascript unchanged (test with `"` and `\`); tests with a fake runner check path and environment; gosec G204 exclusions for app.go, config.go and internal/notify/notify.go removed (the `app` alternative in the regex is already stale: app.go no longer imports os/exec).
-- Scope: `internal/notify`, TokenSource from R-M2-07, tests.
+- Acceptance: the runner gets an absolute path; environment only `HOME`, `USER`, `LANG`, `PATH=/usr/bin:/bin` (final list in the task); escaping for osascript unchanged (test with `"` and `\`); tests with a fake runner check path and environment; gosec G204 exclusions for app.go, internal/secret/secret.go and internal/notify/notify.go removed (replaces config.go; the `app` alternative in the regex is already stale: app.go no longer imports os/exec); `/usr/bin/security` and `/usr/bin/osascript` as absolute paths (SR LOW from R-M2-07: pre-existing PATH lookup).
+- Scope: `internal/notify`, `internal/secret` (TokenSource from R-M2-07), tests.
 - Depends on: M2. Findings: S-10 (code now in `internal/notify/notify.go`, formerly `app.go`).
 - Model: opus, secrets and process start.
 - Reviews: CR, SR, QA.
@@ -529,7 +531,7 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 
 #### R-M3-09 Config values out of error messages
 - Goal: `orphan_summary_action`, `create_tasks_for`, `timezone`: message without the value (progress #1).
-- Acceptance: config.go:210, 215, 234 without the `%q` value; a test checks that a test value is not in the message; `docs/progress.md` #1 done.
+- Acceptance: internal/config/config.go:210, 215, 234 (line numbers from before the move, re-check) without the `%q` value; a test checks that a test value is not in the message; `docs/progress.md` #1 done.
 - Scope: `internal/config`, tests.
 - Depends on: M2. Findings: S-17.
 - Model: haiku, three format strings.
@@ -584,7 +586,8 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 ⚠ Behavior change, decided by Mark on 2026-11-01 (D9, OD-20: yes). Replaces R-OPT-04.
 - Goal: the LLM API key does not have to be in the config file in clear text (S-18).
 - Acceptance: the key can be read from the Keychain through the `TokenSource` from R-M2-07; lookup order and Keychain service name are set in the task (same pattern as the Notion token); a plain `llm.api_key` in the config keeps working; the key never appears in logs or error messages; `/usr/bin/security` and minimal environment from R-M3-07; tests per branch with a fake runner; `config.example.yaml` and `config.example.json` document it (commented out, without a value); with no key set the LLM request is unchanged (golden unchanged).
-- Scope: `internal/config`, TokenSource, `internal/llm` (header), `config.example.*`, README (setup), tests.
+- Note (from R-M2-07): `secret.NewNotion` hard-codes the env name `NOTION_TOKEN` and the Notion error text; generalize the source for `llm.api_key` (own env name and label).
+- Scope: `internal/config`, `internal/secret`, `internal/llm` (header), `config.example.*`, README (setup), tests.
 - Out of scope: other secrets.
 - Depends on: R-M3-07, R-M3-11 (same package, sequence). Findings: S-18.
 - Model: opus, secrets.
@@ -678,7 +681,7 @@ Exit: `git grep` and `git log -p --all` without the three real IDs; tag `v1.0.0`
 - Reviews: CR, SR, QA. ADR 0011.
 
 #### R-M4-03 Personal defaults
-- Goal: change the `MyName` default "Mark" (config.go:104) to a neutral value.
+- Goal: change the `MyName` default "Mark" (`internal/config/config.go`, `MyName` default) to a neutral value.
 - Acceptance: `my_name: Mark` is in Mark's config (OD-14b, answered), so the neutral default is allowed; `config.example.yaml` with an example; golden unchanged (scenarios set `my_name` explicitly).
 - Scope: `internal/config`, `config.example.*`, README table.
 - Depends on: R-M3-11. Findings: A-20.

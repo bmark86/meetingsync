@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"os"
@@ -25,7 +25,7 @@ func TestAC2_ExtensionSelectsFormat(t *testing.T) {
 	for _, name := range []string{"c.yaml", "c.yml", "c.YAML", "c.Yml"} {
 		p := filepath.Join(t.TempDir(), name)
 		writeCfg(t, p, minimalYAML)
-		cfg, err := LoadConfig(p)
+		cfg, _, err := Load(p)
 		if err != nil || cfg.LLM.Model != "m" {
 			t.Fatalf("%s: err=%v cfg=%v", name, err, cfg)
 		}
@@ -34,12 +34,12 @@ func TestAC2_ExtensionSelectsFormat(t *testing.T) {
 	for _, name := range []string{"c.json", "c.txt", "config"} {
 		p := filepath.Join(t.TempDir(), name)
 		writeCfg(t, p, minimalYAML)
-		_, err := LoadConfig(p)
+		_, _, err := Load(p)
 		if err == nil || !strings.Contains(err.Error(), "ungültiges JSON") {
 			t.Fatalf("%s: JSON-Fehler erwartet, bekam %v", name, err)
 		}
 		writeCfg(t, p, `{"watch_dir":"/x","llm":{"model":"m"},"notion":{"notes_data_source_id":"n"}}`)
-		if _, err := LoadConfig(p); err != nil {
+		if _, _, err := Load(p); err != nil {
 			t.Fatalf("%s: JSON muss laden: %v", name, err)
 		}
 	}
@@ -49,11 +49,11 @@ func TestAC2_ExtensionSelectsFormat(t *testing.T) {
 func TestAC3_PartialYAMLKeepsNestedDefaults(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "config.yaml")
 	writeCfg(t, p, "watch_dir: /x\nllm:\n  model: m\n  temperature: 0.9\nnotion:\n  notes_data_source_id: n\n  notes_properties:\n    title: Titel\n  tasks_properties:\n    due_date: Fällig\n")
-	cfg, err := LoadConfig(p)
+	cfg, _, err := Load(p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	d := defaultConfig()
+	d := Default()
 	if cfg.LLM.Temperature != 0.9 || cfg.LLM.Model != "m" {
 		t.Fatalf("gesetzte llm-Werte fehlen: %+v", cfg.LLM)
 	}
@@ -86,11 +86,11 @@ func TestAC3_PartialYAMLKeepsNestedDefaults(t *testing.T) {
 func TestAC4_UnknownFieldsIgnored(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "config.yaml")
 	writeCfg(t, p, minimalYAML+"unbekannt: 1\nliste: [a, b]\nllm2:\n  x: y\n")
-	if _, err := LoadConfig(p); err != nil {
+	if _, _, err := Load(p); err != nil {
 		t.Fatal(err)
 	}
 	writeCfg(t, p, "watch_dir: /x\nllm:\n  model: m\n  foo: bar\nnotion:\n  notes_data_source_id: n\n  notes_properties:\n    baz: 1\n")
-	if _, err := LoadConfig(p); err != nil {
+	if _, _, err := Load(p); err != nil {
 		t.Fatalf("geschachtelt: %v", err)
 	}
 }
@@ -100,21 +100,21 @@ func TestAC5_DefaultPathPrecedence(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	dir := filepath.Join(home, ".config", "meetingsync")
-	if got := defaultConfigPath(); got != filepath.Join(dir, "config.json") {
+	if got := DefaultPath(); got != filepath.Join(dir, "config.json") {
 		t.Fatalf("ohne Dateien: %s", got)
 	}
 	writeCfg(t, filepath.Join(dir, "config.json"), "{}")
-	if got := defaultConfigPath(); got != filepath.Join(dir, "config.json") {
+	if got := DefaultPath(); got != filepath.Join(dir, "config.json") {
 		t.Fatalf("nur json: %s", got)
 	}
 	writeCfg(t, filepath.Join(dir, "config.yaml"), "{}")
-	if got := defaultConfigPath(); got != filepath.Join(dir, "config.yaml") {
+	if got := DefaultPath(); got != filepath.Join(dir, "config.yaml") {
 		t.Fatalf("beide: %s", got)
 	}
 	// config.yml wird bewusst nicht automatisch gesucht (Kriterium nennt nur config.yaml).
 	_ = os.Remove(filepath.Join(dir, "config.yaml"))
 	writeCfg(t, filepath.Join(dir, "config.yml"), "{}")
-	if got := defaultConfigPath(); got != filepath.Join(dir, "config.json") {
+	if got := DefaultPath(); got != filepath.Join(dir, "config.json") {
 		t.Fatalf("yml: %s", got)
 	}
 }
@@ -142,48 +142,12 @@ func TestAC7_YAMLErrorFormat(t *testing.T) {
 	}
 	for _, c := range cases {
 		writeCfg(t, p, c)
-		_, err := LoadConfig(p)
+		_, _, err := Load(p)
 		if err == nil {
 			t.Fatalf("Fehler erwartet für %q", c)
 		}
 		if strings.Contains(err.Error(), "ntn_secret") || !re(err.Error()) {
 			t.Fatalf("Format verletzt für %q: %q", c, err.Error())
 		}
-	}
-}
-
-// AC-8: Binary loggt den Pfad nach erfolgreichem Laden; kein Netz, kein echtes HOME.
-func TestAC8_BinaryLogsConfigPath(t *testing.T) {
-	home := t.TempDir()
-	// ohne NOTION_TOKEN; Proxy-Schutz gegen echtes Netz
-	env := append([]string{"HOME=" + home, "PATH=" + os.Getenv("PATH")}, goldenProxyEnv...)
-	run := func(args ...string) string {
-		// -check ohne Token endet mit Exit 1, ohne Netzzugriff
-		stdout, stderr, _ := goldenRunCLI(t, env, args...)
-		return stdout + stderr
-	}
-	body := "watch_dir: " + filepath.Join(home, "w") + "\nllm:\n  model: m\nnotion:\n  token_keychain_service: \"\"\n  notes_data_source_id: n\n"
-
-	// explizit per -config
-	p := filepath.Join(t.TempDir(), "x.yaml")
-	writeCfg(t, p, body)
-	if out := run("-config", p, "-check"); !strings.Contains(out, "Konfiguration: "+p+"\n") {
-		t.Fatalf("Pfadlog fehlt:\n%s", out)
-	}
-	// Default: config.yaml hat Vorrang vor config.json
-	dir := filepath.Join(home, ".config", "meetingsync")
-	writeCfg(t, filepath.Join(dir, "config.json"), `{"watch_dir":"/x","llm":{"model":"m"},"notion":{"token_keychain_service":"","notes_data_source_id":"n"}}`)
-	if out := run("-check"); !strings.Contains(out, "Konfiguration: "+filepath.Join(dir, "config.json")) {
-		t.Fatalf("json-Default:\n%s", out)
-	}
-	writeCfg(t, filepath.Join(dir, "config.yaml"), body)
-	if out := run("-check"); !strings.Contains(out, "Konfiguration: "+filepath.Join(dir, "config.yaml")) {
-		t.Fatalf("yaml-Vorrang:\n%s", out)
-	}
-	// Fehlerfall: kein Erfolgs-Log
-	writeCfg(t, p, "notify: [x\n")
-	out := run("-config", p, "-check")
-	if strings.Contains(out, "Konfiguration: "+p+"\n") || !strings.Contains(out, "ungültiges YAML in "+p) {
-		t.Fatalf("Fehlerfall:\n%s", out)
 	}
 }

@@ -46,9 +46,10 @@ linters:
       # gosec G204: feste Programme (security, osascript, go); Argumente werden
       # nicht durch eine Shell interpretiert. Befund S-10 / Task R-M3-07.
       # Exclusion in R-M3-07 entfernen. internal/notify: Code aus app.go
-      # verschoben (R-M2-06), gleiche Begründung, gleiche Task.
+      # verschoben (R-M2-06), internal/secret: Code aus config.go verschoben
+      # (R-M2-07), gleiche Begründung, gleiche Task.
       - linters: [gosec]
-        path: ^(app|config|internal/notify/notify)\.go$
+        path: ^(app|internal/secret/secret|internal/notify/notify)\.go$
         text: "G204:"
       # version wird nur per -ldflags "-X main.version=..." gesetzt und per
       # "go version -m" gelesen (OD-02), nicht im Code.
