@@ -35,6 +35,7 @@
 | R-M2-08 | `internal/watch` (`Lister`, `PairSummary`, `Near`, `FS`/`OS` read side, `Mover{Rename, Copy, SyncDir}` atomic move unchanged; nil fields = real functions). Decision: coordinator: FS covers ReadDir/ReadFile/Lstat only, the move is not rebuilt on an FS abstraction (`os.SameFile`/`RENAME_EXCL` risk, ADR 0015); arch rule; gosec G30[126]/G304 paths moved to `internal/watch`. Coverage 96.2 %, tests 216 → 231, golden byte-identical, CR and SR approved. Next: R-M2-09 pipeline (opus) | done | 2026-11-02 |
 | R-M2-09a | `internal/pipeline` core: flow, retry policy type, archive, fail moved from `app.go`; injection via `Deps` (clock, FS, Mover, Summarizer, Notion port, Notifier port, `*ledger.Ledger`); state helpers merged (follow-up 21); ADR 0006. Decisions: coordinator: split R-M2-09 into 09a/09b; concrete `*ledger.Ledger` accepted; own `Notifier` port (arch rule); `handleError` computes its own backoff. Coverage 93.5 % own / 98.8 % combined, tests 231 → 251, golden byte-identical, CR and SR approved. Incident: a reviewer ran `git stash` and popped it at once; working tree verified intact. Next: R-M2-09b (opus) | done | 2026-11-02 |
 | R-M2-09b | Pipeline leftovers: `Client.sleep` replaces `sleepFn`; `appSeams` + `newApp` (zero value in `NewApp`); `newFlowApp` on fakes, `hookNotion` removed; nil-guards for `Notifier`/`DryRun` in `pipeline.New`. Decisions: coordinator: `mustJSON` stays twice, `Normalize` stays a separate call, `FormatTitle`/`deadlineLabel` stay in `internal/notion`, no `watchtest` FS (real temp dirs). Tests 251 → 253, golden byte-identical, review approved | done | 2026-11-02 |
+| R-M2-10 | Entry point and wiring: `app.go` deleted; new `internal/cli` (`Env`, `Init` → `Setup`, `NewPipeline`, `Check`, `Run`, `ProcessSingleFile`, `printDryRun`); `cli.Notion` interface; `main.go` only file of package `main` (flags, `loadConfig`, `newEnv`, exit codes); `appSeams` removed; arch rules incl. `TestArchRootPackageOnlyMain`; G304 exclusion path `internal/cli/cli.go`. Decisions: coordinator: two wiring helpers (one would move the `Konfiguration:` line), notify/secret built only in `main`, Run/ticker in `cli`, Notion transport stays a `newEnv` parameter. Tests 253 → 264+, coverage 86–100 % per package, golden byte-identical, review approved | done | 2026-11-02 |
 
 ## M1 summary (complete 2026-11-02: R-M1-01 to R-M1-07 + R-M1-EXIT)
 
@@ -68,7 +69,43 @@ Decisions taken in M1:
 | Coordinator | `go 1.26.0` accepted | R-M1-04 |
 | Coordinator | No deletion after an identity mismatch (and after a syncDir error, see above) | R-M1-04 |
 
-Next: R-M2-10 entry point and wiring (sonnet).
+## M2 summary (complete 2026-11-02: R-M2-01 to R-M2-10)
+
+| Finding | Closed by |
+| --- | --- |
+| A-03 | R-M2-01 to R-M2-10 |
+| A-04 | R-M2-09a, R-M2-10 |
+| A-05 | R-M2-06, R-M2-09a, R-M2-09b, R-M2-10 |
+| A-06 | R-M2-01, R-M2-02 |
+| A-07 | R-M2-04, R-M2-05, R-M2-07, R-M2-08 |
+| A-12 | R-M2-07 |
+| A-13 | R-M2-10 |
+| A-15 | R-M2-01, R-M2-05 |
+
+Exit criteria (met):
+- Package `main` contains only `main.go` (`TestArchRootPackageOnlyMain`).
+- Dependency-direction test in `arch_test.go` (`go list -deps`).
+- Golden byte-identical over the whole of M2.
+- Coverage per package 86–100 %; tests 253 → 264+ in the last task.
+
+Decisions taken in M2:
+
+| By | Decision | Task |
+| --- | --- | --- |
+| Mark | ADR number 0015 for the package split | R-M2-01 |
+| Mark | Approved M2 incl. R-M2-07 (opus, secrets) at the gate | R-M2-07 |
+| Coordinator | Ledger API kept (no `Begin`/`Finish` redesign) | R-M2-03 |
+| Coordinator | R-M2-09 split into 09a/09b; concrete `*ledger.Ledger` injected | R-M2-09 |
+| Coordinator | `watch.FS` read-only plus `Mover` for the atomic move | R-M2-08 |
+| Coordinator | `mustJSON` stays twice; `llm.Normalize` stays a separate call; `FormatTitle`/`deadlineLabel` stay in `internal/notion`; no `watchtest` FS | R-M2-09b |
+| Coordinator | R-M2-10 upgraded to opus | R-M2-10 |
+| Coordinator | Two wiring helpers (`loadConfig`, `newEnv`) instead of one | R-M2-10 |
+
+Incidents:
+- R-M2-05: the first report claimed an arch rule that did not exist; caught in verification, rule added in fix round 1.
+- R-M2-09a: a reviewer ran `git stash` and popped it at once; working tree verified intact, harmless.
+
+Next: M3 gate.
 
 ## Open follow-ups
 
@@ -78,7 +115,7 @@ Next: R-M2-10 entry point and wiring (sonnet).
 | 2 | Local toolchain go1.25.5 has stdlib vulnerabilities (security review). Recommendation: rebuild with Go 1.26.10 or newer | open | done (R-M0-01) |
 | 3 | Migrate the real config to `config.yaml` and update the installed plist | Mark | open |
 | 4 | One week of manual testing from 2026-11-01, then set up the launchd service (see `docs/launchd.md`) | Mark | open |
-| 5 | `meetingsync -check` exits 0 although a check fails (✗ seen for LM Studio; `Check` returns nil in `app.go`) | open | planned (R-M3-13) |
+| 5 | `meetingsync -check` exits 0 although a check fails (✗ seen for LM Studio; `Check` returns nil in `internal/cli/cli.go`) | open | planned (R-M3-13) |
 | 6 | `-file` without `-dry-run` writes no ledger entry and leaves the file in place; a later service run would process it a second time | open | planned (R-M3-14) |
 | 7 | An LLM request that always hits `llm.timeout_minutes` counts as transient (llm.go ~185): retried every 16 min forever, never moved to `_fehler`. Decide whether that is intended (decision: Mark) | open | done (T6) |
 | 8 | `go` directive still 1.22: legacy GODEBUG defaults stay active (see ADR 0002) | Mark | done (R-M0-11) |
@@ -96,3 +133,4 @@ Next: R-M2-10 entry point and wiring (sonnet).
 | 20 | A regular file swapped for a symlink between `ReadDir` and `ReadFile` is still followed (low risk, local only) | open | planned (R-M3-19) |
 | 21 | Three copies of "get or create state, `nextTry` = now + 2 min" (`interrupted`, `archiveAt`, `handleError`) | open | done (R-M2-09a) |
 | 22 | A German date followed by an underscore and a time (`Weekly 07.01.2026_08-45.txt`) is misparsed: `reDateISO` matches `2026_08-45`, `dateFromName` never tries `reDateDE`, the meeting date falls back to an estimate (pre-existing since v1.0.0, found by QA in R-M2-02). Ask Mark at the M3 gate | Mark | planned (R-M3-20) |
+| 23 | Root tests still need exported `pipeline.FileState`, `States()`, `ErrUnterbrochen` and `config.Finalize` (e2e builds its config in code). Move tests into `internal/pipeline`, load e2e config from a file, then unexport | open | planned (R-M4-04) |

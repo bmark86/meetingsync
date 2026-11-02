@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"meetingsync/internal/cli"
 	"meetingsync/internal/ledger"
 )
 
@@ -19,31 +20,36 @@ const toctouWarn = "seit dem Einlesen geändert → nicht archiviert"
 
 type toctouEnv struct {
 	f     *fakeServer
-	app   *App
+	app   *testApp
 	dir   string
 	log   *hookLog
+	llmRT *hookRT // LM-Studio-Transport, Hook setzt onLLM
 	month string
 }
 
-func newTOCTOUEnv(t *testing.T) *toctouEnv {
+// newTOCTOUEnv: opts passen Env vor Init an (nach Logger und LLM-Hook).
+func newTOCTOUEnv(t *testing.T, opts ...func(*cli.Env)) *toctouEnv {
 	t.Helper()
 	f := &fakeServer{t: t, appends: map[string]int{}}
-	app, dir := setup(t, f)
-	e := &toctouEnv{f: f, app: app, dir: dir, log: &hookLog{}}
-	app.log = log.New(e.log, "", 0)
+	e := &toctouEnv{f: f, log: &hookLog{}, llmRT: &hookRT{}}
+	opts = append([]func(*cli.Env){func(env *cli.Env) {
+		env.Log = log.New(e.log, "", 0)
+		env.LLM = newLLMClient(env.Cfg, env.Log, e.llmRT)
+	}}, opts...)
+	e.app, e.dir = setup(t, f, opts...)
 	return e
 }
 
 // onLLM ruft fn einmal beim ersten LLM-Aufruf, bevor der Fake antwortet.
 func (e *toctouEnv) onLLM(fn func()) {
 	done := false
-	e.app.llm = newLLMClient(e.app.cfg, e.app.log, &hookRT{before: func(r *http.Request) (*http.Response, error) {
+	e.llmRT.before = func(r *http.Request) (*http.Response, error) {
 		if !done && r.URL.Path == "/v1/chat/completions" {
 			done = true
 			fn()
 		}
 		return nil, nil
-	}})
+	}
 }
 
 func (e *toctouEnv) notes() int {

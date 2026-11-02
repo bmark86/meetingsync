@@ -15,18 +15,18 @@ Finding IDs (A-xx, S-xx) and decisions (D1-D13): [review report](../../reviews/2
 | M1 Correct error paths | R-M1-01 to R-M1-07 | 7 |
 | M2 Package split | R-M2-01 to R-M2-10 | 10 |
 | M3 Security hardening | R-M3-01 to R-M3-20 | 20 |
-| M4 Repo hygiene | R-M4-01 to R-M4-03 | 3 |
+| M4 Repo hygiene | R-M4-01 to R-M4-04 | 4 |
 | M5 Performance and robustness | R-M5-01 to R-M5-03 | 3 |
 | M6 Documentation | R-M6-01 to R-M6-03 | 3 |
-| **Total** | | **57** |
+| **Total** | | **58** |
 
 | Model | Tasks |
 | --- | --- |
 | opus | 28 |
-| sonnet | 22 |
+| sonnet | 23 |
 | haiku | 7 |
 
-New in this version: R-M0-11 (raise the `go` directive, see ADR 0002), R-M3-13, R-M3-14, R-M3-15 (formerly optional R-OPT-02, R-OPT-03, R-OPT-04, now mandatory), R-M3-16 (to-do count, decided 2026-11-02), R-M3-17 (no duplicate page after an ambiguous `CreatePage` failure, decided 2026-11-02). R-M1-07 (follow-up of R-M1-04: archive backoff, regular files only), R-M3-18 and R-M3-19 (follow-ups of R-M1-07, 2026-11-02). R-M3-20 (follow-up of R-M2-02: German date with underscore time, 2026-11-02). R-OPT-01 and R-OPT-05 are rejected, no task.
+New in this version: R-M0-11 (raise the `go` directive, see ADR 0002), R-M3-13, R-M3-14, R-M3-15 (formerly optional R-OPT-02, R-OPT-03, R-OPT-04, now mandatory), R-M3-16 (to-do count, decided 2026-11-02), R-M3-17 (no duplicate page after an ambiguous `CreatePage` failure, decided 2026-11-02). R-M1-07 (follow-up of R-M1-04: archive backoff, regular files only), R-M3-18 and R-M3-19 (follow-ups of R-M1-07, 2026-11-02). R-M3-20 (follow-up of R-M2-02: German date with underscore time, 2026-11-02). R-M4-04 (follow-up of R-M2-10: root integration tests, 2026-11-02). R-OPT-01 and R-OPT-05 are rejected, no task.
 
 ### Top guardrail: same output and outcome on the normal path
 
@@ -469,8 +469,9 @@ Logging stays `*log.Logger` with identical texts. Named constants (A-17) and rea
 - Acceptance (from R-M2-09a): replace the lazy `App.pipe()` by direct construction of the pipeline; re-check whether the exported `FileState`, `States()` and `ErrUnterbrochen` are still needed.
 - Note (from R-M2-07): one helper for the `Load` → `loadLocation` → tokens → `NewApp` wiring (repeated in `main.go`, `golden_adapter_test.go`, `e2e_test.go`); re-check whether `config.Finalize` must stay exported.
 - Follow-ups (from R-M2-09b): drop `appSeams.notifier` if unused after the wiring rework; consider `App.notion` as an interface so `Init` (`ResolveDataSource`) is fakeable and the transport seam can go.
-- Model: sonnet, wiring.
+- Model: sonnet, wiring (upgraded to opus by the coordinator).
 - Reviews: CR, QA.
+- Status: **done 2026-11-02.** `app.go` deleted. New `internal/cli`: `Env` (cfg, loc, dry, log, ports), `Init` → `Setup` (ledger, data sources), `NewPipeline` (direct construction, `time.Now` injected there; lazy `App.pipe()` gone), `Check`, `Run` (ticker), `ProcessSingleFile`, `printDryRun`/`mustJSON`. The Notion dependency of `Init`/`Check` is the interface `cli.Notion`, so unit tests use fakes. `main.go` is the only file of package `main` (OD-06 option A; `go build -o ~/bin/meetingsync .` unchanged): flags, `loadConfig` (`Load` → `loadLocation`), `newEnv` (tokens → LLM/notify/Notion construction), exit codes. Coordinator-accepted: two wiring helpers instead of one (a combined helper would move the `Konfiguration:` line and change stdout); notify/secret are constructed only in `main` (`os/exec` arch rule unchanged); `appSeams` removed; the Notion transport stays a `newEnv` parameter for crash/e2e tests. Arch: `cli` exempt from "infra must not import pipeline", infra must not import `cli`, own rule for `cli`, `TestArchRootPackageOnlyMain`. `.golangci.yml`: G304 `app.go` → `internal/cli/cli.go`, stale `app.go` entries removed. Still exported for root tests: `pipeline.FileState`, `States()`, `ErrUnterbrochen`, `config.Finalize` (e2e) → R-M4-04. Tests 253 → 264+, coverage 86–100 % per package, golden byte-identical over M2, review approved. ADR 0006, 0015.
 
 ### M3 Security hardening
 
@@ -496,7 +497,7 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 
 #### R-M3-03 Skip symlinks
 - Goal: process only regular files in the watch folder.
-- Acceptance: symlink to a file and to a folder → skipped, one warning (text in the task), no read; test with a symlink to a file outside the watch folder; golden unchanged; gosec G304 exclusion for app.go and `internal/ledger/ledger.go` removed from `.golangci.yml`. OD-09 (decided: proposal): no symlinks are in use, so skip them.
+- Acceptance: symlink to a file and to a folder → skipped, one warning (text in the task), no read; test with a symlink to a file outside the watch folder; golden unchanged; gosec G304 exclusion for `internal/cli/cli.go` (formerly `app.go`; `ProcessSingleFile`), `internal/ledger/ledger.go`, `internal/watch/fs.go` and `internal/watch/move.go` removed from `.golangci.yml`. OD-09 (decided: proposal): no symlinks are in use, so skip them.
 - Scope: `internal/watch`, tests.
 - Depends on: M2. Findings: S-04.
 - Model: opus, file security.
@@ -504,7 +505,7 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 
 #### R-M3-04 File permissions
 - Goal: new ledger and `.fehler.txt` files 0600; newly created archive, error and month folders 0700; the copy path creates 0600.
-- Acceptance: tests check the mode (independent of umask, by `Chmod` after creation); existing files/folders are left as they are (OD-10, decided: proposal: new ones only); golden unchanged (permissions are not part of `tree.txt`); gosec G301/G302/G306 exclusions removed (prod files, including `internal/ledger/ledger.go`). The line-wide `//nolint:gosec` on `writeFehlerTxt` in `app.go` also suppresses G302 (`.fehler.txt` is 0644); it must be resolved when the exclusions are removed (follow-up of R-M2-08).
+- Acceptance: tests check the mode (independent of umask, by `Chmod` after creation); existing files/folders are left as they are (OD-10, decided: proposal: new ones only); golden unchanged (permissions are not part of `tree.txt`); gosec G301/G302/G306 exclusions removed (prod files, including `internal/ledger/ledger.go`). The line-wide `//nolint:gosec` on `writeFehlerTxt` (now `watch.WriteFehlerTxt` in `internal/watch/move.go`) also suppresses G302 (`.fehler.txt` is 0644); it must be resolved when the exclusions are removed (follow-up of R-M2-08).
 - Scope: `internal/ledger`, `internal/watch`, `internal/pipeline`, tests.
 - Depends on: R-M3-03. Findings: S-12.
 - Model: opus, permissions.
@@ -701,6 +702,14 @@ Exit: `git grep` and `git log -p --all` without the three real IDs; tag `v1.0.0`
 - Model: sonnet, default with an effect on the prompt.
 - Reviews: CR, QA.
 
+#### R-M4-04 Root integration tests behind package boundaries
+- Goal: stop exporting test-only identifiers from production packages (follow-up of R-M2-10).
+- Acceptance: root tests that use `pipeline.FileState`, `States()` or `ErrUnterbrochen` move into `internal/pipeline` (or behind a test helper) and the three identifiers are unexported; `e2e_test.go` loads its config from a file so `config.Finalize` can be unexported; golden unchanged; `make check` green.
+- Scope: root `*_test.go`, `internal/pipeline`, `internal/config`, tests.
+- Depends on: M3 (config and pipeline changes settle first). Findings: none (follow-up of R-M2-10).
+- Model: sonnet, test moves.
+- Reviews: CR, QA.
+
 ### M5 Performance and robustness
 
 Goal: no needless I/O, no unbounded growth.
@@ -776,7 +785,7 @@ Parallel only with disjoint files and `isolation: "worktree"`.
 | P5 | R-M2-01 → 02 → 03 → 04 → 05 → 06 → 07 → 08 → 09 → 10 | none | Every cut changes callers in `app.go` |
 | P6 | Lane Config: R-M3-09 → R-M3-01 → R-M3-02 → R-M3-11 → R-M3-15 (R-M3-15 also after R-M3-07) | Lane Files: R-M3-03 → R-M3-04 → R-M3-14; Lane HTTP: R-M3-05 → R-M3-06 (after OD-11) → R-M3-08; Lane Processes: R-M3-07; Lane CLI: R-M3-13; R-M3-12 → R-M3-16 (sequential: same notification/log code and golden G16b) | Packages are disjoint after M2 |
 | P7 | R-M4-02 | nothing (no open branches) | The rewrite needs a quiet state; earliest after R-M4-01, latest before the next release; ask OD-15 first |
-| P8 | R-M5-01 → R-M5-02 | R-M5-03, R-M4-03 | |
+| P8 | R-M5-01 → R-M5-02 | R-M5-03, R-M4-03, R-M4-04 | |
 | P9 | R-M6-01 ∥ R-M6-02 → R-M6-03 | | |
 
 ## 7. ADRs

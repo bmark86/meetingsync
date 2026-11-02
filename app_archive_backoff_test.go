@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"meetingsync/internal/cli"
 )
 
 const archiveWarn = "konnte nicht archiviert werden"
@@ -58,9 +60,10 @@ func TestArchiveRemoveFailsBackoff(t *testing.T) {
 		{"HasNear", func(e *crashEnv) string { return e.sum }, "gehört zu einem bereits verarbeiteten Transkript"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			e := newCrashEnv(t)
-			e.app.cfg.MaxAttempts = 1
-			e.app.mover.Rename = noRename
+			e := newCrashEnv(t, func(_ *crashEnv, env *cli.Env) {
+				env.Cfg.MaxAttempts = 1
+				env.Mover.Rename = noRename
+			})
 			locked := tc.lock(e)
 			lockFile(t, locked)
 			now := time.Now()
@@ -111,8 +114,7 @@ func TestArchiveRemoveFailsBackoff(t *testing.T) {
 // orphan_summary_action=archive, Remove(src) scheitert.
 // Fängt: kein Backoff im Waisen-Archivzweig (📎 und Warnung je Durchlauf).
 func TestArchiveOrphanRemoveFailsBackoff(t *testing.T) {
-	env, p := orphanEnv(t, "archive")
-	env.app.mover.Rename = noRename
+	env, p := orphanEnv(t, "archive", func(e *cli.Env) { e.Mover.Rename = noRename })
 	lockFile(t, p)
 	now := flowM.Add(time.Hour)
 	for i := range 3 {
@@ -139,13 +141,14 @@ func TestArchiveOrphanRemoveFailsBackoff(t *testing.T) {
 // Archiv 1); Original ohne Identitätsprüfung oder gar nicht gelöscht; Warnung
 // fehlt oder wiederholt sich; Sync-Fehler als Archiv-Fehler gewertet.
 func TestArchiveDirSyncFailsWarnsAndMoves(t *testing.T) {
-	e := newCrashEnv(t)
+	calls := 0
+	e := newCrashEnv(t, func(_ *crashEnv, env *cli.Env) {
+		env.Mover.Rename = noRename
+		env.Mover.SyncDir = func(string) error { calls++; return errors.New("EIO") }
+	})
 	if err := os.Remove(e.sum); err != nil {
 		t.Fatal(err)
 	}
-	e.app.mover.Rename = noRename
-	calls := 0
-	e.app.mover.SyncDir = func(string) error { calls++; return errors.New("EIO") }
 	e.threePasses(time.Now())
 
 	if a, f, x := e.counts(t); a != 1 || f != 0 || x != 0 {

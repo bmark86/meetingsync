@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"meetingsync/internal/cli"
 	"meetingsync/internal/ledger"
 )
 
@@ -31,8 +32,7 @@ func qaWalkCount(t *testing.T, root, prefix string) int {
 // Logzeile erscheint einmal; nach dem Backoff genau ein weiterer Versuch.
 // Fängt: Kopie je Versuch angesammelt; Logzeile/Verschieben bei jedem Durchlauf.
 func TestQAPassRestartRuleFallbackRemoveFails(t *testing.T) {
-	e := newCrashEnv(t)
-	e.app.mover.Rename = noRename
+	e := newCrashEnv(t, func(_ *crashEnv, env *cli.Env) { env.Mover.Rename = noRename })
 	if err := e.app.ledger.Add(ledger.Entry{Hash: e.hash(), Status: ledger.StatusBegonnen, File: "x", ModTime: flowM}); err != nil {
 		t.Fatal(err)
 	}
@@ -72,8 +72,7 @@ func TestQAPassRestartRuleFallbackRemoveFails(t *testing.T) {
 // Über 3 Durchläufe keine Kopie im Archiv, Original bleibt. Die Warnzeilen je
 // Durchlauf werden nur gemeldet (kein Backoff im Archivpfad spezifiziert).
 func TestQAPassArchiveFallbackRemoveFailsNoCopies(t *testing.T) {
-	e := newCrashEnv(t)
-	e.app.mover.Rename = noRename
+	e := newCrashEnv(t, func(_ *crashEnv, env *cli.Env) { env.Mover.Rename = noRename })
 	if err := e.app.ledger.Add(ledger.Entry{Hash: e.hash(), Status: ledger.StatusFertig, File: "x", ModTime: flowM}); err != nil {
 		t.Fatal(err)
 	}

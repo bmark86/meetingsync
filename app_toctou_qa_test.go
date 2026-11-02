@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"meetingsync/internal/cli"
 )
 
 // Stabiles Fragment der Warnung, nicht der volle Wortlaut.
@@ -118,8 +120,7 @@ func TestQATOCTOUSummaryOnlyChanged(t *testing.T) {
 // Dry-Run: keine TOCTOU-Warnung, nichts wird verschoben, auch wenn die primäre
 // Datei sich ändert. Fängt: Recheck ohne a.dry-Prüfung.
 func TestQATOCTOUDryRunNoWarning(t *testing.T) {
-	e := newTOCTOUEnv(t)
-	e.app.dry = true
+	e := newTOCTOUEnv(t, func(env *cli.Env) { env.Dry = true })
 	tr, sum := e.writePair(t)
 	e.onLLM(func() { rewrite(t, tr, srtLikeText()+"Nachtrag.\n", mtime(t, tr).Add(time.Minute)) })
 

@@ -16,6 +16,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"meetingsync/internal/cli"
 	"meetingsync/internal/config"
 )
 
@@ -170,13 +171,15 @@ func checkPayload(t *testing.T, v any) {
 	walk(v)
 }
 
-func setup(t *testing.T, f *fakeServer) (*App, string) {
+// setup baut die App über die Verdrahtung von main (newEnv) mit Fakes. opts
+// passen Env vor Init an (Config, Logger, Mover, Dry-Run, Clients).
+func setup(t *testing.T, f *fakeServer, opts ...func(*cli.Env)) (*testApp, string) {
 	t.Helper()
-	return setupWith(t, f, nil)
+	return setupWith(t, f, nil, opts...)
 }
 
 // setupWith ist setup mit eigenem Notion-Transport (nil: Standard).
-func setupWith(t *testing.T, f *fakeServer, rt http.RoundTripper) (*App, string) {
+func setupWith(t *testing.T, f *fakeServer, rt http.RoundTripper, opts ...func(*cli.Env)) (*testApp, string) {
 	t.Helper()
 	srv := httptest.NewServer(f)
 	t.Cleanup(srv.Close)
@@ -204,14 +207,24 @@ func setupWith(t *testing.T, f *fakeServer, rt http.RoundTripper) (*App, string)
 	if testing.Verbose() {
 		logger = log.New(os.Stdout, "    ", 0)
 	}
-	app, err := newApp(cfg, loc, notionTokens(cfg), logger, false, appSeams{notionTransport: rt, notifier: &fakeNotifier{}})
+	env, err := newEnv(cfg, loc, logger, false, rt)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := app.Init(context.Background()); err != nil {
+	env.Notifier = &fakeNotifier{}
+	for _, o := range opts {
+		o(&env)
+	}
+	app, err := startTestApp(context.Background(), env)
+	if err != nil {
 		t.Fatal(err)
 	}
 	return app, dir
+}
+
+func mustJSON(v any) string {
+	b, _ := json.MarshalIndent(v, "", "  ")
+	return string(b)
 }
 
 func writeOld(t *testing.T, path, content string, age time.Duration) {
@@ -340,9 +353,10 @@ func TestWaitsForUnstableFiles(t *testing.T) {
 
 func TestOrphanSummaryAndFallbackAndLongPage(t *testing.T) {
 	f := &fakeServer{t: t, appends: map[string]int{}, rejectSchema: true, themesInReply: 40}
-	app, dir := setup(t, f)
-	app.cfg.OrphanSummaryMinutes = 1
-	app.cfg.Notion.CreateTasksFor = "none"
+	app, dir := setup(t, f, func(e *cli.Env) {
+		e.Cfg.OrphanSummaryMinutes = 1
+		e.Cfg.Notion.CreateTasksFor = "none"
+	})
 
 	writeOld(t, filepath.Join(dir, "Notiz.md"), "# Zusammenfassung\n\nNur Text ohne Zeitmarken.\n", 5*time.Minute)
 	app.Pass(context.Background(), time.Now())

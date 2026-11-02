@@ -42,17 +42,19 @@ linters:
       # gosec G304: Der Watch-Ordner ist fremder Input (Symlinks). Befund S-04 /
       # Task R-M3-03. Exclusion in R-M3-03 entfernen. internal/ledger: Code aus
       # app.go verschoben (R-M2-03), internal/watch: Code aus app.go verschoben
-      # (R-M2-08), gleiche Begründung, gleiche Task.
+      # (R-M2-08), internal/cli: ProcessSingleFile aus app.go verschoben
+      # (R-M2-10), gleiche Begründung, gleiche Task.
       - linters: [gosec]
-        path: ^(app\.go|internal/ledger/ledger\.go|internal/watch/(fs|move)\.go)$
+        path: ^(internal/cli/cli\.go|internal/ledger/ledger\.go|internal/watch/(fs|move)\.go)$
         text: "G304:"
       # gosec G204: feste Programme (security, osascript, go); Argumente werden
       # nicht durch eine Shell interpretiert. Befund S-10 / Task R-M3-07.
       # Exclusion in R-M3-07 entfernen. internal/notify: Code aus app.go
       # verschoben (R-M2-06), internal/secret: Code aus config.go verschoben
-      # (R-M2-07), gleiche Begründung, gleiche Task.
+      # (R-M2-07), gleiche Begründung, gleiche Task. app.go ist seit R-M2-10
+      # gelöscht.
       - linters: [gosec]
-        path: ^(app|internal/secret/secret|internal/notify/notify)\.go$
+        path: ^(internal/secret/secret|internal/notify/notify)\.go$
         text: "G204:"
       # version wird nur per -ldflags "-X main.version=..." gesetzt und per
       # "go version -m" gelesen (OD-02), nicht im Code.

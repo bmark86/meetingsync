@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"meetingsync/internal/cli"
 	"meetingsync/internal/config"
 	"meetingsync/internal/ledger"
 	"meetingsync/internal/pipeline"
@@ -31,18 +32,13 @@ import (
 var flowM = time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
 
 type flowEnv struct {
-	app     *App
+	app     *testApp
 	watch   string
 	archive string
 	logBuf  *bytes.Buffer
 	hits    *atomic.Int32
 	status  *atomic.Int32 // Antwortstatus des LLM-Fakes
 }
-
-// fixedToken ist eine TokenSource mit festem Token.
-type fixedToken string
-
-func (f fixedToken) Token() (string, error) { return string(f), nil }
 
 // failingRT lässt jeden Notion-Zugriff den Test scheitern: die Flow-Tests
 // dürfen Notion nie erreichen.
@@ -55,7 +51,8 @@ func (f failingRT) RoundTrip(r *http.Request) (*http.Response, error) {
 
 // newFlowApp baut eine App mit Notion-Fake (ohne Zugriff) und LLM-Fake. Der Fake antwortet mit
 // 503, solange status nicht auf 200 steht; 200 liefert eine gültige Notiz.
-func newFlowApp(t *testing.T, mod func(*config.Config)) *flowEnv {
+// opts passen Env vor dem Bau der Pipeline an (Mover, Dry-Run).
+func newFlowApp(t *testing.T, mod func(*config.Config), opts ...func(*cli.Env)) *flowEnv {
 	t.Helper()
 	hits, status := &atomic.Int32{}, &atomic.Int32{}
 	status.Store(503)
@@ -94,14 +91,16 @@ func newFlowApp(t *testing.T, mod func(*config.Config)) *flowEnv {
 	}
 	// Normale Verdrahtung; Notion-Transport und Mitteilung sind Fakes. Das
 	// Ledger liegt ohne Init im Speicher/Archiv wie bisher.
-	app, err := newApp(cfg, time.UTC, fixedToken("t"), logger, false, appSeams{
-		notionTransport: failingRT{t: t}, notifier: &fakeNotifier{},
-	})
+	t.Setenv("NOTION_TOKEN", "t")
+	env, err := newEnv(cfg, time.UTC, logger, false, failingRT{t: t})
 	if err != nil {
 		t.Fatal(err)
 	}
-	app.ledger = l
-	return &flowEnv{app: app, watch: cfg.WatchDir, archive: cfg.ArchiveDir, logBuf: buf, hits: hits, status: status}
+	env.Notifier = &fakeNotifier{}
+	for _, o := range opts {
+		o(&env)
+	}
+	return &flowEnv{app: newTestApp(env, cli.Setup{Ledger: l}), watch: cfg.WatchDir, archive: cfg.ArchiveDir, logBuf: buf, hits: hits, status: status}
 }
 
 func (e *flowEnv) write(t *testing.T, name, content string, mtime time.Time) string {
@@ -117,9 +116,6 @@ func (e *flowEnv) write(t *testing.T, name, content string, mtime time.Time) str
 }
 
 func exists(p string) bool { _, err := os.Stat(p); return err == nil }
-
-// states ist der Wiederholungszustand der Pipeline der App.
-func (a *App) states() map[string]*pipeline.FileState { return a.pipe().States() }
 
 func sha256Hex(b []byte) string {
 	h := sha256.Sum256(b)
@@ -149,7 +145,7 @@ func TestPassAfterRestartUsesLoadedLedger(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	env.app.ledger = l2
+	env.app = newTestApp(env.app.env, cli.Setup{Ledger: l2})
 
 	env.app.Pass(context.Background(), flowM.Add(3*time.Hour))
 	if env.hits.Load() != 1 {
@@ -173,8 +169,8 @@ func TestPassAfterRestartUsesLoadedLedger(t *testing.T) {
 
 // --- Orphan-Zusammenfassungen -------------------------------------------------------
 
-func orphanEnv(t *testing.T, action string) (*flowEnv, string) {
-	env := newFlowApp(t, func(c *config.Config) { c.OrphanSummaryAction = action })
+func orphanEnv(t *testing.T, action string, opts ...func(*cli.Env)) (*flowEnv, string) {
+	env := newFlowApp(t, func(c *config.Config) { c.OrphanSummaryAction = action }, opts...)
 	return env, env.write(t, "Notizen.md", goldenSummaryMD, flowM)
 }
 
@@ -336,8 +332,8 @@ func TestPassGatingByNextTry(t *testing.T) {
 // Speicher verhindert die Wiederholung). Der echte Erfolgspfad mit Archiv und
 // Ledger auf Platte ist durch die Golden-Szenarien (G01 u. a.) abgedeckt.
 func TestPassSuccessClearsStateAndFillsLedger(t *testing.T) {
-	env := newFlowApp(t, func(c *config.Config) { c.MaxAttempts = 5 })
-	env.app.dry = true // Dry-Run schreibt nichts nach Notion und liefert "dry-run" als Ergebnis
+	// Dry-Run schreibt nichts nach Notion und liefert "dry-run" als Ergebnis
+	env := newFlowApp(t, func(c *config.Config) { c.MaxAttempts = 5 }, func(e *cli.Env) { e.Dry = true })
 	p := env.write(t, "Sitzung.srt", goldenSRT, flowM)
 	env.app.states()[p] = &pipeline.FileState{Attempts: 2, Transient: 2}
 	env.status.Store(200)

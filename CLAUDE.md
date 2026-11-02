@@ -10,7 +10,8 @@ Retry: temporary errors (LM Studio or Notion not reachable (including timeout), 
 
 ## Files
 
-- `main.go` flags, `internal/config` config (YAML/JSON, defaults), `app.go` flow/archive
+- `main.go` flags, `internal/config` config (YAML/JSON, defaults)
+- `internal/cli` entry points (Init, Check, Run, `-file`, dry-run output), `internal/pipeline` processing flow, `internal/watch` file listing, pairing and moving
 - `internal/transcript`, `internal/ledger`, `internal/domain` (data types, error class transient), `internal/llm`, `internal/notion` (`client.go`, `blocks.go`, `properties.go`), `internal/notify` (macOS notification), `internal/secret` (Keychain token lookup) as described above
 - `config.example.yaml` commented reference of all options
 - Docs in `docs/`: `progress.md` (open items), `adr/`, `launchd.md`, `changelog.md`

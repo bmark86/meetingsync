@@ -170,7 +170,7 @@ func TestQANoTimeNowNoOSInProductionCode(t *testing.T) {
 	}
 }
 
-// dryLedger ist das Protokoll wie in app.go bei -dry-run (persist=false).
+// dryLedger ist das Protokoll wie internal/cli.Init bei -dry-run (persist=false).
 func dryLedger(t *testing.T, o *Options) *ledger.Ledger {
 	t.Helper()
 	l, err := ledger.Load(filepath.Join(o.ArchiveDir, ".meetingsync-ledger.jsonl"), false)
