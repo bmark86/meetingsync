@@ -25,7 +25,7 @@ func retryApp(t *testing.T, max int) (*App, job, string) {
 	if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	a := &App{cfg: cfg, log: log.New(io.Discard, "", 0), state: map[string]*fileState{}, cache: map[string]cachedKind{}}
+	a := &App{cfg: cfg, log: log.New(io.Discard, "", 0), state: map[string]*fileState{}, cache: map[string]cachedKind{}, notifier: &fakeNotifier{}}
 	return a, job{primary: &entry{Name: "meeting.txt", Path: path}}, cfg.FailedDir
 }
 

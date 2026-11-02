@@ -66,6 +66,7 @@ func goldenStart(ctx context.Context, cfgPath string, logger *log.Logger, dry bo
 	if err != nil {
 		return nil, err
 	}
+	app.notifier = &fakeNotifier{} // nie das echte osascript
 	if err := app.Init(ctx); err != nil {
 		return nil, err
 	}

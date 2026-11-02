@@ -11,9 +11,7 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -24,17 +22,19 @@ import (
 	"meetingsync/internal/domain"
 	"meetingsync/internal/ledger"
 	"meetingsync/internal/llm"
+	"meetingsync/internal/notify"
 	"meetingsync/internal/notion"
 	"meetingsync/internal/transcript"
 )
 
 type App struct {
-	cfg    *Config
-	log    *log.Logger
-	dry    bool
-	llm    *llm.Client
-	notion *notion.Client
-	ledger *ledger.Ledger
+	cfg      *Config
+	log      *log.Logger
+	dry      bool
+	llm      *llm.Client
+	notion   *notion.Client
+	ledger   *ledger.Ledger
+	notifier notify.Notifier
 
 	notesDS, tasksDS, projectsDS          string
 	notesTypes, tasksTypes, projectsTypes notion.Schema
@@ -103,13 +103,14 @@ func newLLMClient(cfg *Config, logger *log.Logger, transport http.RoundTripper) 
 
 func NewApp(cfg *Config, logger *log.Logger, dry bool) (*App, error) {
 	a := &App{
-		cfg:    cfg,
-		log:    logger,
-		dry:    dry,
-		llm:    newLLMClient(cfg, logger, nil),
-		state:  map[string]*fileState{},
-		warned: map[string]bool{},
-		cache:  map[string]cachedKind{},
+		cfg:      cfg,
+		log:      logger,
+		dry:      dry,
+		llm:      newLLMClient(cfg, logger, nil),
+		state:    map[string]*fileState{},
+		warned:   map[string]bool{},
+		cache:    map[string]cachedKind{},
+		notifier: notify.New(),
 	}
 	token, err := cfg.NotionToken()
 	switch {
@@ -520,7 +521,7 @@ func (a *App) process(ctx context.Context, j job, hash string) (string, gaps, er
 		if len(reasons) > 0 {
 			msg += " · bitte prüfen"
 		}
-		notify("Neue Meeting-Notiz", msg)
+		a.notifier.Notify("Neue Meeting-Notiz", msg)
 	}
 	return url, g, nil
 }
@@ -1002,14 +1003,6 @@ func syncDir(dir string) error {
 }
 
 // --- Sonstiges -----------------------------------------------------------------------
-
-func notify(title, msg string) {
-	if runtime.GOOS != "darwin" {
-		return
-	}
-	q := func(s string) string { return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(s) + `"` }
-	_ = exec.Command("osascript", "-e", "display notification "+q(msg)+" with title "+q(title)).Run() //nolint:errcheck // Benachrichtigung ist Best-Effort, Fehler egal
-}
 
 func sha256Hex(b []byte) string {
 	h := sha256.Sum256(b)

@@ -418,6 +418,7 @@ Logging stays `*log.Logger` with identical texts. Named constants (A-17) and rea
 - Depends on: R-M2-01. Findings: A-05.
 - Model: haiku, small mechanical extraction.
 - Reviews: CR, SR, QA.
+- Status: done 2026-11-02. `Notifier{Notify(title, msg)}`; `notify.New()` returns the osascript notifier (`runtime.GOOS` guard, unexported runner seam for tests); command, arguments and `q()` escaping byte-identical; `App.notifier` set in `NewApp`. Arch rule: `internal/notify` imports stdlib only. gosec G204 exclusion extended to `internal/notify/notify.go` (removal in R-M3-07). Golden byte-identical, CR and SR approved. QA: golden and flow tests inject a fake notifier (before, golden scenarios ran with `Notify=true` and could call the real osascript).
 
 #### R-M2-07 config and TokenSource
 - Goal: `internal/config` without `exec` and without the `loc` field; Keychain access as a `TokenSource` outside the config layer.
@@ -512,9 +513,9 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 
 #### R-M3-07 Absolute paths and minimal environment
 - Goal: `/usr/bin/security`, `/usr/bin/osascript` with a minimal environment.
-- Acceptance: the runner gets an absolute path; environment only `HOME`, `USER`, `LANG`, `PATH=/usr/bin:/bin` (final list in the task); escaping for osascript unchanged (test with `"` and `\`); tests with a fake runner check path and environment; gosec G204 exclusions for app.go/config.go removed.
+- Acceptance: the runner gets an absolute path; environment only `HOME`, `USER`, `LANG`, `PATH=/usr/bin:/bin` (final list in the task); escaping for osascript unchanged (test with `"` and `\`); tests with a fake runner check path and environment; gosec G204 exclusions for app.go, config.go and internal/notify/notify.go removed (the `app` alternative in the regex is already stale: app.go no longer imports os/exec).
 - Scope: `internal/notify`, TokenSource from R-M2-07, tests.
-- Depends on: M2. Findings: S-10.
+- Depends on: M2. Findings: S-10 (code now in `internal/notify/notify.go`, formerly `app.go`).
 - Model: opus, secrets and process start.
 - Reviews: CR, SR, QA.
 
