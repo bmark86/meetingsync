@@ -486,6 +486,7 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 - Depends on: M2. Findings: S-02.
 - Model: opus, security.
 - Reviews: CR, SR, QA. ADR 0007.
+- Status: **done 2026-11-02.** Host check exact lowercase (`LOCALHOST` would bypass Go's proxy exemption). Scope extended to `internal/llm` (coordinator): no proxy, no redirects (`CheckRedirect` → `ErrUseLastResponse`, 3xx is a non-transient error). Residual risk: `/etc/hosts`. Golden unchanged. Follow-ups in R-M3-02.
 
 #### R-M3-02 notion.base_url HTTPS only
 - Goal: the token is never sent in clear text.
@@ -494,6 +495,7 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 - Depends on: R-M3-01. Findings: S-03.
 - Model: opus, secrets.
 - Reviews: CR, SR, QA. ADR 0008.
+- Follow-ups from R-M3-01: add redirect protection (`CheckRedirect`) to the Notion client (Go drops `Authorization` on cross-host redirects, but a 307/308 re-sends the note body); errors and log lines that show a base URL (`internal/llm/client.go` ~226 `nicht erreichbar unter …`, `internal/cli/cli.go` ~177 `-check` output) print only scheme://host:port (no path, query or userinfo).
 
 #### R-M3-03 Skip symlinks
 - Goal: process only regular files in the watch folder.

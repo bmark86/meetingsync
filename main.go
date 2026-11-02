@@ -109,7 +109,7 @@ func notionTokens(cfg *config.Config) secret.TokenSource {
 }
 
 // newLLMClient baut den LM-Studio-Client aus der Konfiguration. transport nil
-// heißt http.DefaultTransport.
+// heißt eine Kopie von http.DefaultTransport ohne Proxy, ohne Weiterleitungen zu folgen.
 func newLLMClient(cfg *config.Config, logger *log.Logger, transport http.RoundTripper) *llm.Client {
 	return llm.NewClient(llm.Options{
 		BaseURL:          cfg.LLM.BaseURL,

@@ -87,14 +87,33 @@ func (l *Client) readBody(r io.Reader) ([]byte, error) {
 }
 
 // NewClient baut den Client. transport ist der HTTP-Transport; nil heißt
-// http.DefaultTransport (Produktion), Tests setzen eigene Hooks.
+// eine Kopie von http.DefaultTransport ohne Proxy (Produktion), Tests setzen
+// eigene Hooks. Weiterleitungen werden nie verfolgt: Das Transkript darf den
+// Mac nicht verlassen (S-02, D3), weder über einen Proxy noch über ein 3xx.
 func NewClient(opts Options, logger *log.Logger, transport http.RoundTripper) *Client {
+	if transport == nil {
+		transport = noProxyTransport()
+	}
 	return &Client{
-		opts:     opts,
-		http:     &http.Client{Timeout: opts.Timeout, Transport: transport},
+		opts: opts,
+		http: &http.Client{
+			Timeout:   opts.Timeout,
+			Transport: transport,
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
 		log:      logger,
 		maxBytes: maxAntwortBytes,
 	}
+}
+
+// noProxyTransport ist http.DefaultTransport ohne Proxy: HTTP(S)_PROXY aus
+// der Umgebung wird für LM Studio ignoriert.
+func noProxyTransport() *http.Transport {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.Proxy = nil
+	return t
 }
 
 type chatMsg struct {
@@ -211,6 +230,10 @@ func (l *Client) chat(ctx context.Context, msgs []chatMsg, schema any) (string, 
 
 	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
 		return "", domain.Transient(&httpError{resp.StatusCode, string(data)})
+	}
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		// Weiterleitung wird nicht verfolgt (siehe NewClient).
+		return "", &httpError{resp.StatusCode, string(data)}
 	}
 	if resp.StatusCode >= 400 {
 		lower := strings.ToLower(string(data))
