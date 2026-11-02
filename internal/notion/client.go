@@ -25,7 +25,23 @@ type Client struct {
 	token   string
 	http    *http.Client
 	sleep   func(ctx context.Context, d time.Duration) bool // Warten zwischen Versuchen; Tests setzen sie
+	maxBody int64                                           // Lese-Limit je Antwort; Tests setzen es kleiner
 }
+
+// maxAntwortBytes begrenzt, wie viel von einer Antwort gelesen wird. Größte
+// echte Antwort ist eine Query-Seite mit 100 Seiten samt Properties (einige
+// hundert KiB); 10 MiB liegt weit darüber und schützt trotzdem vor einem
+// Server, der den Speicher füllt.
+const maxAntwortBytes = 10 << 20
+
+// errAntwort heißt: die Antwort war nicht vollständig lesbar (Lesefehler oder
+// über dem Limit). Der Text enthält nie Inhalt der Antwort.
+var errAntwort = errors.New("Antwort von Notion unvollständig oder zu groß")
+
+// ErrUnklar heißt: unklar, ob Notion die Seite angelegt hat, weil die
+// Antwort auf das Anlegen nicht vollständig gelesen werden konnte. CreatePage
+// umhüllt den Fehler damit; ein neuer Versuch könnte eine Dublette erzeugen.
+var ErrUnklar = errors.New("Seite evtl. angelegt")
 
 // NewClient baut den Client. transport ist der HTTP-Transport; nil heißt
 // http.DefaultTransport (Produktion), Tests setzen eigene Hooks.
@@ -36,6 +52,7 @@ func NewClient(baseURL, apiVersion, token string, transport http.RoundTripper) *
 		token:   token,
 		http:    &http.Client{Timeout: 60 * time.Second, Transport: transport},
 		sleep:   sleepCtx,
+		maxBody: maxAntwortBytes,
 	}
 }
 
@@ -85,8 +102,14 @@ func (n *Client) do(ctx context.Context, method, path string, in, out any, idemp
 			}
 			return domain.Transient(fmt.Errorf("Notion nicht erreichbar: %w", err))
 		}
-		body, _ := io.ReadAll(resp.Body) //nolint:errcheck // Lesefehler fuehrt unten zu Statusfehler ohne Details
-		_ = resp.Body.Close()            //nolint:errcheck // Body ist bereits gelesen, Close-Fehler ohne Folgen
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, n.maxBody+1))
+		_ = resp.Body.Close() //nolint:errcheck // Body ist bereits gelesen, Close-Fehler ohne Folgen
+		if readErr == nil && int64(len(body)) > n.maxBody {
+			readErr = errors.New("über dem Größenlimit")
+		}
+		if readErr != nil {
+			body = nil // bei Statusfehlern zählt nur der Status, Details entfallen
+		}
 
 		if resp.StatusCode == http.StatusTooManyRequests ||
 			(idempotent && resp.StatusCode >= 500) {
@@ -109,6 +132,9 @@ func (n *Client) do(ctx context.Context, method, path string, in, out any, idemp
 				return domain.Transient(fmt.Errorf("%w – Token gültig? Ist die Integration mit der Datenbank verbunden?", ae))
 			}
 			return ae
+		}
+		if readErr != nil {
+			return fmt.Errorf("%w: %w", errAntwort, readErr)
 		}
 		if out != nil {
 			return json.Unmarshal(body, out)
@@ -244,6 +270,9 @@ func (n *Client) CreatePage(ctx context.Context, dsID string, props map[string]a
 		URL string `json:"url"`
 	}
 	if err := n.do(ctx, http.MethodPost, "/v1/pages", body, &out, false); err != nil {
+		if errors.Is(err, errAntwort) {
+			err = fmt.Errorf("%w: %w", ErrUnklar, err)
+		}
 		return "", "", err
 	}
 	if len(rest) > 0 {

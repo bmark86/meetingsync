@@ -413,3 +413,69 @@ func TestCreatePageReturnsAppendError(t *testing.T) {
 		t.Fatalf("ohne Rest: %q, %v; want p1, nil", id, err)
 	}
 }
+
+// Fängt: fehlendes Antwortlimit, Body-Inhalt im Fehler, ErrUnklar nur bei
+// CreatePage, falsche Einstufung bei Statusfehlern mit großem Body.
+func TestNotionResponseLimit(t *testing.T) {
+	big := strings.Repeat("x", 200)
+	ctx := context.Background()
+
+	// 2xx zu groß: GET ist ein normaler Fehler, kein ErrUnklar
+	n, _ := ncNotion(t, ncReply{status: 200, body: big})
+	n.maxBody = 100
+	err := n.do(ctx, http.MethodGet, "/v1/x", nil, &struct{}{}, true)
+	if !errors.Is(err, errAntwort) || errors.Is(err, ErrUnklar) || strings.Contains(err.Error(), "xxx") || domain.IsTransient(err) {
+		t.Errorf("GET 2xx zu groß: %v", err)
+	}
+	// CreatePage: ErrUnklar
+	n, s := ncNotion(t, ncReply{status: 200, body: big})
+	n.maxBody = 100
+	_, _, err = n.CreatePage(ctx, "ds", map[string]any{}, nil)
+	if !errors.Is(err, ErrUnklar) || errors.Is(err, ErrUnvollstaendig) || domain.IsTransient(err) || strings.Contains(err.Error(), "xxx") {
+		t.Errorf("CreatePage 2xx zu groß: %v", err)
+	}
+	if len(s.reqs) != 1 {
+		t.Errorf("CreatePage darf nicht wiederholt werden, Requests: %d", len(s.reqs))
+	}
+	// Fehlerstatus mit zu großem Body: Status bleibt maßgeblich
+	n, _ = ncNotion(t, ncReply{status: 404, body: big})
+	n.maxBody = 100
+	_, _, err = n.CreatePage(ctx, "ds", map[string]any{}, nil)
+	if err == nil || !domain.IsTransient(err) || errors.Is(err, ErrUnklar) || !strings.Contains(err.Error(), "HTTP 404") {
+		t.Errorf("404 zu groß: %v", err)
+	}
+	n, _ = ncNotion(t, ncReply{status: 400, body: big})
+	n.maxBody = 100
+	_, _, err = n.CreatePage(ctx, "ds", map[string]any{}, nil)
+	if err == nil || domain.IsTransient(err) || errors.Is(err, ErrUnklar) || !strings.Contains(err.Error(), "HTTP 400") {
+		t.Errorf("400 zu groß: %v", err)
+	}
+	// genau am Limit ist erlaubt
+	body := `{"id":"p","url":"u"}`
+	n, _ = ncNotion(t, ncReply{status: 200, body: body})
+	n.maxBody = int64(len(body))
+	if id, _, err := n.CreatePage(ctx, "ds", map[string]any{}, nil); err != nil || id != "p" {
+		t.Errorf("am Limit: %q, %v", id, err)
+	}
+}
+
+// Fängt: abgeschnittene 2xx-Antwort wird als Erfolg oder JSON-Fehler gewertet
+// statt als unklarer Ausgang beim Anlegen.
+func TestNotionTruncatedBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Length", "1000")
+		w.WriteHeader(200)
+		_, _ = io.WriteString(w, `{"id":"p"`)
+	}))
+	defer srv.Close()
+	n := NewClient(srv.URL, "2025-09-03", "tok", nil)
+	n.sleep = func(context.Context, time.Duration) bool { return false }
+	_, _, err := n.CreatePage(context.Background(), "ds", map[string]any{}, nil)
+	if !errors.Is(err, ErrUnklar) || !errors.Is(err, errAntwort) {
+		t.Errorf("CreatePage: %v", err)
+	}
+	err = n.do(context.Background(), http.MethodGet, "/v1/x", nil, &struct{}{}, true)
+	if !errors.Is(err, errAntwort) || errors.Is(err, ErrUnklar) {
+		t.Errorf("GET: %v", err)
+	}
+}

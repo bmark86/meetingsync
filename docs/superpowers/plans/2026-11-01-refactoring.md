@@ -518,6 +518,7 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 - Depends on: M2. Findings: S-08, A-15.
 - Model: sonnet, clearly bounded limit.
 - Reviews: CR, SR, QA.
+- Status: done 2026-11-02. `maxAntwortBytes` = 10 MiB per client; oversize or read error on 2xx is non-transient without body content; error statuses read with the same limit; `Models()` errors at >= 300 (`-check` shows `✗ LM Studio nicht erreichbar … HTTP 401`, exit code and golden unchanged); `notion.ErrUnklar` wraps an incomplete 2xx `CreatePage` read; truncated PATCH reply counts as append error (`ErrUnvollstaendig`). CR and SR approved. Idea (no task): an LLM body read timeout is non-transient (as before); wrapping it in `domain.Transient` would match the CLAUDE.md retry rule, not changed now (coordinator). Follow-up: R-M3-17.
 
 #### R-M3-06 Total block cap
 - Goal: limit the number of blocks per page.
@@ -633,6 +634,7 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
   - Golden outputs unchanged for the non-failure scenarios.
   - ADR 0004 updated (residual risk OD-05 removed or narrowed).
 - Scope: `app.go` (`handle`, `process`) or the pipeline package after M2, `notion.go` (lookup), tests.
+- Follow-ups from R-M3-05: use `notion.ErrUnklar` (incomplete 2xx `CreatePage` read) as an ambiguous case; also consider an unparsable 2xx JSON body on `CreatePage` as ambiguous; add a pipeline test that `ErrUnklar` survives to the decision point (today the pipeline treats it like other non-transient errors).
 - Out of scope: creating the column (Mark does it in Notion).
 - Depends on: R-M1-02; M2 pipeline split preferred.
 - Model: opus, crash and retry semantics.

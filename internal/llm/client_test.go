@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -335,19 +336,71 @@ func TestModelsListsIDs(t *testing.T) {
 	}
 }
 
-// Charakterisiert HEUTIGES Verhalten (Finding A-08): Models prüft den
-// Statuscode nicht. Ein 401 mit JSON-Body liefert eine leere Liste ohne Fehler,
-// ein 500 mit Nicht-JSON einen Dekodierfehler. M1 darf diesen Test bewusst ändern.
-// Fängt: unbeabsichtigte Verhaltensänderung in Models vor M1.
-func TestModelsIgnoresStatusCodeToday(t *testing.T) {
-	l, _ := lcLLM(t, nil, lcReply{401, `{"error":"unauthorized"}`})
-	ids, err := l.Models(context.Background())
-	if err != nil || len(ids) != 0 {
-		t.Errorf("401 mit JSON: ids = %v, err = %v; heute leere Liste ohne Fehler", ids, err)
+// Fängt: Models wertet den Statuscode nicht aus (Finding A-08).
+func TestModelsChecksStatusCode(t *testing.T) {
+	for _, rep := range []lcReply{{401, `{"error":"unauthorized"}`}, {500, "Internal Server Error"}} {
+		l, _ := lcLLM(t, nil, rep)
+		ids, err := l.Models(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "HTTP "+strconv.Itoa(rep.status)) || len(ids) != 0 {
+			t.Errorf("Status %d: ids = %v, err = %v", rep.status, ids, err)
+		}
+		if err != nil && strings.Contains(err.Error(), rep.body) {
+			t.Errorf("Fehler enthält den Body: %v", err)
+		}
 	}
-	l, _ = lcLLM(t, nil, lcReply{500, "Internal Server Error"})
-	if _, err := l.Models(context.Background()); err == nil {
-		t.Error("500 mit Nicht-JSON: heute ein Dekodierfehler")
+}
+
+// Fängt: fehlendes Antwortlimit, Body-Inhalt im Fehler, falsche Einstufung
+// bei Statusfehlern, verschluckte Lesefehler.
+func TestResponseLimitsAndReadErrors(t *testing.T) {
+	big := strings.Repeat("x", 200)
+	l, _ := lcLLM(t, nil, lcReply{200, big})
+	l.maxBytes = 100
+	if _, err := l.chat(context.Background(), nil, nil); !errors.Is(err, errAntwortZuGross) || strings.Contains(err.Error(), "xxx") || domain.IsTransient(err) {
+		t.Errorf("2xx zu groß: err = %v", err)
+	}
+	// genau am Limit ist erlaubt
+	exact := lcChat("ok", "stop")
+	l, _ = lcLLM(t, nil, exact)
+	l.maxBytes = int64(len(exact.body))
+	if out, err := l.chat(context.Background(), nil, nil); err != nil || out != "ok" {
+		t.Errorf("Antwort genau am Limit: %q, %v", out, err)
+	}
+	// Fehlerstatus mit zu großem Body: Status bleibt maßgeblich, Einstufung unverändert
+	l, _ = lcLLM(t, nil, lcReply{500, big})
+	l.maxBytes = 100
+	if _, err := l.chat(context.Background(), nil, nil); err == nil || !domain.IsTransient(err) || !strings.Contains(err.Error(), "HTTP 500") || strings.Contains(err.Error(), "xxx") {
+		t.Errorf("500 zu groß: err = %v", err)
+	}
+	l, _ = lcLLM(t, nil, lcReply{422, big})
+	l.maxBytes = 100
+	if _, err := l.chat(context.Background(), nil, nil); err == nil || domain.IsTransient(err) || !strings.Contains(err.Error(), "HTTP 422") {
+		t.Errorf("422 zu groß: err = %v", err)
+	}
+	// Models
+	l, _ = lcLLM(t, nil, lcReply{200, big})
+	l.maxBytes = 100
+	if _, err := l.Models(context.Background()); !errors.Is(err, errAntwortZuGross) {
+		t.Errorf("Models zu groß: err = %v", err)
+	}
+}
+
+// Fängt: abgeschnittene 2xx-Antwort (Verbindung bricht mitten im Body ab) wird
+// als leere/kaputte Antwort verschluckt.
+func TestTruncatedBodyIsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Length", "1000")
+		w.WriteHeader(200)
+		_, _ = io.WriteString(w, `{"choices":[`)
+	}))
+	defer srv.Close()
+	l := NewClient(Options{BaseURL: srv.URL, Timeout: time.Minute}, log.New(io.Discard, "", 0), nil)
+	_, err := l.chat(context.Background(), nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "nicht vollständig lesbar") {
+		t.Errorf("chat: err = %v", err)
+	}
+	if _, err := l.Models(context.Background()); err == nil || !strings.Contains(err.Error(), "nicht vollständig lesbar") {
+		t.Errorf("Models: err = %v", err)
 	}
 }
 
