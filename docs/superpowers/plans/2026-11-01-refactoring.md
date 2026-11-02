@@ -453,14 +453,13 @@ Logging stays `*log.Logger` with identical texts. Named constants (A-17) and rea
 - Reviews: CR, SR, QA. ADR 0006.
 - Split by the coordinator (2026-11-02) into 09a and 09b. The goal and acceptance above stay the overall target.
 - **09a: done 2026-11-02.** `Pass`, `handle`, `interrupted`, `handleError`, `process`, `createTasks`, `archive`/`archiveAt`/`archiveJob`, `fail`, `listEntries`, `changedSinceRead` (via `FS.Lstat`), `ActiveProjects` and the per-file retry state moved to `internal/pipeline` (`pipeline.go`, `files.go`, `retry.go`). Injected via `Deps`: `Now`, `watch.FS`, `watch.Mover`, `llm.Summarizer`, Notion port (`PageWriter` + `ActiveProjects`), own `Notifier` port (pipeline may not import `internal/notify`: `os/exec` arch rule), `*ledger.Ledger` (concrete; plan said "injected", coordinator accepted), `*log.Logger`, dry-run printer. Retry policy is its own type (values unchanged). Three state copies merged into `state()`, `retryLater()` for `interrupted` and archive failure (follow-up 21 closed). `writeFehlerTxt` moved to `internal/watch` as `WriteFehlerTxt`. `package main` keeps `Init`, `Check`, `Run`, `ProcessSingleFile`, `printDryRun`, `mustJSON`; `App.pipe()` builds the pipeline lazily (temporary). Exported only for main tests: `FileState`, `States()`, `ErrUnterbrochen`. Coverage `pipeline` 93.5 % own / 98.8 % combined, tests 231 → 251, golden byte-identical, CR and SR approved. ADR 0006.
-- **09b: open (opus).** Remaining from the list above:
-  - `sleepFn` in `internal/notion` replaced by dependency injection.
-  - Rewrite `newFlowApp` and `hookNotion` on the new fakes/transport injection.
-  - Merge the `mustJSON` copies (`app.go`, `internal/llm`).
-  - Place `FormatTitle` and `deadlineLabel`.
-  - In-memory FS with `Move` (e.g. `watchtest`) for pipeline tests.
-  - Decide where `Normalize` lives (inside `Summarize` or not).
-  - Nil-guards for `Deps.DryRun` and `Deps.Notifier` in `pipeline.New`.
+- **09b: done 2026-11-02.** Done:
+  - `sleepFn` in `internal/notion` replaced by the unexported field `Client.sleep` (default `sleepCtx` in `NewClient`; retry/backoff unchanged).
+  - `app.go`: unexported `appSeams{notionTransport, notifier}` and `newApp(..., appSeams)`; `NewApp` passes the zero value (production unchanged).
+  - `newFlowApp` builds the `App` via `newApp` with fakes (Notion `failingRT` fails on any call, fake notifier, fixed token). `hookNotion` removed: `setupWith`/`restart` pass the hook transport via `appSeams` (no duplicated `NewClient`).
+  - `pipeline.New`: nil `Notifier` is a no-op, nil `DryRun` is a no-op printer (2 tests).
+  - Tests 251 -> 253, golden byte-identical, review approved.
+  - Decisions (coordinator): `mustJSON` keeps two copies (`internal/llm` prompt schema, `main` dry-run output), sharing would need an artificial common package. `llm.Normalize` stays a separate pipeline call right after `Summarize`. `notion.FormatTitle` and `deadlineLabel` stay in `internal/notion` (they format Notion content). No `watchtest` in-memory FS: pipeline tests use real temp dirs (93.5 % coverage), an exported test FS would be speculative. See ADR 0006.
 
 #### R-M2-10 Entry point and wiring
 - Goal: `App` dissolved; `Pass`/`Run`, `Check`, dry-run output, `ProcessSingleFile` moved to their place; entry point per OD-06.
@@ -469,6 +468,7 @@ Logging stays `*log.Logger` with identical texts. Named constants (A-17) and rea
 - Depends on: R-M2-09. Findings: A-03, A-04, A-13.
 - Acceptance (from R-M2-09a): replace the lazy `App.pipe()` by direct construction of the pipeline; re-check whether the exported `FileState`, `States()` and `ErrUnterbrochen` are still needed.
 - Note (from R-M2-07): one helper for the `Load` → `loadLocation` → tokens → `NewApp` wiring (repeated in `main.go`, `golden_adapter_test.go`, `e2e_test.go`); re-check whether `config.Finalize` must stay exported.
+- Follow-ups (from R-M2-09b): drop `appSeams.notifier` if unused after the wiring rework; consider `App.notion` as an interface so `Init` (`ResolveDataSource`) is fakeable and the transport seam can go.
 - Model: sonnet, wiring.
 - Reviews: CR, QA.
 

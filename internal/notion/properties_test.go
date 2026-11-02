@@ -158,10 +158,10 @@ func TestTaskProperties(t *testing.T) {
 // Fängt: Schema-Typen werden falsch gelesen; Datenbank-ID wird nicht auf die
 // erste Data Source aufgelöst; collection://-Präfix bleibt im Pfad.
 func TestResolveDataSource(t *testing.T) {
-	ncSleeps(t, true)
 	n, s := ncNotion(t,
 		ncReply{status: 200, body: `{"properties":{"Name":{"type":"title"},"Status":{"type":"status"},"Wer":{"type":"people"}}}`},
 	)
+	ncSleeps(n, true)
 	id, schema, err := n.ResolveDataSource(context.Background(), "collection://ds-1 ")
 	if err != nil || id != "ds-1" {
 		t.Fatalf("id = %q, err = %v", id, err)
@@ -242,8 +242,8 @@ func TestActiveProjects(t *testing.T) {
 		}
 	}
 
-	ncSleeps(t, false)
 	n, _ = ncNotion(t, ncReply{status: 500})
+	ncSleeps(n, false)
 	if p, err := n.ActiveProjects(context.Background(), "d", ptProjects, nil); err == nil || p != nil {
 		t.Errorf("Fehler erwartet, bekam %v, %v", p, err)
 	}

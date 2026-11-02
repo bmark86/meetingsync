@@ -62,6 +62,17 @@ func newLLMClient(cfg *config.Config, logger *log.Logger, transport http.RoundTr
 // NewApp baut die App. loc ist die aufgelöste Zeitzone der Config, tokens
 // liefert den Notion-Token.
 func NewApp(cfg *config.Config, loc *time.Location, tokens secret.TokenSource, logger *log.Logger, dry bool) (*App, error) {
+	return newApp(cfg, loc, tokens, logger, dry, appSeams{})
+}
+
+// appSeams sind Einhängepunkte für Tests; der Nullwert ist die Produktion.
+type appSeams struct {
+	notionTransport http.RoundTripper // nil: http.DefaultTransport
+	notifier        notify.Notifier   // nil: echte Mac-Mitteilung
+}
+
+// newApp ist NewApp mit Einhängepunkten.
+func newApp(cfg *config.Config, loc *time.Location, tokens secret.TokenSource, logger *log.Logger, dry bool, s appSeams) (*App, error) {
 	a := &App{
 		cfg:      cfg,
 		loc:      loc,
@@ -70,10 +81,13 @@ func NewApp(cfg *config.Config, loc *time.Location, tokens secret.TokenSource, l
 		llm:      newLLMClient(cfg, logger, nil),
 		notifier: notify.New(),
 	}
+	if s.notifier != nil {
+		a.notifier = s.notifier
+	}
 	token, err := tokens.Token()
 	switch {
 	case err == nil:
-		a.notion = notion.NewClient(cfg.Notion.BaseURL, cfg.Notion.APIVersion, token, nil)
+		a.notion = notion.NewClient(cfg.Notion.BaseURL, cfg.Notion.APIVersion, token, s.notionTransport)
 	case dry:
 		logger.Printf("Hinweis: %v – Dry-Run läuft ohne Notion (keine Projektliste).", err)
 	default:

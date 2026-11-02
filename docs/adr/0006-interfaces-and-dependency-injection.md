@@ -39,4 +39,4 @@ Status: accepted (coordinator, R-M2-09a, 2026-11-02).
 - Trade-off: `pipeline` is coupled to `*ledger.Ledger`; a fake ledger is not possible, tests use a real one in a temp dir.
 - Trade-off: `Notifier` is declared twice (`internal/notify` and `pipeline`); `main` wires one into the other.
 - Temporary: lazy `App.pipe()`; `FileState`, `States()` and `ErrUnterbrochen` are exported only for `package main` tests (review in R-M2-10).
-- Not done in 09a: see plan section R-M2-09b.
+- R-M2-09b (coordinator, 2026-11-02): `sleepFn` became the field `Client.sleep` in `internal/notion`; tests inject the Notion transport via the unexported `appSeams`. Rejected: a shared `mustJSON` (needs an artificial common package, so two copies stay in `internal/llm` and `main`) and an exported in-memory `watchtest` FS (pipeline tests use real temp dirs at 93.5 % coverage, so it would be speculative). `llm.Normalize` stays a separate call after `Summarize`; `FormatTitle`/`deadlineLabel` stay in `internal/notion`.

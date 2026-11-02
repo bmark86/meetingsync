@@ -103,8 +103,19 @@ type Pipeline struct {
 	projectsAt time.Time
 }
 
-// New baut die Pipeline.
+// noopNotifier ist der Ersatz, wenn keine Mitteilung verdrahtet ist.
+type noopNotifier struct{}
+
+func (noopNotifier) Notify(string, string) {}
+
+// New baut die Pipeline. Fehlt Notifier oder DryRun, tun sie nichts.
 func New(o Options, d Deps) *Pipeline {
+	if d.Notifier == nil {
+		d.Notifier = noopNotifier{}
+	}
+	if d.DryRun == nil {
+		d.DryRun = func(string, *notion.Page, *domain.MeetingNote, []string, int) {}
+	}
 	return &Pipeline{
 		o: o, now: d.Now, fs: d.FS, mover: d.Mover, llm: d.LLM, notion: d.Notion,
 		notifier: d.Notifier, ledger: d.Ledger, log: d.Log, dryRun: d.DryRun,

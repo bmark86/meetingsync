@@ -2,7 +2,7 @@ package main
 
 // Unit-Tests Ablauf (R-M0-08): Ledger laden, Pass-Gating (nextTry, near,
 // Wartezeit), verwaiste Zusammenfassungen, Run mit abgebrochenem Kontext.
-// Kein Notion: die App läuft mit notion=nil. Jeder Pfad, der process()
+// Notion ist ein Fake-Transport, der jeden Zugriff meldet. Jeder Pfad, der process()
 // erreicht, trifft den LLM-Fake und wird dort gezählt (hits).
 
 import (
@@ -11,6 +11,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -38,7 +39,21 @@ type flowEnv struct {
 	status  *atomic.Int32 // Antwortstatus des LLM-Fakes
 }
 
-// newFlowApp baut eine App ohne Notion mit LLM-Fake. Der Fake antwortet mit
+// fixedToken ist eine TokenSource mit festem Token.
+type fixedToken string
+
+func (f fixedToken) Token() (string, error) { return string(f), nil }
+
+// failingRT lässt jeden Notion-Zugriff den Test scheitern: die Flow-Tests
+// dürfen Notion nie erreichen.
+type failingRT struct{ t *testing.T }
+
+func (f failingRT) RoundTrip(r *http.Request) (*http.Response, error) {
+	f.t.Errorf("unerwarteter Notion-Zugriff: %s %s", r.Method, r.URL)
+	return nil, errors.New("Notion im Flow-Test nicht erreichbar")
+}
+
+// newFlowApp baut eine App mit Notion-Fake (ohne Zugriff) und LLM-Fake. Der Fake antwortet mit
 // 503, solange status nicht auf 200 steht; 200 liefert eine gültige Notiz.
 func newFlowApp(t *testing.T, mod func(*config.Config)) *flowEnv {
 	t.Helper()
@@ -77,10 +92,15 @@ func newFlowApp(t *testing.T, mod func(*config.Config)) *flowEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
-	app := &App{
-		cfg: cfg, loc: time.UTC, log: logger, llm: newLLMClient(cfg, logger, nil), ledger: l,
-		notifier: &fakeNotifier{},
+	// Normale Verdrahtung; Notion-Transport und Mitteilung sind Fakes. Das
+	// Ledger liegt ohne Init im Speicher/Archiv wie bisher.
+	app, err := newApp(cfg, time.UTC, fixedToken("t"), logger, false, appSeams{
+		notionTransport: failingRT{t: t}, notifier: &fakeNotifier{},
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
+	app.ledger = l
 	return &flowEnv{app: app, watch: cfg.WatchDir, archive: cfg.ArchiveDir, logBuf: buf, hits: hits, status: status}
 }
 
@@ -317,7 +337,7 @@ func TestPassGatingByNextTry(t *testing.T) {
 // Ledger auf Platte ist durch die Golden-Szenarien (G01 u. a.) abgedeckt.
 func TestPassSuccessClearsStateAndFillsLedger(t *testing.T) {
 	env := newFlowApp(t, func(c *config.Config) { c.MaxAttempts = 5 })
-	env.app.dry = true // Notion fehlt: Dry-Run liefert "dry-run" als Ergebnis
+	env.app.dry = true // Dry-Run schreibt nichts nach Notion und liefert "dry-run" als Ergebnis
 	p := env.write(t, "Sitzung.srt", goldenSRT, flowM)
 	env.app.states()[p] = &pipeline.FileState{Attempts: 2, Transient: 2}
 	env.status.Store(200)
