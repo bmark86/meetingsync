@@ -230,3 +230,29 @@ func TestConfigNormalNoWarnings(t *testing.T) {
 		}
 	}
 }
+
+// Fängt: ungültige Werte landen mit %q im Fehlertext (S-17). Der Fehler nennt
+// den Schlüssel und die erlaubten Werte, aber nicht den konfigurierten Wert.
+func TestInvalidEnumErrorsHaveNoValues(t *testing.T) {
+	const secret = "GEHEIM-xyz"
+	cases := []struct {
+		name, body, key string
+	}{
+		{"orphan_summary_action", "watch_dir: /w\norphan_summary_action: " + secret + "\n", "orphan_summary_action"},
+		{"create_tasks_for", "watch_dir: /w\nnotion:\n  create_tasks_for: " + secret + "\n", "create_tasks_for"},
+	}
+	for _, tc := range cases {
+		p := filepath.Join(t.TempDir(), "x.yaml")
+		writeCfg(t, p, tc.body)
+		_, _, err := Load(p)
+		if err == nil {
+			t.Fatalf("%s: Fehler erwartet", tc.name)
+		}
+		if strings.Contains(err.Error(), secret) {
+			t.Errorf("%s: Wert im Fehler: %v", tc.name, err)
+		}
+		if !strings.Contains(err.Error(), tc.key) {
+			t.Errorf("%s: Schlüssel fehlt im Fehler: %v", tc.name, err)
+		}
+	}
+}

@@ -36,7 +36,7 @@ func TestExitQAConfigAndTimezoneErrors(t *testing.T) {
 	}
 	tz := exitQACfg(t, home, "timezone: Nirgendwo/Stadt\n")
 	stdout, _, exit := goldenRunCLI(t, exitQAEnv(home), "-config", tz, "-once")
-	if exit != 1 || !strings.Contains(stdout, `Konfiguration: unbekannte Zeitzone "Nirgendwo/Stadt"`) {
+	if exit != 1 || !strings.Contains(stdout, "Konfiguration: unbekannte Zeitzone in timezone (") || strings.Contains(stdout, "Nirgendwo/Stadt") {
 		t.Fatalf("Zeitzone: exit = %d\n%s", exit, stdout)
 	}
 }

@@ -275,12 +275,12 @@ func (c *Config) Finalize() (warnings []string, err error) {
 	switch c.OrphanSummaryAction {
 	case "note", "archive", "keep":
 	default:
-		return nil, fmt.Errorf("orphan_summary_action muss note, archive oder keep sein, nicht %q", c.OrphanSummaryAction)
+		return nil, errors.New("orphan_summary_action muss note, archive oder keep sein")
 	}
 	switch c.Notion.CreateTasksFor {
 	case "me", "all", "none":
 	default:
-		return nil, fmt.Errorf("create_tasks_for muss me, all oder none sein, nicht %q", c.Notion.CreateTasksFor)
+		return nil, errors.New("create_tasks_for muss me, all oder none sein")
 	}
 	if c.PollIntervalSeconds < 2 {
 		warnings = append(warnings, clampWarning("poll_interval_seconds", c.PollIntervalSeconds, 2))
