@@ -23,10 +23,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - R-M1-01 ⚠: ledger lines carry a status (`begonnen`, `fertig`, `verworfen`); last line per hash wins; `Has`/`HasNear` count only `fertig`. `fertig` lines stay byte-identical to v1.0.0; other lines use field `sha256`, so v1.0.0 skips them. `Add` fsyncs and returns write/sync/close errors. See ADR 0004.
 - R-M1-06 ⚠: `llm.timeout_minutes` below 1 (e.g. 0) is now clamped to 1 (was: no timeout).
 - R-M1-02 ⚠: ledger gets a `begonnen` line (fsync) after the LLM run, right before Notion `CreatePage`. After success `fertig` as before (byte-identical to v1.0.0), on a non-cancel error `verworfen`, on context cancel `begonnen` stays. v1.0.0 skips `begonnen` lines. Golden diff: only `ledger.jsonl` and its hash in `tree.txt`. See ADR 0004.
+- R-M1-03: `CreatePage` returns ID and URL with an error wrapping `errUnvollstaendig` when appending the remaining blocks fails; the caller treats it as success with a gap (no retry, request bodies unchanged). Unused `Notion.log` field and `NewNotion` logger parameter removed.
 - Docs: review report, refactoring plan; documentation switched to plain English.
 
 ### Fixed
 - R-M1-02: restart rule: a file whose last ledger status is `begonnen` goes to `_fehler` (partner first, primary last) with a `.fehler.txt` note to check Notion, log line `letzter Lauf wurde beim Anlegen in Notion unterbrochen`, then `verworfen`; identical copies in the same pass follow. No second page at the tested crash points (after `begonnen`, `CreatePage`, tasks, `fertig`, archive; failed partner move; identical copy).
+- R-M1-03: missing tasks and blocks are no longer silent. The `fertig` ledger line gets optional fields `todos_fehlen` and `bloecke_fehler` (only when something is missing; normal path byte-identical to v1.0.0, v1.0.0 reads such lines as done). New log line `⚠️  <Datei>: Notiz unvollständig – N To-do(s) nicht angelegt, M Fehler beim Anhängen von Blöcken (nicht nachgeholt)` (file name and counts only). A context cancel in `createTasks` stops further task requests; a cancel after the page exists ends as `fertig` with URL (archived, no `_fehler` after restart, no second page). Missing parts are only recorded, not made up later (OD-04). See ADR 0004.
 - e2e test archive month no longer depends on the local time zone
 
 ### Security

@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -21,16 +20,14 @@ type Notion struct {
 	version string
 	token   string
 	http    *http.Client
-	log     *log.Logger
 }
 
-func NewNotion(cfg NotionConfig, token string, logger *log.Logger) *Notion {
+func NewNotion(cfg NotionConfig, token string) *Notion {
 	return &Notion{
 		base:    strings.TrimRight(cfg.BaseURL, "/"),
 		version: cfg.APIVersion,
 		token:   token,
 		http:    &http.Client{Timeout: 60 * time.Second},
-		log:     logger,
 	}
 }
 
@@ -205,8 +202,14 @@ func titleText(raw json.RawMessage) string {
 	return strings.TrimSpace(b.String())
 }
 
+// errUnvollstaendig: die Seite existiert, aber nicht alle Blöcke wurden
+// angehängt. CreatePage liefert dann ID und URL mit diesem Fehler.
+var errUnvollstaendig = errors.New("Seite angelegt, aber nicht der ganze Inhalt")
+
 // CreatePage legt eine Seite in einer Data Source an. Notion nimmt höchstens
-// 100 Blöcke pro Request; der Rest wird angehängt.
+// 100 Blöcke pro Request; der Rest wird angehängt. Scheitert das Anhängen,
+// kommen ID und URL zusammen mit einem Fehler zurück, der errUnvollstaendig
+// umhüllt (die Seite existiert, ein neuer Versuch gäbe eine Dublette).
 func (n *Notion) CreatePage(ctx context.Context, dsID string, props map[string]any, children []any) (string, string, error) {
 	first, rest := children, []any(nil)
 	if len(children) > 100 {
@@ -228,8 +231,7 @@ func (n *Notion) CreatePage(ctx context.Context, dsID string, props map[string]a
 	}
 	if len(rest) > 0 {
 		if err := n.AppendChildren(ctx, out.ID, rest); err != nil {
-			// Seite existiert bereits – nicht als Fehler werten, sonst entsteht beim nächsten Versuch eine Dublette.
-			n.log.Printf("   ⚠️  Seite angelegt, aber nicht der ganze Inhalt: %v", err)
+			return out.ID, out.URL, fmt.Errorf("%w: %w", errUnvollstaendig, err)
 		}
 	}
 	return out.ID, out.URL, nil
