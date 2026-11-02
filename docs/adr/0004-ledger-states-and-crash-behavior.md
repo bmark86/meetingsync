@@ -50,7 +50,7 @@ Status: draft (R-M1-01, extended by R-M1-02 and R-M1-03), 2026-11-02. Decided by
 - Log line: `✗ <file>: letzter Lauf wurde beim Anlegen in Notion unterbrochen → <_fehler> (bitte in Notion prüfen)`.
 - Move order: the partner (summary) first, the file with the hash (transcript) last. The first failed move stops the rule. So if anything is left behind, it is always the file with `begonnen`, and the next pass catches it again. A summary is never left alone in the export folder, where it could become an orphan and create a second page (`HasNear` counts only `fertig`). The same holds for a crash between the two moves.
 - Only after all moves succeeded, the ledger gets `verworfen`. A file that Mark moves back then runs normally, also without a restart of the process.
-- If a file cannot be moved, `begonnen` stays and nothing else happens. The next pass tries again.
+- If a file cannot be moved, `begonnen` stays and nothing else happens. The move is retried after 2 minutes via the retry state; this does not count against `max_attempts` (R-M1-04).
 - Identical copies: the hash is kept in a set for the current pass. Further files with the same hash in the same pass also go to `_fehler` with the same note (no second `verworfen` line). The set is reset at the start of each pass, so a file that Mark moves back later runs normally. A copy that only becomes stable in a later pass is not caught.
 
 ## Alternatives considered
