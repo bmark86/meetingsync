@@ -31,6 +31,7 @@
 | R-M2-04 | `internal/notion` (`client.go`, `blocks.go`, new `properties.go`): typed `PropertyKind` (Notion API names, decoded from the schema JSON; kind-to-payload mapping only in `value`/`filter`), `NoteProperties`/`TaskProperties`, `Schema`, `ActiveProjects` filter, `PageWriter` interface (wiring in R-M2-09); `internal/notion` imports stdlib + domain only (arch_test); coverage 97.8 %; golden byte-identical; security review approved | done | 2026-11-02 |
 | R-M2-05 | `internal/llm` (`client.go`: `Options`, `Summarizer`, `Client`, `NewClient`, `NoteInput`, `Normalize`, `Models`); pure move, prompts/schema/splitter/parse retry/schema fallback byte-identical; `httpError` unexported, classification via `domain.Transient`; 18 tests moved; arch_test rule (stdlib + domain only), added in fix round 1 after the first report claimed it without it; golden unchanged. `App` still holds `*llm.Client`; `mustJSON` duplicated in `app.go` and `internal/llm` (merge in R-M2-09) | done | 2026-11-02 |
 | R-M2-06 | `internal/notify` (`Notifier`, `New()` osascript notifier, unexported runner seam); command/escaping byte-identical; `App.notifier`; arch_test rule (stdlib only); gosec G204 exclusion extended to `internal/notify/notify.go` (removal in R-M3-07); golden byte-identical; CR and SR approved. QA: fake notifier injected in golden/flow tests (pre-existing gap: scenarios ran with `Notify=true`). Next: R-M2-07 config and TokenSource (opus, security-relevant: secrets; Mark approved M2 incl. R-M2-07 at the gate) | done | 2026-11-02 |
+| R-M2-07 | `internal/config` (`Load` returns warnings; `Default`, `DefaultPath`, `Finalize`, `ExpandHome` exported; no `os/exec`, no `loc`) and `internal/secret` (`TokenSource`, Keychain lookup, unexported runner seam); time zone resolved in `main`, `NewApp(cfg, loc, tokens, logger, dry)`; arch rules; gosec G204 path `internal/secret/secret.go`. Coverage config 92.1 %, secret 100 %. Golden byte-identical; CR and SR approved. Next: R-M2-08 | done | 2026-11-02 |
 
 ## M1 summary (complete 2026-11-02: R-M1-01 to R-M1-07 + R-M1-EXIT)
 
@@ -64,7 +65,7 @@ Decisions taken in M1:
 | Coordinator | `go 1.26.0` accepted | R-M1-04 |
 | Coordinator | No deletion after an identity mismatch (and after a syncDir error, see above) | R-M1-04 |
 
-Next: M2 package split, R-M2-06 notify (haiku, with security review).
+Next: M2 package split, R-M2-08 watch with FS interface (opus).
 
 ## Open follow-ups
 

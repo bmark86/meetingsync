@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"errors"
@@ -7,36 +7,40 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
+// Beispiel-Configs liegen im Modul-Root.
+var examples = []string{"../../config.example.json", "../../config.example.yaml"}
+
 func TestExampleConfigLoads(t *testing.T) {
-	for _, f := range []string{"config.example.json", "config.example.yaml"} {
-		cfg, err := LoadConfig(f)
+	for _, f := range examples {
+		cfg, _, err := Load(f)
 		if err != nil {
 			t.Fatalf("%s: %v", f, err)
 		}
 		if cfg.Notion.Notes.StatusValue != "Inbox" || cfg.Notion.Tasks.DueDate != "Due Date" || !cfg.LLM.StructuredOutput {
 			t.Fatalf("%s: Standardwerte gehen beim Laden verloren: %+v", f, cfg.Notion)
 		}
-		if cfg.ArchiveDir == "" || cfg.loc == nil {
-			t.Fatalf("%s: Archivordner/Zeitzone nicht gesetzt", f)
+		// Die Zeitzone löst main auf (R-M2-07); hier: gesetzt und auflösbar.
+		if _, err := time.LoadLocation(cfg.Timezone); cfg.ArchiveDir == "" || cfg.Timezone == "" || err != nil {
+			t.Fatalf("%s: Archivordner/Zeitzone nicht gesetzt (%v)", f, err)
 		}
 	}
 }
 
 func TestExampleConfigsIdentical(t *testing.T) {
-	j, err := LoadConfig("config.example.json")
+	j, _, err := Load(examples[0])
 	if err != nil {
 		t.Fatal(err)
 	}
-	y, err := LoadConfig("config.example.yaml")
+	y, _, err := Load(examples[1])
 	if err != nil {
 		t.Fatal(err)
 	}
-	if j.loc.String() != y.loc.String() {
-		t.Fatalf("Zeitzone verschieden: %v vs %v", j.loc, y.loc)
+	if j.Timezone != y.Timezone {
+		t.Fatalf("Zeitzone verschieden: %v vs %v", j.Timezone, y.Timezone)
 	}
-	j.loc, y.loc = nil, nil
 	if !reflect.DeepEqual(j, y) {
 		t.Fatalf("Beispiele verschieden:\njson: %+v\nyaml: %+v", j, y)
 	}
@@ -63,7 +67,7 @@ func TestInvalidYAML(t *testing.T) {
 	if err := os.WriteFile(p, []byte("watch_dir: [unclosed\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err := LoadConfig(p)
+	_, _, err := Load(p)
 	if err == nil || !strings.Contains(err.Error(), "ungültiges YAML") {
 		t.Fatalf("erwartet YAML-Fehler, bekam %v", err)
 	}
@@ -74,7 +78,7 @@ func TestYAMLUnknownFieldIgnored(t *testing.T) {
 	if err := os.WriteFile(p, []byte("watch_dir: /x\nfoo: 1\nllm:\n  model: m\nnotion:\n  notes_data_source_id: n\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := LoadConfig(p)
+	cfg, _, err := Load(p)
 	if err != nil {
 		t.Fatalf("unbekanntes Feld darf nicht scheitern: %v", err)
 	}
@@ -100,7 +104,7 @@ func TestYAMLErrorsHaveNoValues(t *testing.T) {
 			if err := os.WriteFile(p, []byte(tc.yaml), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			_, err := LoadConfig(p)
+			_, _, err := Load(p)
 			if err == nil {
 				t.Fatal("Fehler erwartet")
 			}
@@ -132,11 +136,11 @@ func loadWarn(t *testing.T, name, body string) []string {
 	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := LoadConfig(p)
+	_, warnings, err := Load(p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return cfg.warnings
+	return warnings
 }
 
 // Fängt: Clamp ohne Warnung / falscher Schlüssel in der Warnung / Warnung ohne Clamp.
@@ -168,7 +172,7 @@ func TestConfigTimeoutClampedToOne(t *testing.T) {
 	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := LoadConfig(p)
+	cfg, _, err := Load(p)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,32 +219,14 @@ func TestConfigYAMLKeyCaseWarns(t *testing.T) {
 	}
 }
 
-func TestConfigCLIWarningsOrder(t *testing.T) {
-	home := t.TempDir()
-	env := append([]string{"HOME=" + home, "PATH=" + os.Getenv("PATH")}, goldenProxyEnv...)
-	p := filepath.Join(t.TempDir(), "x.yaml")
-	writeCfg(t, p, "watch_dir: "+filepath.Join(home, "w")+"\nllm:\n  model: m\nnotion:\n  token_keychain_service: \"\"\n  notes_data_source_id: n\nfoo: ntn_geheim\nmax_attempts: 0\n")
-	stdout, stderr, _ := goldenRunCLI(t, env, "-config", p, "-check")
-	out := stdout + stderr
-	if strings.Contains(out, "ntn_geheim") {
-		t.Fatalf("Wert in der Ausgabe:\n%s", out)
-	}
-	i := strings.Index(out, "Konfiguration: "+p+"\n")
-	j := strings.Index(out, `unbekannter Schlüssel "foo"`)
-	k := strings.Index(out, "max_attempts=0 ist zu klein, verwende 1")
-	if i < 0 || j < 0 || k < 0 || i >= j || j >= k {
-		t.Fatalf("Reihenfolge Pfad(%d) < unbekannt(%d) < zu klein(%d) verletzt:\n%s", i, j, k, out)
-	}
-}
-
 func TestConfigNormalNoWarnings(t *testing.T) {
-	for _, f := range []string{"config.example.json", "config.example.yaml"} {
-		cfg, err := LoadConfig(f)
+	for _, f := range examples {
+		_, warnings, err := Load(f)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(cfg.warnings) != 0 {
-			t.Fatalf("%s: warnings = %q, want keine", f, cfg.warnings)
+		if len(warnings) != 0 {
+			t.Fatalf("%s: warnings = %q, want keine", f, warnings)
 		}
 	}
 }

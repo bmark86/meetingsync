@@ -19,16 +19,19 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"meetingsync/internal/config"
 	"meetingsync/internal/domain"
 	"meetingsync/internal/ledger"
 	"meetingsync/internal/llm"
 	"meetingsync/internal/notify"
 	"meetingsync/internal/notion"
+	"meetingsync/internal/secret"
 	"meetingsync/internal/transcript"
 )
 
 type App struct {
-	cfg      *Config
+	cfg      *config.Config
+	loc      *time.Location // Zeitzone aus cfg.Timezone, von main aufgelöst
 	log      *log.Logger
 	dry      bool
 	llm      *llm.Client
@@ -89,7 +92,7 @@ func (j job) files() []*entry {
 
 // newLLMClient baut den LM-Studio-Client aus der Konfiguration. transport nil
 // heißt http.DefaultTransport.
-func newLLMClient(cfg *Config, logger *log.Logger, transport http.RoundTripper) *llm.Client {
+func newLLMClient(cfg *config.Config, logger *log.Logger, transport http.RoundTripper) *llm.Client {
 	return llm.NewClient(llm.Options{
 		BaseURL:          cfg.LLM.BaseURL,
 		Model:            cfg.LLM.Model,
@@ -101,9 +104,12 @@ func newLLMClient(cfg *Config, logger *log.Logger, transport http.RoundTripper) 
 	}, logger, transport)
 }
 
-func NewApp(cfg *Config, logger *log.Logger, dry bool) (*App, error) {
+// NewApp baut die App. loc ist die aufgelöste Zeitzone der Config, tokens
+// liefert den Notion-Token.
+func NewApp(cfg *config.Config, loc *time.Location, tokens secret.TokenSource, logger *log.Logger, dry bool) (*App, error) {
 	a := &App{
 		cfg:      cfg,
+		loc:      loc,
 		log:      logger,
 		dry:      dry,
 		llm:      newLLMClient(cfg, logger, nil),
@@ -112,7 +118,7 @@ func NewApp(cfg *Config, logger *log.Logger, dry bool) (*App, error) {
 		cache:    map[string]cachedKind{},
 		notifier: notify.New(),
 	}
-	token, err := cfg.NotionToken()
+	token, err := tokens.Token()
 	switch {
 	case err == nil:
 		a.notion = notion.NewClient(cfg.Notion.BaseURL, cfg.Notion.APIVersion, token, nil)
@@ -425,7 +431,7 @@ func (a *App) process(ctx context.Context, j job, hash string) (string, gaps, er
 	if text == "" {
 		return "", gaps{}, errors.New("Datei ist leer")
 	}
-	timing := transcript.MeetingTiming(p.Name, p.ModTime, dur, a.cfg.loc)
+	timing := transcript.MeetingTiming(p.Name, p.ModTime, dur, a.loc)
 
 	in := llm.NoteInput{
 		Text:        text,
@@ -572,7 +578,7 @@ func (a *App) activeProjects(ctx context.Context) []notion.Page {
 // ProcessSingleFile verarbeitet eine Datei direkt (zum Testen). Die Datei
 // bleibt liegen und wird nicht ins Protokoll eingetragen.
 func (a *App) ProcessSingleFile(ctx context.Context, path string) error {
-	path = expandHome(path)
+	path = config.ExpandHome(path)
 	info, err := os.Stat(path)
 	if err != nil {
 		return err
@@ -714,7 +720,7 @@ func (a *App) archive(files ...*entry) (failed []*entry) {
 		return nil
 	}
 	for _, f := range files {
-		dir := filepath.Join(a.cfg.ArchiveDir, f.ModTime.In(a.cfg.loc).Format("2006-01"))
+		dir := filepath.Join(a.cfg.ArchiveDir, f.ModTime.In(a.loc).Format("2006-01"))
 		if dst, err := a.move(f, dir); err != nil {
 			a.log.Printf("   ⚠️  %s konnte nicht archiviert werden: %v", f.Name, err)
 			failed = append(failed, f)

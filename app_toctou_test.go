@@ -110,7 +110,7 @@ func TestTOCTOUChangedDuringLLM(t *testing.T) {
 			tr := filepath.Join(e.dir, "Meeting 2026-10-28 14-00.txt")
 			writeOld(t, tr, old, 5*time.Minute)
 			oldMod := mtime(t, tr)
-			e.month = oldMod.In(e.app.cfg.loc).Format("2006-01")
+			e.month = oldMod.In(e.app.loc).Format("2006-01")
 			e.onLLM(func() {
 				ts := oldMod.Add(time.Minute)
 				if c.sameMod {
@@ -182,7 +182,7 @@ func (e *toctouEnv) writePair(t *testing.T) (tr, sum string) {
 	sum = filepath.Join(e.dir, "Meeting 2026-10-28 14-00 (1).txt")
 	writeOld(t, tr, srtLikeText(), 5*time.Minute)
 	writeOld(t, sum, toctouSummary, 5*time.Minute)
-	e.month = mtime(t, tr).In(e.app.cfg.loc).Format("2006-01")
+	e.month = mtime(t, tr).In(e.app.loc).Format("2006-01")
 	return tr, sum
 }
 
@@ -320,7 +320,7 @@ func TestTOCTOUArchiveNoRecheck(t *testing.T) {
 		t.Fatal(err)
 	}
 	stale := &entry{Path: p, Name: "a.txt", ModTime: st.ModTime(), Size: st.Size()}
-	e.month = st.ModTime().In(e.app.cfg.loc).Format("2006-01")
+	e.month = st.ModTime().In(e.app.loc).Format("2006-01")
 	rewrite(t, p, "neu, länger\n", st.ModTime().Add(time.Second))
 
 	e.app.archive(stale)

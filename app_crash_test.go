@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"meetingsync/internal/config"
 	"meetingsync/internal/ledger"
 	"meetingsync/internal/notion"
 )
@@ -50,7 +51,7 @@ func (h *hookRT) RoundTrip(r *http.Request) (*http.Response, error) {
 // konfigurierten mit dem Hook-Transport rt.
 func hookNotion(t *testing.T, app *App, rt http.RoundTripper) {
 	t.Helper()
-	token, err := app.cfg.NotionToken()
+	token, err := notionTokens(app.cfg).Token()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +116,7 @@ func newCrashEnv(t *testing.T) *crashEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.month = st.ModTime().In(app.cfg.loc).Format("2006-01")
+	e.month = st.ModTime().In(app.loc).Format("2006-01")
 	return e
 }
 
@@ -125,7 +126,7 @@ func (e *crashEnv) hash() string { return sha256Hex([]byte(srtLikeText())) }
 func (e *crashEnv) restart(t *testing.T) {
 	t.Helper()
 	e.log = &hookLog{}
-	app, err := NewApp(e.app.cfg, log.New(e.log, "", 0), false)
+	app, err := NewApp(e.app.cfg, e.app.loc, notionTokens(e.app.cfg), log.New(e.log, "", 0), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +169,7 @@ func (e *crashEnv) pages() (notes, tasks int) {
 }
 
 // ledgerPath ist der Pfad der Ledger-Datei im Archivordner von cfg.
-func ledgerPath(cfg *Config) string {
+func ledgerPath(cfg *config.Config) string {
 	return filepath.Join(cfg.ArchiveDir, ".meetingsync-ledger.jsonl")
 }
 

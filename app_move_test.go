@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"meetingsync/internal/config"
 	"meetingsync/internal/ledger"
 )
 
@@ -355,7 +356,7 @@ func TestRestartRuleRemoveFailsBackoff(t *testing.T) {
 func failApp(t *testing.T) (*App, *bytes.Buffer) {
 	t.Helper()
 	var buf bytes.Buffer
-	cfg := &Config{FailedDir: filepath.Join(t.TempDir(), "_fehler")}
+	cfg := &config.Config{FailedDir: filepath.Join(t.TempDir(), "_fehler")}
 	return &App{cfg: cfg, log: log.New(&buf, "", 0), cache: map[string]cachedKind{}, notifier: &fakeNotifier{}}, &buf
 }
 
