@@ -34,7 +34,7 @@ func TestFailPathDirSyncWarnsAndMoves(t *testing.T) {
 		}, errUnterbrochen.Error()},
 		{"max_attempts", func(_ *testing.T, e *crashEnv) {
 			e.app.cfg.MaxAttempts = 1
-			e.app.llm.http.Transport = e.rt
+			e.app.llm = newLLMClient(e.app.cfg, e.app.log, e.rt)
 			e.rt.before = func(r *http.Request) (*http.Response, error) {
 				if strings.Contains(r.URL.Path, "/chat/") {
 					return &http.Response{StatusCode: http.StatusBadRequest, Status: "400 Bad Request", Proto: "HTTP/1.1",

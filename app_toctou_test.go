@@ -37,13 +37,13 @@ func newTOCTOUEnv(t *testing.T) *toctouEnv {
 // onLLM ruft fn einmal beim ersten LLM-Aufruf, bevor der Fake antwortet.
 func (e *toctouEnv) onLLM(fn func()) {
 	done := false
-	e.app.llm.http.Transport = &hookRT{before: func(r *http.Request) (*http.Response, error) {
+	e.app.llm = newLLMClient(e.app.cfg, e.app.log, &hookRT{before: func(r *http.Request) (*http.Response, error) {
 		if !done && r.URL.Path == "/v1/chat/completions" {
 			done = true
 			fn()
 		}
 		return nil, nil
-	}}
+	}})
 }
 
 func (e *toctouEnv) notes() int {

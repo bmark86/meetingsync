@@ -29,6 +29,7 @@
 | R-M2-02 | `internal/transcript` (classify, text, timing; pure, imports stdlib + `internal/domain` only, arch_test rule); coverage 100 %; golden byte-identical. QA found a pre-existing date bug, not fixed: follow-up 22 | done | 2026-11-02 |
 | R-M2-03 | `internal/ledger` (`ledger.Ledger`, `ledger.Entry`, `ledger.Load`, `Add`, `Has`, `HasNear`, `Started`; stdlib only, arch_test rule); fixture moved to `internal/ledger/testdata/`; coverage 97.3 %; golden byte-identical. Decisions: coordinator: no `Begin`/`Finish` redesign, method set stays to avoid API churn; `syncDir`/`absDur` duplicated in `app.go` and `internal/ledger` (accepted, shared helper possible later); gosec G30[126]/G304 exclusions extended to `internal/ledger/ledger.go`, to be removed in R-M3-03/R-M3-04 | done | 2026-11-02 |
 | R-M2-04 | `internal/notion` (`client.go`, `blocks.go`, new `properties.go`): typed `PropertyKind` (Notion API names, decoded from the schema JSON; kind-to-payload mapping only in `value`/`filter`), `NoteProperties`/`TaskProperties`, `Schema`, `ActiveProjects` filter, `PageWriter` interface (wiring in R-M2-09); `internal/notion` imports stdlib + domain only (arch_test); coverage 97.8 %; golden byte-identical; security review approved | done | 2026-11-02 |
+| R-M2-05 | `internal/llm` (`client.go`: `Options`, `Summarizer`, `Client`, `NewClient`, `NoteInput`, `Normalize`, `Models`); pure move, prompts/schema/splitter/parse retry/schema fallback byte-identical; `httpError` unexported, classification via `domain.Transient`; 18 tests moved; arch_test rule (stdlib + domain only), added in fix round 1 after the first report claimed it without it; golden unchanged. `App` still holds `*llm.Client`; `mustJSON` duplicated in `app.go` and `internal/llm` (merge in R-M2-09) | done | 2026-11-02 |
 
 ## M1 summary (complete 2026-11-02: R-M1-01 to R-M1-07 + R-M1-EXIT)
 
@@ -62,7 +63,7 @@ Decisions taken in M1:
 | Coordinator | `go 1.26.0` accepted | R-M1-04 |
 | Coordinator | No deletion after an identity mismatch (and after a syncDir error, see above) | R-M1-04 |
 
-Next: M2 package split, R-M2-05 llm (sonnet).
+Next: M2 package split, R-M2-06 notify (haiku, with security review).
 
 ## Open follow-ups
 
