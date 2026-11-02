@@ -59,6 +59,13 @@ var archRules = []archRule{
 			return !std && !inPkg(d, modulePath+"/internal/domain") && !inPkg(d, modulePath+"/internal/notion")
 		},
 	},
+	{
+		name:    "internal/llm importiert nur Standardbibliothek und internal/domain",
+		applies: func(p string) bool { return inPkg(p, modulePath+"/internal/llm") },
+		forbidden: func(d string, std bool) bool {
+			return !std && !inPkg(d, modulePath+"/internal/domain") && !inPkg(d, modulePath+"/internal/llm")
+		},
+	},
 }
 
 type listedPkg struct {
@@ -158,6 +165,7 @@ func TestArchRulesDetectViolations(t *testing.T) {
 		{ImportPath: modulePath + "/internal/pipeline", Deps: []string{modulePath + "/internal/domain", modulePath + "/internal/notion"}},
 		{ImportPath: modulePath + "/internal/transcript", Deps: []string{"errors", modulePath + "/internal/domain", modulePath + "/internal/notion", "go.yaml.in/yaml/v3"}},
 		{ImportPath: modulePath + "/internal/ledger", Deps: []string{"errors", modulePath + "/internal/domain", "go.yaml.in/yaml/v3"}},
+		{ImportPath: modulePath + "/internal/llm", Deps: []string{"errors", modulePath + "/internal/domain", modulePath + "/internal/notion", "go.yaml.in/yaml/v3"}},
 		{ImportPath: modulePath, Deps: []string{modulePath + "/internal/pipeline"}},
 	}
 	got := archViolations(pkgs, archRules)
@@ -171,6 +179,8 @@ func TestArchRulesDetectViolations(t *testing.T) {
 		archRules[2].name + ": " + modulePath + "/internal/transcript → go.yaml.in/yaml/v3",
 		archRules[3].name + ": " + modulePath + "/internal/ledger → " + modulePath + "/internal/domain",
 		archRules[3].name + ": " + modulePath + "/internal/ledger → go.yaml.in/yaml/v3",
+		archRules[5].name + ": " + modulePath + "/internal/llm → " + modulePath + "/internal/notion",
+		archRules[5].name + ": " + modulePath + "/internal/llm → go.yaml.in/yaml/v3",
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("Verstöße =\n%s\nerwartet\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))

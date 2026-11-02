@@ -75,7 +75,7 @@ func newFlowApp(t *testing.T, mod func(*Config)) *flowEnv {
 		t.Fatal(err)
 	}
 	app := &App{
-		cfg: cfg, log: logger, llm: NewLLM(cfg.LLM, logger), ledger: l,
+		cfg: cfg, log: logger, llm: newLLMClient(cfg, logger, nil), ledger: l,
 		state: map[string]*fileState{}, warned: map[string]bool{}, cache: map[string]cachedKind{},
 	}
 	return &flowEnv{app: app, watch: cfg.WatchDir, archive: cfg.ArchiveDir, logBuf: buf, hits: hits, status: status}

@@ -1,4 +1,7 @@
-package main
+// Package llm macht aus einem Transkript (oder einer Zusammenfassung) per
+// lokalem LLM (LM Studio, OpenAI-kompatible API) eine strukturierte MeetingNote:
+// Prompts, JSON-Schema, Abschnittsbildung langer Transkripte und Parse-Retry.
+package llm
 
 import (
 	"bytes"
@@ -22,6 +25,7 @@ var weekdaysLong = []string{"Sonntag", "Montag", "Dienstag", "Mittwoch", "Donner
 
 var meetingTypes = []string{"1:1", "Team", "Extern", "Lenkungskreis", "Sonstiges"}
 
+// NoteInput ist das Material und der Kontext für eine Notiz.
 type NoteInput struct {
 	Text        string
 	SummaryText string // optional, MacWhisper-Zusammenfassung als Zusatzkontext
@@ -32,16 +36,39 @@ type NoteInput struct {
 	MyLabel     string
 }
 
-type LLM struct {
-	cfg  LLMConfig
+// Options sind die Einstellungen des Clients (aus dem llm-Teil der Konfiguration).
+// APIKey geht nur in den Authorization-Header und wird nie geloggt.
+type Options struct {
+	BaseURL          string
+	Model            string
+	APIKey           string
+	Temperature      float64
+	Timeout          time.Duration
+	MaxChunkChars    int
+	StructuredOutput bool
+}
+
+// Summarizer macht aus Transkript oder Zusammenfassung eine MeetingNote;
+// *Client erfüllt es. Damit lässt sich der Ablauf später ohne HTTP testen (R-M2-09).
+type Summarizer interface {
+	Summarize(ctx context.Context, in NoteInput) (*domain.MeetingNote, error)
+}
+
+var _ Summarizer = (*Client)(nil)
+
+// Client spricht mit LM Studio.
+type Client struct {
+	opts Options
 	http *http.Client
 	log  *log.Logger
 }
 
-func NewLLM(cfg LLMConfig, logger *log.Logger) *LLM {
-	return &LLM{
-		cfg:  cfg,
-		http: &http.Client{Timeout: time.Duration(cfg.TimeoutMinutes) * time.Minute},
+// NewClient baut den Client. transport ist der HTTP-Transport; nil heißt
+// http.DefaultTransport (Produktion), Tests setzen eigene Hooks.
+func NewClient(opts Options, logger *log.Logger, transport http.RoundTripper) *Client {
+	return &Client{
+		opts: opts,
+		http: &http.Client{Timeout: opts.Timeout, Transport: transport},
 		log:  logger,
 	}
 }
@@ -62,14 +89,14 @@ func (e *httpError) Error() string {
 
 // Summarize macht aus Transkript (oder Zusammenfassung) eine MeetingNote.
 // Lange Transkripte werden erst abschnittsweise verdichtet.
-func (l *LLM) Summarize(ctx context.Context, in NoteInput) (*domain.MeetingNote, error) {
+func (l *Client) Summarize(ctx context.Context, in NoteInput) (*domain.MeetingNote, error) {
 	material := in.Text
 	label := "Transkript"
 	if in.SummaryOnly {
 		label = "Notizen/Zusammenfassung (kein Transkript mit Zeitmarken vorhanden)"
 	}
-	if len(material) > l.cfg.MaxChunkChars {
-		chunks := splitByLines(material, l.cfg.MaxChunkChars)
+	if len(material) > l.opts.MaxChunkChars {
+		chunks := splitByLines(material, l.opts.MaxChunkChars)
 		parts := make([]string, 0, len(chunks))
 		for i, c := range chunks {
 			l.log.Printf("   LLM: verdichte Abschnitt %d/%d …", i+1, len(chunks))
@@ -88,7 +115,7 @@ func (l *LLM) Summarize(ctx context.Context, in NoteInput) (*domain.MeetingNote,
 
 	schema := noteSchema(in.Projects)
 	sys := systemPrompt(in)
-	useSchema := l.cfg.StructuredOutput
+	useSchema := l.opts.StructuredOutput
 	if !useSchema {
 		sys += "\n\nJSON-Schema der Antwort:\n" + mustJSON(schema)
 	}
@@ -122,11 +149,11 @@ func (l *LLM) Summarize(ctx context.Context, in NoteInput) (*domain.MeetingNote,
 	return nil, lastErr
 }
 
-func (l *LLM) chat(ctx context.Context, msgs []chatMsg, schema any) (string, error) {
+func (l *Client) chat(ctx context.Context, msgs []chatMsg, schema any) (string, error) {
 	body := map[string]any{
-		"model":       l.cfg.Model,
+		"model":       l.opts.Model,
 		"messages":    msgs,
-		"temperature": l.cfg.Temperature,
+		"temperature": l.opts.Temperature,
 		"stream":      false,
 	}
 	if schema != nil {
@@ -143,17 +170,17 @@ func (l *LLM) chat(ctx context.Context, msgs []chatMsg, schema any) (string, err
 	if err != nil {
 		return "", err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(l.cfg.BaseURL, "/")+"/chat/completions", bytes.NewReader(buf))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(l.opts.BaseURL, "/")+"/chat/completions", bytes.NewReader(buf))
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if l.cfg.APIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+l.cfg.APIKey)
+	if l.opts.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+l.opts.APIKey)
 	}
 	resp, err := l.http.Do(req)
 	if err != nil {
-		return "", domain.Transient(fmt.Errorf("LM Studio nicht erreichbar (%s) – läuft der lokale Server? %w", l.cfg.BaseURL, err))
+		return "", domain.Transient(fmt.Errorf("LM Studio nicht erreichbar (%s) – läuft der lokale Server? %w", l.opts.BaseURL, err))
 	}
 	defer func() { _ = resp.Body.Close() }() //nolint:errcheck // nur gelesen, Close-Fehler ohne Folgen
 	data, _ := io.ReadAll(resp.Body)         //nolint:errcheck // Lesefehler fuehrt unten ohnehin zu einem JSON-/Statusfehler
@@ -165,7 +192,7 @@ func (l *LLM) chat(ctx context.Context, msgs []chatMsg, schema any) (string, err
 		lower := strings.ToLower(string(data))
 		if strings.Contains(lower, "no models loaded") || strings.Contains(lower, "not loaded") ||
 			(strings.Contains(lower, "model") && strings.Contains(lower, "not found")) {
-			return "", domain.Transient(fmt.Errorf("Modell %q ist in LM Studio nicht geladen: %s", l.cfg.Model, truncate(string(data), 200)))
+			return "", domain.Transient(fmt.Errorf("Modell %q ist in LM Studio nicht geladen: %s", l.opts.Model, truncate(string(data), 200)))
 		}
 		return "", &httpError{resp.StatusCode, string(data)}
 	}
@@ -191,13 +218,13 @@ func (l *LLM) chat(ctx context.Context, msgs []chatMsg, schema any) (string, err
 }
 
 // Models listet die Modell-IDs, die LM Studio anbietet (für -check).
-func (l *LLM) Models(ctx context.Context) ([]string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(l.cfg.BaseURL, "/")+"/models", nil)
+func (l *Client) Models(ctx context.Context) ([]string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(l.opts.BaseURL, "/")+"/models", nil)
 	if err != nil {
 		return nil, err
 	}
-	if l.cfg.APIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+l.cfg.APIKey)
+	if l.opts.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+l.opts.APIKey)
 	}
 	resp, err := l.http.Do(req)
 	if err != nil {
@@ -374,8 +401,8 @@ func parseNote(raw string) (*domain.MeetingNote, error) {
 	return &n, nil
 }
 
-// normalizeNote räumt die Modellantwort auf (Leerzeilen, Dubletten, Längen).
-func normalizeNote(n *domain.MeetingNote) {
+// Normalize räumt die Modellantwort auf (Leerzeilen, Dubletten, Längen).
+func Normalize(n *domain.MeetingNote) {
 	n.Titel = truncate(strings.Join(strings.Fields(n.Titel), " "), 120)
 	if !slices.Contains(meetingTypes, n.Typ) {
 		n.Typ = "Sonstiges"

@@ -1,4 +1,4 @@
-package main
+package llm
 
 import (
 	"context"
@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
+	"unicode/utf8"
 
 	"meetingsync/internal/domain"
 )
@@ -57,16 +59,16 @@ func (s *lcServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.WriteString(w, rep.body)
 }
 
-func lcLLM(t *testing.T, mod func(*LLMConfig), replies ...lcReply) (*LLM, *lcServer) {
+func lcLLM(t *testing.T, mod func(*Options), replies ...lcReply) (*Client, *lcServer) {
 	t.Helper()
 	s := &lcServer{replies: replies}
 	srv := httptest.NewServer(s)
 	t.Cleanup(srv.Close)
-	cfg := LLMConfig{BaseURL: srv.URL + "/", Model: "gemma", Temperature: 0.2, TimeoutMinutes: 1, MaxChunkChars: 100000}
+	cfg := Options{BaseURL: srv.URL + "/", Model: "gemma", Temperature: 0.2, Timeout: time.Minute, MaxChunkChars: 100000}
 	if mod != nil {
 		mod(&cfg)
 	}
-	return NewLLM(cfg, log.New(io.Discard, "", 0)), s
+	return NewClient(cfg, log.New(io.Discard, "", 0), nil), s
 }
 
 func lcIn(text string) NoteInput {
@@ -131,7 +133,7 @@ func TestSummarizeFinishReasonLengthFailsWithoutRetry(t *testing.T) {
 // Fängt: Structured Output sendet kein/ falsches response_format; ohne
 // Structured Output steht das Schema stattdessen im System-Prompt.
 func TestSummarizeSchemaPlacement(t *testing.T) {
-	l, s := lcLLM(t, func(c *LLMConfig) { c.StructuredOutput = true; c.APIKey = "key" }, lcChat(lcNote, "stop"))
+	l, s := lcLLM(t, func(c *Options) { c.StructuredOutput = true; c.APIKey = "key" }, lcChat(lcNote, "stop"))
 	if _, err := l.Summarize(context.Background(), lcIn("hallo")); err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +166,7 @@ func TestSummarizeSchemaPlacement(t *testing.T) {
 // Fängt: kein Fallback bei 4xx (Structured Output abgelehnt) oder Fallback
 // ohne das Schema im Prompt; der zweite Versuch muss ohne response_format laufen.
 func TestSummarizeSchemaFallbackOn4xx(t *testing.T) {
-	l, s := lcLLM(t, func(c *LLMConfig) { c.StructuredOutput = true },
+	l, s := lcLLM(t, func(c *Options) { c.StructuredOutput = true },
 		lcReply{400, `{"error":"response_format json_schema not supported"}`}, lcChat(lcNote, "stop"))
 	n, err := l.Summarize(context.Background(), lcIn("hallo"))
 	if err != nil || n.Titel != "Planung" {
@@ -194,7 +196,7 @@ func TestSummarizeNoFallbackWithoutSchemaOrOn5xx(t *testing.T) {
 		t.Errorf("err = %v, Requests = %d, erwartet httpError 400 nach 1 Request", err, len(s.reqs))
 	}
 
-	l, s = lcLLM(t, func(c *LLMConfig) { c.StructuredOutput = true }, lcReply{503, "down"}, lcChat(lcNote, "stop"))
+	l, s = lcLLM(t, func(c *Options) { c.StructuredOutput = true }, lcReply{503, "down"}, lcChat(lcNote, "stop"))
 	_, err = l.Summarize(context.Background(), lcIn("hallo"))
 	if err == nil || !domain.IsTransient(err) || len(s.reqs) != 1 {
 		t.Errorf("err = %v, Requests = %d, erwartet transient nach 1 Request", err, len(s.reqs))
@@ -205,7 +207,7 @@ func TestSummarizeNoFallbackWithoutSchemaOrOn5xx(t *testing.T) {
 // fehlen im finalen Request, <think> wird nicht entfernt.
 func TestSummarizeChunksLongTranscript(t *testing.T) {
 	text := "zeile eins aaaa\nzeile zwei bbbb\nzeile drei cccc\n"
-	l, s := lcLLM(t, func(c *LLMConfig) { c.MaxChunkChars = 20 },
+	l, s := lcLLM(t, func(c *Options) { c.MaxChunkChars = 20 },
 		lcChat("<think>intern</think>- Punkt A", "stop"),
 		lcChat("- Punkt B", "stop"),
 		lcChat("- Punkt C", "stop"),
@@ -243,12 +245,12 @@ func TestSummarizeChunksLongTranscript(t *testing.T) {
 // ein Fehler im Chunk-Request, der verschluckt statt weitergereicht wird.
 func TestSummarizeChunkBoundaryAndChunkError(t *testing.T) {
 	text := strings.Repeat("x", 20)
-	l, s := lcLLM(t, func(c *LLMConfig) { c.MaxChunkChars = 20 }, lcChat(lcNote, "stop"))
+	l, s := lcLLM(t, func(c *Options) { c.MaxChunkChars = 20 }, lcChat(lcNote, "stop"))
 	if _, err := l.Summarize(context.Background(), lcIn(text)); err != nil || len(s.reqs) != 1 {
 		t.Errorf("Text == max darf nicht gechunkt werden: err = %v, Requests = %d", err, len(s.reqs))
 	}
 
-	l, s = lcLLM(t, func(c *LLMConfig) { c.MaxChunkChars = 10 }, lcReply{503, "busy"})
+	l, s = lcLLM(t, func(c *Options) { c.MaxChunkChars = 10 }, lcReply{503, "busy"})
 	_, err := l.Summarize(context.Background(), lcIn(strings.Repeat("y", 25)))
 	if err == nil || !domain.IsTransient(err) || len(s.reqs) != 1 {
 		t.Errorf("err = %v, Requests = %d, erwartet transienten Fehler nach 1 Request", err, len(s.reqs))
@@ -308,7 +310,7 @@ func TestChatErrorClassification(t *testing.T) {
 
 // Fängt: nicht erreichbarer Server wird nicht als transient markiert.
 func TestChatUnreachableIsTransient(t *testing.T) {
-	l, _ := lcLLM(t, func(c *LLMConfig) { c.BaseURL = "http://127.0.0.1:1" })
+	l, _ := lcLLM(t, func(c *Options) { c.BaseURL = "http://127.0.0.1:1" })
 	_, err := l.chat(context.Background(), nil, nil)
 	if err == nil || !domain.IsTransient(err) || !strings.Contains(err.Error(), "nicht erreichbar") {
 		t.Errorf("err = %v", err)
@@ -323,7 +325,7 @@ func TestModelsListsIDs(t *testing.T) {
 		_, _ = io.WriteString(w, `{"data":[{"id":"gemma"},{"id":"qwen"}]}`)
 	}))
 	defer srv.Close()
-	l := NewLLM(LLMConfig{BaseURL: srv.URL + "/", APIKey: "k", TimeoutMinutes: 1}, log.New(io.Discard, "", 0))
+	l := NewClient(Options{BaseURL: srv.URL + "/", APIKey: "k", Timeout: time.Minute}, log.New(io.Discard, "", 0), nil)
 	ids, err := l.Models(context.Background())
 	if err != nil || len(ids) != 2 || ids[0] != "gemma" || ids[1] != "qwen" {
 		t.Fatalf("ids = %v, err = %v", ids, err)
@@ -351,8 +353,42 @@ func TestModelsIgnoresStatusCodeToday(t *testing.T) {
 
 // Fängt: Netzfehler in Models wird verschluckt.
 func TestModelsUnreachable(t *testing.T) {
-	l, _ := lcLLM(t, func(c *LLMConfig) { c.BaseURL = "http://127.0.0.1:1" })
+	l, _ := lcLLM(t, func(c *Options) { c.BaseURL = "http://127.0.0.1:1" })
 	if _, err := l.Models(context.Background()); err == nil {
 		t.Error("nicht erreichbarer Server muss einen Fehler liefern")
+	}
+}
+
+func TestSplitHelpersKeepUTF8(t *testing.T) {
+	long := strings.Repeat("äöü ", 2000)
+	for _, c := range splitByLines(long, 5000) {
+		if !utf8.ValidString(c) {
+			t.Fatal("splitByLines zerschneidet UTF-8")
+		}
+	}
+}
+
+func TestParseNoteToleratesWrapping(t *testing.T) {
+	raw := "<think>hmm</think>\n```json\n{\"titel\":\"Sirius Sync\",\"typ\":\"Team\",\"next_actions\":[{\"aufgabe\":\"Budget klären\",\"owner\":\"Mark\",\"deadline\":\"bis Freitag\",\"fuer_mich\":true}]}\n```"
+	n, err := parseNote(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	Normalize(n)
+	if n.Titel != "Sirius Sync" || n.NextActions[0].Deadline != "" {
+		t.Fatalf("%+v", n)
+	}
+}
+
+func TestSchemaOrderAndEnum(t *testing.T) {
+	s := mustJSON(noteSchema([]string{"AI-First"}))
+	if strings.Index(s, `"titel"`) > strings.Index(s, `"pruefen"`) {
+		t.Fatal("Feldreihenfolge stimmt nicht")
+	}
+	if strings.Index(s, `"pruef_gruende"`) > strings.Index(s, `"pruefen":`) {
+		t.Fatal("pruef_gruende sollte vor pruefen stehen")
+	}
+	if !strings.Contains(s, `"AI-First"`) {
+		t.Fatal("Projekt-Enum fehlt")
 	}
 }

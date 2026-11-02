@@ -409,6 +409,7 @@ Logging stays `*log.Logger` with identical texts. Named constants (A-17) and rea
 - Depends on: R-M2-01. Findings: A-03, A-15.
 - Model: sonnet, a move; golden checks prompt and parsing.
 - Reviews: CR, QA.
+- Status: done 2026-11-02. `Summarizer` interface defined, `App` still holds `*llm.Client` (wiring in R-M2-09). Follow-ups: R-M2-09 (mustJSON, Normalize).
 
 #### R-M2-06 notify
 - Goal: `notify` → `internal/notify` behind `Notifier`.
@@ -440,6 +441,7 @@ Logging stays `*log.Logger` with identical texts. Named constants (A-17) and rea
   - Replace the temporary package variable `sleepFn` (notion.go, from R-M0-09) by dependency injection.
   - Switch the test helper `newFlowApp` (app_flow_test.go, builds App with notion=nil) to the new interface fakes.
   - Replace the test helper `hookNotion` (app_crash_test.go), which duplicates client construction, by injecting the transport/`PageWriter` (follow-up of R-M2-04).
+  - Wire `App` through `llm.Summarizer`, merge the two identical `mustJSON` copies (`app.go`, `internal/llm`), decide whether `llm.Normalize` moves inside `Summarize` (follow-up of R-M2-05).
   - Decide the placement of `FormatTitle` and `deadlineLabel` (`internal/notion` vs `domain`/`pipeline`).
 - Scope: `app.go`, `app_retry_test.go`, new `internal/pipeline/`.
 - Depends on: R-M2-02 to R-M2-08. Findings: A-04, A-05.

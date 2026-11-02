@@ -4,10 +4,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,6 +23,7 @@ import (
 
 	"meetingsync/internal/domain"
 	"meetingsync/internal/ledger"
+	"meetingsync/internal/llm"
 	"meetingsync/internal/notion"
 	"meetingsync/internal/transcript"
 )
@@ -29,7 +32,7 @@ type App struct {
 	cfg    *Config
 	log    *log.Logger
 	dry    bool
-	llm    *LLM
+	llm    *llm.Client
 	notion *notion.Client
 	ledger *ledger.Ledger
 
@@ -84,12 +87,26 @@ func (j job) files() []*entry {
 	return []*entry{j.primary}
 }
 
+// newLLMClient baut den LM-Studio-Client aus der Konfiguration. transport nil
+// heißt http.DefaultTransport.
+func newLLMClient(cfg *Config, logger *log.Logger, transport http.RoundTripper) *llm.Client {
+	return llm.NewClient(llm.Options{
+		BaseURL:          cfg.LLM.BaseURL,
+		Model:            cfg.LLM.Model,
+		APIKey:           cfg.LLM.APIKey,
+		Temperature:      cfg.LLM.Temperature,
+		Timeout:          time.Duration(cfg.LLM.TimeoutMinutes) * time.Minute,
+		MaxChunkChars:    cfg.LLM.MaxChunkChars,
+		StructuredOutput: cfg.LLM.StructuredOutput,
+	}, logger, transport)
+}
+
 func NewApp(cfg *Config, logger *log.Logger, dry bool) (*App, error) {
 	a := &App{
 		cfg:    cfg,
 		log:    logger,
 		dry:    dry,
-		llm:    NewLLM(cfg.LLM, logger),
+		llm:    newLLMClient(cfg, logger, nil),
 		state:  map[string]*fileState{},
 		warned: map[string]bool{},
 		cache:  map[string]cachedKind{},
@@ -409,7 +426,7 @@ func (a *App) process(ctx context.Context, j job, hash string) (string, gaps, er
 	}
 	timing := transcript.MeetingTiming(p.Name, p.ModTime, dur, a.cfg.loc)
 
-	in := NoteInput{
+	in := llm.NoteInput{
 		Text:        text,
 		SummaryOnly: j.summaryOnly,
 		Timing:      timing,
@@ -430,7 +447,7 @@ func (a *App) process(ctx context.Context, j job, hash string) (string, gaps, er
 	if err != nil {
 		return "", gaps{}, err
 	}
-	normalizeNote(note)
+	llm.Normalize(note)
 	a.log.Printf("   LLM fertig nach %s: %q", time.Since(start).Round(time.Second), note.Titel)
 
 	reasons := append([]string{}, note.PruefGruende...)
@@ -589,6 +606,11 @@ func (a *App) printDryRun(title string, project *notion.Page, n *domain.MeetingN
 	fmt.Println("Blöcke:  ", blocks)
 	fmt.Println(mustJSON(n))
 	fmt.Println("─────────────────────────────")
+}
+
+func mustJSON(v any) string {
+	b, _ := json.MarshalIndent(v, "", "  ") //nolint:errcheck // Marshal von Notiz/Properties (nur Strings, Zahlen, Listen) scheitert nicht
+	return string(b)
 }
 
 // --- Dateien ---------------------------------------------------------------------
