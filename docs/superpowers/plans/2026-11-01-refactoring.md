@@ -495,6 +495,7 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 - Depends on: R-M3-01. Findings: S-03.
 - Model: opus, secrets.
 - Reviews: CR, SR, QA. ADR 0008.
+- Status: **done 2026-11-02.** Fix round: `?`/`#` rejected for both base URLs; `-check` LM Studio line without path approved by Mark (golden G10b). ADR 0008.
 - Follow-ups from R-M3-01: add redirect protection (`CheckRedirect`) to the Notion client (Go drops `Authorization` on cross-host redirects, but a 307/308 re-sends the note body); errors and log lines that show a base URL (`internal/llm/client.go` ~226 `nicht erreichbar unter …`, `internal/cli/cli.go` ~177 `-check` output) print only scheme://host:port (no path, query or userinfo).
 
 #### R-M3-03 Skip symlinks

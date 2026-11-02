@@ -45,12 +45,21 @@ var ErrUnklar = errors.New("Seite evtl. angelegt")
 
 // NewClient baut den Client. transport ist der HTTP-Transport; nil heißt
 // http.DefaultTransport (Produktion), Tests setzen eigene Hooks.
+// Weiterleitungen werden nie verfolgt: Ein 307/308 würde den Inhalt der
+// Notiz an das Ziel erneut senden (S-03). Der Proxy aus der Umgebung bleibt
+// erlaubt (Firmen-Proxy), das Token geht nur über https.
 func NewClient(baseURL, apiVersion, token string, transport http.RoundTripper) *Client {
 	return &Client{
 		base:    strings.TrimRight(baseURL, "/"),
 		version: apiVersion,
 		token:   token,
-		http:    &http.Client{Timeout: 60 * time.Second, Transport: transport},
+		http: &http.Client{
+			Timeout:   60 * time.Second,
+			Transport: transport,
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
 		sleep:   sleepCtx,
 		maxBody: maxAntwortBytes,
 	}
@@ -116,6 +125,10 @@ func (n *Client) do(ctx context.Context, method, path string, in, out any, idemp
 			if attempt < 4 && n.sleep(ctx, retryAfter(resp, attempt)) {
 				continue
 			}
+		}
+		if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+			// Weiterleitung wird nicht verfolgt (siehe NewClient); Inhalt der Antwort entfällt.
+			return &apiError{Status: resp.StatusCode, Message: "Weiterleitung wird nicht verfolgt"}
 		}
 		if resp.StatusCode >= 300 {
 			var e struct {

@@ -197,7 +197,8 @@ The Notion token is looked up in this order: environment variable `NOTION_TOKEN`
 | Symptom in the log | Cause |
 |---|---|
 | `ungültiges YAML in … (Zeile N)` (invalid YAML) | Syntax error in the config at the given line. The content is deliberately not in the message (it could be a token) |
-| `llm.base_url muss auf diesen Mac zeigen (localhost, 127.0.0.1 oder ::1)` (must point to this Mac) at start | `llm.base_url` points to another computer, has no `http://` or `https://`, or contains a user name or password. The transcript must not leave the Mac. Use a local address, for example `http://localhost:1234/v1`. Write `localhost` in lowercase |
+| `llm.base_url muss auf diesen Mac zeigen (localhost, 127.0.0.1 oder ::1)` (must point to this Mac) at start | `llm.base_url` points to another computer, has no `http://` or `https://`, contains a user name or password, or contains `?` or `#`. The transcript must not leave the Mac. Use a local address, for example `http://localhost:1234/v1`. Write `localhost` in lowercase |
+| `notion.base_url muss https verwenden (http nur für localhost)` (must use https) or `notion.base_url darf keinen Benutzernamen und kein Passwort enthalten` (no user name or password) at start | The Notion token must never be sent in clear text. The URL must not contain a user name, `?` or `#`. Use `https://api.notion.com` (the default) or remove `notion.base_url` from the config |
 | `LM Studio nicht erreichbar` (not reachable) | Server in LM Studio is not started. Files simply wait |
 | `Modell … nicht geladen` (model not loaded) | Load the model or check the identifier in `llm.model` (`meetingsync -check` lists all) |
 | `Antwort … abgeschnitten` (answer cut off) | Increase the context length in LM Studio or lower `llm.max_chunk_chars` |

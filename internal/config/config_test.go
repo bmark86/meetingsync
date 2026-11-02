@@ -285,6 +285,9 @@ func TestLLMBaseURLLoopbackOnly(t *testing.T) {
 		{"http://0.0.0.0", false},
 		{"http://[::1%25en0]:1234", false},
 		{"http://localhost:1234\x7f", false},
+		{"http://localhost:1234/v1?key=geheim", false},
+		{"http://localhost:1234/v1#x", false},
+		{"http://localhost:1234/v1?", false},
 	}
 	const want = "llm.base_url muss auf diesen Mac zeigen (localhost, 127.0.0.1 oder ::1)"
 	for _, tc := range cases {
@@ -313,5 +316,76 @@ func TestLLMBaseURLLoopbackOnly(t *testing.T) {
 func TestLLMBaseURLDefaultPasses(t *testing.T) {
 	if !isLoopbackURL(Default().LLM.BaseURL) {
 		t.Fatal("Standard-llm.base_url wird abgelehnt")
+	}
+}
+
+// Fängt: Notion-Token im Klartext oder Zugangsdaten in notion.base_url (S-03) /
+// URL-Wert im Fehlertext (S-17).
+func TestNotionBaseURLHTTPSOnly(t *testing.T) {
+	const (
+		schema = "notion.base_url muss https verwenden (http nur für localhost)"
+		user   = "notion.base_url darf keinen Benutzernamen und kein Passwort enthalten"
+	)
+	cases := []struct {
+		url  string
+		want string // "" = ok
+	}{
+		{"https://api.notion.com", ""},
+		{"https://api.notion.com/", ""},
+		{"http://localhost:8080", ""},
+		{"http://127.0.0.1:8080/", ""},
+		{"http://[::1]:8080", ""},
+		{"https://127.0.0.1:8443", ""},
+		{"http://api.notion.com", schema},
+		{"http://LOCALHOST:8080", schema},
+		{"http://127.0.0.2", schema},
+		{"HTTP://api.notion.com", schema},
+		{"https://user:pw@api.notion.com", user},
+		{"https://user@api.notion.com", user},
+		{"http://user:pw@localhost", user},
+		{"https://@api.notion.com", user},
+		{"ftp://api.notion.com", schema},
+		{"api.notion.com", schema},
+		{"https:api.notion.com", schema},
+		{"https://", schema},
+		{"https:///v1", schema},
+		{"", schema},
+		{"https://api.notion.com\x7f", schema},
+		{"https://api.notion.com?x=1", schema},
+		{"https://api.notion.com/#frag", schema},
+		{"https://api.notion.com/?", schema},
+		{"http://localhost:8080/?x=1", schema},
+	}
+	for _, tc := range cases {
+		t.Run(tc.url, func(t *testing.T) {
+			c := Default()
+			c.WatchDir, c.LLM.Model, c.Notion.NotesDataSourceID = "/w", "m", "n"
+			c.Notion.BaseURL = tc.url
+			_, err := c.Finalize()
+			if tc.want == "" {
+				if err != nil {
+					t.Fatalf("Fehler = %v, want keiner", err)
+				}
+				return
+			}
+			if err == nil || err.Error() != tc.want {
+				t.Fatalf("Fehler = %v, want %q", err, tc.want)
+			}
+			if tc.url != "" && strings.Contains(err.Error(), tc.url) {
+				t.Fatalf("URL-Wert im Fehler: %v", err)
+			}
+			for _, geheim := range []string{"pw", "user", "api.notion.com"} {
+				if strings.Contains(err.Error(), geheim) {
+					t.Fatalf("Teil der URL (%q) im Fehler: %v", geheim, err)
+				}
+			}
+		})
+	}
+}
+
+// Die Standard-URL muss die Prüfung bestehen.
+func TestNotionBaseURLDefaultPasses(t *testing.T) {
+	if err := checkNotionURL(Default().Notion.BaseURL); err != nil {
+		t.Fatalf("Standard-notion.base_url wird abgelehnt: %v", err)
 	}
 }

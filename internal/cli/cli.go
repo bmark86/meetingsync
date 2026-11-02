@@ -174,7 +174,7 @@ func Check(ctx context.Context, e Env) error {
 	}
 	models, err := e.LLM.Models(ctx)
 	if err != nil {
-		fmt.Printf("✗ LM Studio nicht erreichbar unter %s: %v\n", c.LLM.BaseURL, err)
+		fmt.Printf("✗ LM Studio nicht erreichbar unter %s: %v\n", domain.RedactURL(c.LLM.BaseURL), err)
 		return nil
 	}
 	if slices.Contains(models, c.LLM.Model) {

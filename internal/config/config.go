@@ -306,6 +306,9 @@ func (c *Config) Finalize() (warnings []string, err error) {
 		// Ohne URL-Wert: er könnte Zugangsdaten enthalten (S-17).
 		return nil, errors.New("llm.base_url muss auf diesen Mac zeigen (localhost, 127.0.0.1 oder ::1)")
 	}
+	if err := checkNotionURL(c.Notion.BaseURL); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(c.Notion.NotesDataSourceID) == "" {
 		return nil, errors.New("notion.notes_data_source_id fehlt")
 	}
@@ -313,12 +316,13 @@ func (c *Config) Finalize() (warnings []string, err error) {
 }
 
 // isLoopbackURL prüft, dass das Transkript den Mac nicht verlässt (S-02, D3):
-// Schema http oder https, keine Zugangsdaten in der URL, Host genau
+// Schema http oder https, keine Zugangsdaten, kein ? und # in der URL
+// (der Go-Fehlertext "nicht erreichbar" würde sie ausgeben), Host genau
 // "localhost" (nur klein geschrieben, sonst umgeht Go den Proxy nicht),
 // 127.0.0.1 oder ::1.
 func isLoopbackURL(raw string) bool {
 	u, err := url.Parse(raw)
-	if err != nil || u.User != nil {
+	if err != nil || u.User != nil || hasQueryOrFragment(u) {
 		return false
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
@@ -326,6 +330,33 @@ func isLoopbackURL(raw string) bool {
 	}
 	h := u.Hostname()
 	return h == "localhost" || h == "127.0.0.1" || h == "::1"
+}
+
+// hasQueryOrFragment erkennt auch ein leeres "?" (ForceQuery) und "#".
+func hasQueryOrFragment(u *url.URL) bool {
+	return u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.RawFragment != "" || strings.Contains(u.String(), "#")
+}
+
+// checkNotionURL prüft, dass das Notion-Token nie im Klartext gesendet wird
+// (S-03): Schema https, http nur für localhost/127.0.0.1/::1 (Test-Fakes,
+// gleiche Regeln wie isLoopbackURL), Host vorhanden, keine Zugangsdaten in
+// der URL. Die Meldungen enthalten den URL-Wert nicht (S-17).
+func checkNotionURL(raw string) error {
+	errSchema := errors.New("notion.base_url muss https verwenden (http nur für localhost)")
+	u, err := url.Parse(raw)
+	if err != nil {
+		return errSchema
+	}
+	if u.User != nil {
+		return errors.New("notion.base_url darf keinen Benutzernamen und kein Passwort enthalten")
+	}
+	if u.Hostname() == "" || hasQueryOrFragment(u) {
+		return errSchema
+	}
+	if u.Scheme == "https" || (u.Scheme == "http" && isLoopbackURL(raw)) {
+		return nil
+	}
+	return errSchema
 }
 
 func clampWarning(key string, was, now int) string {
