@@ -10,17 +10,21 @@ import (
 	"strings"
 )
 
+// securityPath ist der feste Pfad von security (kein PATH-Lookup, Befund S-10).
+const securityPath = "/usr/bin/security"
+
 // TokenSource liefert einen Token oder den Grund, warum es keinen gibt.
 type TokenSource interface {
 	Token() (string, error)
 }
 
-// notionToken sucht den Notion-Token. run führt ein Programm aus und liefert
-// stdout; Produktion ist exec.Command(...).Output, Tests setzen einen Fake.
+// notionToken sucht den Notion-Token. run führt ein Programm mit genau der
+// Umgebung env aus und liefert stdout; Produktion ist runOutput, Tests setzen
+// einen Fake.
 type notionToken struct {
 	keychainService string
 	fileToken       string
-	run             func(name string, args ...string) ([]byte, error)
+	run             func(path string, env []string, args ...string) ([]byte, error)
 }
 
 // NewNotion liefert die TokenSource für Notion. keychainService und fileToken
@@ -29,8 +33,24 @@ func NewNotion(keychainService, fileToken string) TokenSource {
 	return &notionToken{keychainService: keychainService, fileToken: fileToken, run: runOutput}
 }
 
-func runOutput(name string, args ...string) ([]byte, error) {
-	return exec.Command(name, args...).Output()
+func runOutput(path string, env []string, args ...string) ([]byte, error) {
+	cmd := exec.Command(path, args...) //nolint:gosec // G204: einziger Aufrufer ist Token mit der Konstante securityPath; Argumente gehen nicht durch eine Shell
+	cmd.Env = env
+	return cmd.Output()
+}
+
+// minimalEnv liefert die Umgebung für security: HOME, USER und LANG aus dem
+// eigenen Prozess (nur wenn gesetzt) und ein fester PATH. HOME und USER
+// reichen, um den Anmelde-Schlüsselbund zu finden. Alles andere, etwa
+// NOTION_TOKEN, wird nicht weitergegeben.
+func minimalEnv() []string {
+	var env []string
+	for _, k := range []string{"HOME", "USER", "LANG"} {
+		if v, ok := os.LookupEnv(k); ok {
+			env = append(env, k+"="+v)
+		}
+	}
+	return append(env, "PATH=/usr/bin:/bin")
 }
 
 // Token sucht den Token in dieser Reihenfolge:
@@ -42,7 +62,7 @@ func (n *notionToken) Token() (string, error) {
 		return t, nil
 	}
 	if s := strings.TrimSpace(n.keychainService); s != "" {
-		out, err := n.run("security", "find-generic-password", "-s", s, "-w")
+		out, err := n.run(securityPath, minimalEnv(), "find-generic-password", "-s", s, "-w")
 		if err != nil {
 			return "", fmt.Errorf("Notion-Token aus dem Schlüsselbund (%s) nicht lesbar: %w", s, err)
 		}

@@ -5,19 +5,23 @@ package secret
 
 import (
 	"errors"
+	"os"
 	"reflect"
 	"testing"
 )
 
-// fakeRun zeichnet die Aufrufe auf und liefert out/err.
+// fakeRun zeichnet die Aufrufe (Pfad + Argumente) und die Umgebungen auf und
+// liefert out/err.
 type fakeRun struct {
 	calls [][]string
+	envs  [][]string
 	out   []byte
 	err   error
 }
 
-func (f *fakeRun) run(name string, args ...string) ([]byte, error) {
-	f.calls = append(f.calls, append([]string{name}, args...))
+func (f *fakeRun) run(path string, env []string, args ...string) ([]byte, error) {
+	f.calls = append(f.calls, append([]string{path}, args...))
+	f.envs = append(f.envs, env)
 	return f.out, f.err
 }
 
@@ -44,17 +48,17 @@ func TestNotionTokenOrder(t *testing.T) {
 		{name: "Umgebung nur Leerzeichen zählt nicht", env: "  ", file: "file-tok", want: "file-tok"},
 		{
 			name: "Schlüsselbund ok, Ausgabe getrimmt", service: " svc ", fake: fakeRun{out: []byte("  kc-tok\n")}, want: "kc-tok",
-			wantCalls: [][]string{{"security", "find-generic-password", "-s", "svc", "-w"}},
+			wantCalls: [][]string{{"/usr/bin/security", "find-generic-password", "-s", "svc", "-w"}},
 		},
 		{
 			name: "Schlüsselbund gesetzt, Token in der Datei wird nicht benutzt", service: "svc", file: "file-tok",
 			fake: fakeRun{out: []byte("kc-tok\n")}, want: "kc-tok",
-			wantCalls: [][]string{{"security", "find-generic-password", "-s", "svc", "-w"}},
+			wantCalls: [][]string{{"/usr/bin/security", "find-generic-password", "-s", "svc", "-w"}},
 		},
 		{
 			name: "Schlüsselbund-Fehler bricht ab, kein Rückfall auf die Datei", service: "svc", file: "file-tok",
 			fake: fakeRun{out: []byte("kc-tok"), err: kcErr}, wantErr: "Notion-Token aus dem Schlüsselbund (svc) nicht lesbar: exit status 44",
-			wantCalls: [][]string{{"security", "find-generic-password", "-s", "svc", "-w"}},
+			wantCalls: [][]string{{"/usr/bin/security", "find-generic-password", "-s", "svc", "-w"}},
 		},
 		{name: "kein Dienst: Token aus der Datei, getrimmt", file: " file-tok\n", want: "file-tok"},
 		{name: "Dienst nur Leerzeichen: Token aus der Datei", service: "  ", file: "file-tok", want: "file-tok"},
@@ -97,10 +101,58 @@ func TestNewNotion(t *testing.T) {
 	}
 }
 
-// Fängt: runOutput liefert nicht stdout. Harmloses Programm, nie security.
+// Fängt: security erbt die volle Umgebung (Geheimnisse, fremder PATH) oder
+// bekommt HOME/USER/LANG nicht. NOTION_TOKEN nur aus Leerzeichen zählt nicht als
+// Token, darum läuft der Schlüsselbund-Zweig und der Wert darf nicht mitgehen.
+func TestKeychainMinimalEnv(t *testing.T) {
+	t.Setenv("NOTION_TOKEN", "   ")
+	t.Setenv("HOME", "/Users/test")
+	t.Setenv("USER", "test")
+	t.Setenv("LANG", "de_DE.UTF-8")
+	t.Setenv("PATH", "/tmp/boese:/usr/bin")
+	t.Setenv("LLM_API_KEY", "geheim")
+	f := &fakeRun{out: []byte("kc-tok")}
+	if _, err := source("svc", "", f).Token(); err != nil {
+		t.Fatal(err)
+	}
+	want := [][]string{{"HOME=/Users/test", "USER=test", "LANG=de_DE.UTF-8", "PATH=/usr/bin:/bin"}}
+	if !reflect.DeepEqual(f.envs, want) {
+		t.Fatalf("Umgebung = %q, want %q", f.envs, want)
+	}
+}
+
+// Fängt: nicht gesetzte Variablen werden als leere Einträge mitgegeben.
+func TestKeychainMinimalEnvOnlySetVars(t *testing.T) {
+	t.Setenv("NOTION_TOKEN", "")
+	t.Setenv("HOME", "/Users/test")
+	t.Setenv("USER", "")
+	t.Setenv("LANG", "")
+	if err := os.Unsetenv("USER"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Unsetenv("LANG"); err != nil {
+		t.Fatal(err)
+	}
+	f := &fakeRun{out: []byte("kc-tok")}
+	if _, err := source("svc", "", f).Token(); err != nil {
+		t.Fatal(err)
+	}
+	want := [][]string{{"HOME=/Users/test", "PATH=/usr/bin:/bin"}}
+	if !reflect.DeepEqual(f.envs, want) {
+		t.Fatalf("Umgebung = %q, want %q", f.envs, want)
+	}
+}
+
+// Fängt: runOutput liefert nicht stdout oder setzt die Umgebung nicht.
+// Harmloses Programm, nie security.
 func TestRunOutput(t *testing.T) {
-	out, err := runOutput("/bin/echo", "-n", "x y")
+	out, err := runOutput("/bin/echo", nil, "-n", "x y")
 	if err != nil || string(out) != "x y" {
 		t.Fatalf("runOutput = %q, %v", out, err)
+	}
+	t.Setenv("MEETINGSYNC_ELTERN", "nicht-weitergeben")
+	out, err = runOutput("/usr/bin/env", []string{"A=1", "PATH=/usr/bin:/bin"})
+	if err != nil || string(out) != "A=1\nPATH=/usr/bin:/bin\n" {
+		t.Fatalf("runOutput(env) = %q, %v", out, err)
 	}
 }

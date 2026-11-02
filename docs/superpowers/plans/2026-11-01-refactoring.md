@@ -505,6 +505,7 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 - Depends on: M2. Findings: S-04.
 - Model: opus, file security.
 - Reviews: CR, SR, QA.
+- Merged with R-M3-19 (coordinator decision, 2026-11-02): also open files in `internal/watch/fs.go` (`OS.ReadFile`) with `O_NOFOLLOW` + `fstat` `IsRegular`; test with a swap between listing and reading.
 
 #### R-M3-04 File permissions
 - Goal: new ledger and `.fehler.txt` files 0600; newly created archive, error and month folders 0700; the copy path creates 0600.
@@ -538,6 +539,7 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 - Depends on: M2. Findings: S-10 (code now in `internal/notify/notify.go`, formerly `app.go`).
 - Model: opus, secrets and process start.
 - Reviews: CR, SR, QA.
+- Status: **done 2026-11-02.** Absolute paths as constants, environment `HOME`, `USER`, `LANG` (each only if set) + `PATH=/usr/bin:/bin`; G204 exclusion removed, line-level `nolint` with reason; `minimalEnv` duplicated in both packages; security review approved. CI/golden PATH stubs kept (optional cleanup). Manual check for the next real run: progress.md follow-up 24.
 
 #### R-M3-08 IDs in the URL path
 - Goal: config IDs go into paths with `url.PathEscape`.
@@ -653,6 +655,7 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 - Reviews: CR, SR, QA.
 
 #### R-M3-19 Open export files with O_NOFOLLOW
+- Status: **merged into R-M3-03** (coordinator decision, 2026-11-02): same code in `internal/watch/fs.go`; R-M1-07 already skips non-regular files in `listEntries`. The goal and acceptance below move to R-M3-03.
 - Goal: a regular file swapped for a symlink between `ReadDir` and `ReadFile` is not followed.
 - Acceptance: open with `O_NOFOLLOW` and check `fstat` `IsRegular`; test with a swap between listing and reading; golden unchanged. Risk low, local only.
 - Scope: `internal/watch/fs.go` (`OS.ReadFile`: open with `O_NOFOLLOW` + `fstat`; was `app.go` `listEntries`), tests.
