@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -17,8 +16,6 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/sys/unix"
-
 	"meetingsync/internal/config"
 	"meetingsync/internal/domain"
 	"meetingsync/internal/ledger"
@@ -27,6 +24,7 @@ import (
 	"meetingsync/internal/notion"
 	"meetingsync/internal/secret"
 	"meetingsync/internal/transcript"
+	"meetingsync/internal/watch"
 )
 
 type App struct {
@@ -44,7 +42,8 @@ type App struct {
 
 	state  map[string]*fileState
 	warned map[string]bool
-	cache  map[string]cachedKind
+	cache  watch.Cache
+	mover  watch.Mover // Nullwert: echtes Verschieben
 
 	// interruptedNow: Hashes, die in diesem Durchlauf per Neustart-Regel nach
 	// _fehler gingen. Nur je Durchlauf, damit eine von Mark zurückgelegte
@@ -61,33 +60,17 @@ type fileState struct {
 	nextTry   time.Time
 }
 
-type cachedKind struct {
-	modTime time.Time
-	size    int64
-	kind    domain.Kind
-}
-
-type entry struct {
-	Path    string
-	Name    string
-	ModTime time.Time
-	Size    int64
-	Stable  bool
-	Kind    domain.Kind
-	Content []byte
-}
-
 type job struct {
-	primary     *entry
-	summary     *entry // optional, gehört zum Transkript
+	primary     *watch.Entry
+	summary     *watch.Entry // optional, gehört zum Transkript
 	summaryOnly bool
 }
 
-func (j job) files() []*entry {
+func (j job) files() []*watch.Entry {
 	if j.summary != nil {
-		return []*entry{j.primary, j.summary}
+		return []*watch.Entry{j.primary, j.summary}
 	}
-	return []*entry{j.primary}
+	return []*watch.Entry{j.primary}
 }
 
 // newLLMClient baut den LM-Studio-Client aus der Konfiguration. transport nil
@@ -115,7 +98,7 @@ func NewApp(cfg *config.Config, loc *time.Location, tokens secret.TokenSource, l
 		llm:      newLLMClient(cfg, logger, nil),
 		state:    map[string]*fileState{},
 		warned:   map[string]bool{},
-		cache:    map[string]cachedKind{},
+		cache:    watch.Cache{},
 		notifier: notify.New(),
 	}
 	token, err := tokens.Token()
@@ -235,7 +218,7 @@ func (a *App) Pass(ctx context.Context, now time.Time) {
 		return
 	}
 	a.interruptedNow = map[string]bool{}
-	var transcripts, summaries, unstable []*entry
+	var transcripts, summaries, unstable []*watch.Entry
 	for _, e := range entries {
 		switch {
 		case !e.Stable:
@@ -252,9 +235,9 @@ func (a *App) Pass(ctx context.Context, now time.Time) {
 	// Erst alle Paare bilden, damit eine Zusammenfassung nie als Waise gilt,
 	// nur weil ihr Transkript gerade in der Warteschleife steckt.
 	claimed := map[string]bool{}
-	pairs := make(map[string]*entry)
+	pairs := make(map[string]*watch.Entry)
 	for _, t := range transcripts {
-		if s := pairSummary(t, summaries, claimed, window); s != nil {
+		if s := watch.PairSummary(t, summaries, claimed, window); s != nil {
 			claimed[s.Path] = true
 			pairs[t.Path] = s
 		}
@@ -267,7 +250,7 @@ func (a *App) Pass(ctx context.Context, now time.Time) {
 		if st := a.state[t.Path]; st != nil && now.Before(st.nextTry) {
 			continue
 		}
-		if near(unstable, t.ModTime, window) {
+		if watch.Near(unstable, t.ModTime, window) {
 			continue // die passende Zusammenfassung wird evtl. noch geschrieben
 		}
 		a.handle(ctx, job{primary: t, summary: pairs[t.Path]}, now)
@@ -278,7 +261,7 @@ func (a *App) Pass(ctx context.Context, now time.Time) {
 		if ctx.Err() != nil || claimed[s.Path] {
 			continue
 		}
-		if near(unstable, s.ModTime, window) {
+		if watch.Near(unstable, s.ModTime, window) {
 			continue // vielleicht wird das passende Transkript gerade geschrieben
 		}
 		// vor HasNear: auch ein fehlgeschlagenes Archivieren wartet (R-M1-07)
@@ -587,7 +570,7 @@ func (a *App) ProcessSingleFile(ctx context.Context, path string) error {
 	if err != nil {
 		return err
 	}
-	e := &entry{Path: path, Name: filepath.Base(path), ModTime: info.ModTime(), Size: info.Size(), Stable: true, Content: content}
+	e := &watch.Entry{Path: path, Name: filepath.Base(path), ModTime: info.ModTime(), Size: info.Size(), Stable: true, Content: content}
 	e.Kind = transcript.Classify(path, content, a.transcriptOpts())
 	a.log.Printf("%s erkannt als: %s", e.Name, e.Kind)
 	if e.Kind == domain.KindUnsupported {
@@ -622,100 +605,22 @@ func mustJSON(v any) string {
 
 // --- Dateien ---------------------------------------------------------------------
 
-func (a *App) listEntries(now time.Time) ([]*entry, error) {
-	dirEntries, err := os.ReadDir(a.cfg.WatchDir)
-	if err != nil {
-		return nil, err
-	}
-	stable := time.Duration(a.cfg.StableSeconds) * time.Second
-	var out []*entry
-	for _, d := range dirEntries {
-		name := d.Name()
-		if d.IsDir() || strings.HasPrefix(name, ".") || strings.HasPrefix(name, "~$") || isTempName(name) {
-			continue
-		}
-		path := filepath.Join(a.cfg.WatchDir, name)
-		if !d.Type().IsRegular() {
-			a.warnOnce(path, "%s: keine reguläre Datei (z. B. Symlink) → übersprungen", name)
-			continue
-		}
-		ext := strings.ToLower(filepath.Ext(name))
-		if !transcript.IsSupportedExt(ext, a.transcriptOpts()) {
-			a.warnOnce(path, "Ignoriere %s (Dateityp %s wird nicht verarbeitet)", name, ext)
-			continue
-		}
-		info, err := d.Info()
-		if err != nil {
-			continue
-		}
-		e := &entry{Path: path, Name: name, ModTime: info.ModTime(), Size: info.Size()}
-		e.Stable = now.Sub(e.ModTime) >= stable && e.Size > 0
-		if e.Stable {
-			if e.Size > 20<<20 {
-				a.warnOnce(path, "Ignoriere %s (größer als 20 MB)", name)
-				continue
-			}
-			if e.Content, err = os.ReadFile(path); err != nil {
-				continue
-			}
-			if c, ok := a.cache[path]; ok && c.modTime.Equal(e.ModTime) && c.size == e.Size {
-				e.Kind = c.kind
-			} else {
-				e.Kind = transcript.Classify(path, e.Content, a.transcriptOpts())
-				a.cache[path] = cachedKind{e.ModTime, e.Size, e.Kind}
-				a.log.Printf("Neu: %s → %s", name, e.Kind)
-			}
-		}
-		out = append(out, e)
-	}
-	return out, nil
-}
-
-func isTempName(name string) bool {
-	l := strings.ToLower(name)
-	for _, s := range []string{".tmp", ".part", ".crdownload", ".download", ".swp"} {
-		if strings.HasSuffix(l, s) {
-			return true
-		}
-	}
-	return false
-}
-
-// pairSummary sucht die Zusammenfassung zum Transkript: gleicher Dateiname
-// (ohne Endung) oder zeitlich am nächsten innerhalb des Fensters.
-func pairSummary(t *entry, summaries []*entry, claimed map[string]bool, window time.Duration) *entry {
-	stem := func(e *entry) string { return strings.ToLower(strings.TrimSuffix(e.Name, filepath.Ext(e.Name))) }
-	for _, s := range summaries {
-		if !claimed[s.Path] && stem(s) == stem(t) {
-			return s
-		}
-	}
-	var best *entry
-	var bestD time.Duration
-	for _, s := range summaries {
-		if claimed[s.Path] {
-			continue
-		}
-		d := absDur(s.ModTime.Sub(t.ModTime))
-		if d <= window && (best == nil || d < bestD) {
-			best, bestD = s, d
-		}
-	}
-	return best
-}
-
-func near(list []*entry, t time.Time, window time.Duration) bool {
-	for _, e := range list {
-		if absDur(e.ModTime.Sub(t)) <= window {
-			return true
-		}
-	}
-	return false
+// listEntries liest den Exportordner über internal/watch (echtes Dateisystem).
+func (a *App) listEntries(now time.Time) ([]*watch.Entry, error) {
+	return watch.Lister{
+		FS:       watch.OS{},
+		Dir:      a.cfg.WatchDir,
+		Stable:   time.Duration(a.cfg.StableSeconds) * time.Second,
+		Opts:     a.transcriptOpts(),
+		Cache:    a.cache,
+		Log:      a.log,
+		WarnOnce: a.warnOnce,
+	}.List(now)
 }
 
 // archive verschiebt die Dateien ins Archiv und liefert die, die liegen
 // blieben. Erfolg löscht den Retry-Zustand der Datei.
-func (a *App) archive(files ...*entry) (failed []*entry) {
+func (a *App) archive(files ...*watch.Entry) (failed []*watch.Entry) {
 	if a.dry {
 		return nil
 	}
@@ -736,7 +641,7 @@ func (a *App) archive(files ...*entry) (failed []*entry) {
 // archiveAt archiviert; bleibt eine Datei liegen, neuer Versuch erst in 2 min
 // statt bei jedem Durchlauf (Logzeile und Kopie nicht alle
 // poll_interval_seconds). Zählt nicht gegen max_attempts (R-M1-07).
-func (a *App) archiveAt(now time.Time, files ...*entry) {
+func (a *App) archiveAt(now time.Time, files ...*watch.Entry) {
 	for _, f := range a.archive(files...) {
 		st := a.state[f.Path]
 		if st == nil {
@@ -747,11 +652,11 @@ func (a *App) archiveAt(now time.Time, files ...*entry) {
 	}
 }
 
-// move ruft moveFile; scheitert nur der Sync des Zielordners, ist die Datei
+// move ruft Mover.Move; scheitert nur der Sync des Zielordners, ist die Datei
 // verschoben: Warnung, kein Fehler (Mark, 2026-11-02).
-func (a *App) move(f *entry, dir string) (string, error) {
-	dst, err := moveFile(f.Path, dir)
-	var se *dirSyncError
+func (a *App) move(f *watch.Entry, dir string) (string, error) {
+	dst, err := a.mover.Move(f.Path, dir)
+	var se *watch.DirSyncError
 	if errors.As(err, &se) {
 		a.log.Printf("   ⚠️  %s: %v", f.Name, err)
 		return dst, nil
@@ -774,8 +679,8 @@ func (a *App) archiveJob(j job, now time.Time) {
 
 // changedSinceRead meldet, ob Größe oder mtime von f nicht mehr zu den Werten
 // aus listEntries passen (Lstat wie d.Info). Fehlt die Datei, entscheidet
-// moveFile wie bisher.
-func changedSinceRead(f *entry) bool {
+// Mover.Move wie bisher.
+func changedSinceRead(f *watch.Entry) bool {
 	info, err := os.Lstat(f.Path)
 	if err != nil {
 		return false
@@ -784,7 +689,7 @@ func changedSinceRead(f *entry) bool {
 }
 
 // fail verschiebt die Dateien nach _fehler; ok=false, wenn eine liegen blieb.
-func (a *App) fail(cause error, files ...*entry) (ok bool) {
+func (a *App) fail(cause error, files ...*watch.Entry) (ok bool) {
 	ok = true
 	if a.dry {
 		return ok
@@ -818,7 +723,7 @@ func writeFehlerTxt(dst string, cause error) error {
 	data := []byte(fmt.Sprintf("%s\n%v\n", time.Now().Format(time.RFC3339), cause))
 	name := dst + ".fehler.txt"
 	for i := 2; ; i++ {
-		f, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644) //nolint:gosec // G304: Pfad aus moveFile unter failed_dir
+		f, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644) //nolint:gosec // G304: Pfad aus Mover.Move unter failed_dir; G302: 0o644 für .fehler.txt, Dateirechte geplant in S-12 / R-M3-04 (Entfernung geplant)
 		if errors.Is(err, os.ErrExist) {
 			name = fmt.Sprintf("%s (%d).fehler.txt", dst, i)
 			continue
@@ -834,190 +739,9 @@ func writeFehlerTxt(dst string, cause error) error {
 	}
 }
 
-// renameFn benennt src exklusiv in dst um (renamex_np mit RENAME_EXCL):
-// atomar, ein vorhandenes dst bleibt unangetastet (EEXIST). Nur Tests tauschen
-// sie aus.
-var renameFn = func(src, dst string) error {
-	if err := unix.RenamexNp(src, dst, unix.RENAME_EXCL); err != nil {
-		return &os.LinkError{Op: "renamex_np", Old: src, New: dst, Err: err}
-	}
-	return nil
-}
-
-// copyFn kopiert den Inhalt; nur Tests tauschen sie aus.
-var copyFn = io.Copy
-
-// syncDirFn synchronisiert den Zielordner in moveFile; nur Tests tauschen sie aus.
-var syncDirFn = syncDir
-
-// dirSyncError: Kopie liegt in dst, das Original ist gelöscht, nur der Sync
-// des Zielordners schlug fehl. moveFile liefert dst mit diesem Fehler.
-type dirSyncError struct {
-	dst string
-	err error
-}
-
-func (e *dirSyncError) Error() string {
-	return fmt.Sprintf("Zielordner nicht synchronisiert, trotzdem verschoben nach %s: %v", e.dst, e.err)
-}
-
-func (e *dirSyncError) Unwrap() error { return e.err }
-
-// moveFile verschiebt src nach dir, ohne vorhandene Dateien zu überschreiben.
-// Gleiches Volume: atomares Umbenennen mit RENAME_EXCL (ein Symlink wird als
-// Symlink verschoben). Anderes Volume oder Flag nicht unterstützt: Kopie mit
-// O_EXCL, Zielordner sync, dann src löschen, aber nur, wenn src noch die
-// kopierte Datei ist. Ist der Name belegt, "stem (n).ext". Gelöscht wird
-// außer src nur die eigene, eben angelegte Kopie (von Mark erlaubt,
-// 2026-11-02), und nur nach Identitätsprüfung. Scheitert nur der Sync des
-// Zielordners, geht es weiter wie sonst; dann kommen dst und ein
-// *dirSyncError zurück (Mark, 2026-11-02).
-func moveFile(src, dir string) (string, error) {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", err
-	}
-	base := filepath.Base(src)
-	ext := filepath.Ext(base)
-	stem := strings.TrimSuffix(base, ext)
-	name := func(i int) string {
-		if i == 1 {
-			return filepath.Join(dir, base)
-		}
-		return filepath.Join(dir, fmt.Sprintf("%s (%d)%s", stem, i, ext))
-	}
-	i := 1
-	for ; ; i++ {
-		err := renameFn(src, name(i))
-		if err == nil {
-			return name(i), nil
-		}
-		if errors.Is(err, os.ErrExist) {
-			continue
-		}
-		if !errors.Is(err, unix.EXDEV) && !errors.Is(err, unix.ENOTSUP) {
-			return "", err
-		}
-		break // anderes Volume oder RENAME_EXCL nicht unterstützt: kopieren
-	}
-	for ; ; i++ {
-		dst := name(i)
-		srcInfo, dstInfo, err := copyExcl(src, dst)
-		if errors.Is(err, os.ErrExist) {
-			continue
-		}
-		if err != nil {
-			return "", err
-		}
-		// Ordnereintrag der Kopie soll einen Absturz überstehen, bevor src weg ist.
-		// Scheitert das, trotzdem weiter (Kopie selbst ist synchronisiert).
-		syncErr := syncDirFn(dir)
-		cur, err := os.Lstat(src)
-		if err != nil || !os.SameFile(cur, srcInfo) {
-			msg := fmt.Sprintf("Quelle %s während des Kopierens ersetzt oder entfernt, Quelle und Kopie %s bleiben liegen", src, dst)
-			if err != nil {
-				msg += fmt.Sprintf(" (%v)", err)
-			}
-			return "", errors.New(msg)
-		}
-		if err := os.Remove(src); err != nil {
-			// Keine Kopie je Versuch ansammeln: nur die eigene, frische Kopie löschen,
-			// einmal und ohne Wiederholung.
-			if rerr := removeOwn(dst, dstInfo); rerr != nil {
-				return "", fmt.Errorf("Quelle nicht löschbar, Original bleibt liegen: %w; eigene Kopie %s nicht entfernt: %v", err, dst, rerr)
-			}
-			return "", fmt.Errorf("Quelle nicht löschbar, Original bleibt liegen, eigene Kopie entfernt: %w", err)
-		}
-		if syncErr != nil {
-			return dst, &dirSyncError{dst: dst, err: syncErr}
-		}
-		return dst, nil
-	}
-}
-
-// copyExcl kopiert src nach dst; dst darf noch nicht existieren (O_EXCL).
-// Sync vor Close, damit die Kopie vor dem Löschen der Quelle auf Platte ist.
-// Liefert die Identität von Quelle und Kopie. Schlägt das Kopieren fehl,
-// löscht copyExcl die eigene Teilkopie (von Mark erlaubt, 2026-11-02).
-func copyExcl(src, dst string) (srcInfo, dstInfo os.FileInfo, err error) {
-	in, err := os.Open(src) //nolint:gosec // G304: Pfad aus dem Exportordner
-	if err != nil {
-		return nil, nil, err
-	}
-	defer func() { _ = in.Close() }() //nolint:errcheck // nur gelesen, Close-Fehler ohne Folgen
-	if srcInfo, err = in.Stat(); err != nil {
-		return nil, nil, err
-	}
-	// Nur eine reguläre Datei, die noch unter src liegt (kein Symlink): sonst
-	// würde die Kopie bei jedem Versuch neu angelegt und bliebe liegen.
-	li, err := os.Lstat(src)
-	if err != nil {
-		return nil, nil, err
-	}
-	if !li.Mode().IsRegular() || !os.SameFile(li, srcInfo) {
-		return nil, nil, fmt.Errorf("Quelle %s ist keine reguläre Datei oder wurde ersetzt, nicht kopiert", src)
-	}
-
-	// Rechte wie bisher os.Create
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666) //nolint:gosec // G302/G304: Pfad aus moveFile
-	if err != nil {
-		return nil, nil, err
-	}
-	dstInfo, err = out.Stat()
-	if err == nil {
-		_, err = copyFn(out, in)
-	}
-	if err == nil {
-		err = out.Sync()
-	}
-	if cerr := out.Close(); err == nil {
-		err = cerr
-	}
-	if err != nil {
-		if rerr := removeOwn(dst, dstInfo); rerr != nil {
-			return nil, nil, fmt.Errorf("Kopie nach %s fehlgeschlagen: %w; Teilkopie nicht entfernt: %v", dst, err, rerr)
-		}
-		return nil, nil, fmt.Errorf("Kopie nach %s fehlgeschlagen, Teilkopie entfernt: %w", dst, err)
-	}
-	return srcInfo, dstInfo, nil
-}
-
-// removeOwn löscht path nur, wenn es noch die selbst angelegte Datei own ist.
-func removeOwn(path string, own os.FileInfo) error {
-	if own == nil {
-		return errors.New("Identität der eigenen Kopie unbekannt")
-	}
-	cur, err := os.Lstat(path)
-	if err != nil {
-		return err
-	}
-	if !os.SameFile(cur, own) {
-		return fmt.Errorf("%s ist nicht mehr die eigene Kopie", path)
-	}
-	return os.Remove(path)
-}
-
-func syncDir(dir string) error {
-	d, err := os.Open(dir)
-	if err != nil {
-		return err
-	}
-	err = d.Sync()
-	if cerr := d.Close(); err == nil {
-		err = cerr
-	}
-	return err
-}
-
 // --- Sonstiges -----------------------------------------------------------------------
 
 func sha256Hex(b []byte) string {
 	h := sha256.Sum256(b)
 	return hex.EncodeToString(h[:])
-}
-
-func absDur(d time.Duration) time.Duration {
-	if d < 0 {
-		return -d
-	}
-	return d
 }

@@ -33,6 +33,13 @@ Status: accepted (Mark approved M2 at the gate, 2026-11-02), R-M2-01. Number 001
 - Delivered in R-M2-01: `internal/domain` with `MeetingNote`, `Thema`, `Action`, `Naechstes`, `Timing`, `NoteMeta`, `Kind`, `Transient`, `IsTransient`. All callers switched, no aliases. Coverage 100 %.
 - Logging stays `*log.Logger` with identical texts.
 
+### R-M2-08: `watch.FS` covers the read side only (coordinator decision)
+- The plan text asked for an FS interface with ReadDir, Lstat, ReadFile, Link/Rename and exclusive Create.
+- Decision: `watch.FS` has `ReadDir`, `ReadFile`, `Lstat` (real impl `watch.OS`; the in-memory FS exists in tests only). The atomic move stays the unchanged real code as `watch.Mover{Rename, Copy, SyncDir}`; nil fields use the real functions (`RenamexNp` with `RENAME_EXCL`, `io.Copy`, folder fsync). The former package variables `renameFn`, `copyFn`, `syncDirFn` are now `Mover` fields, so tests no longer mutate globals.
+- Reason: rebuilding the move on a generic FS abstraction could lose the `os.SameFile` check and the `RENAME_EXCL` semantics (ADR 0004, ADR 0005).
+- Trade-off: the move cannot be run against an in-memory FS; move tests use real temp folders and `Mover` fakes for error paths.
+- Alternative rejected: one FS interface including Link/Rename/exclusive Create, as in the plan text (risk above).
+
 ## Alternatives considered
 | Option | Rejected because |
 | --- | --- |

@@ -14,6 +14,7 @@ import (
 
 	"meetingsync/internal/config"
 	"meetingsync/internal/domain"
+	"meetingsync/internal/watch"
 )
 
 func retryApp(t *testing.T, max int) (*App, job, string) {
@@ -26,8 +27,8 @@ func retryApp(t *testing.T, max int) (*App, job, string) {
 	if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	a := &App{cfg: cfg, log: log.New(io.Discard, "", 0), state: map[string]*fileState{}, cache: map[string]cachedKind{}, notifier: &fakeNotifier{}}
-	return a, job{primary: &entry{Name: "meeting.txt", Path: path}}, cfg.FailedDir
+	a := &App{cfg: cfg, log: log.New(io.Discard, "", 0), state: map[string]*fileState{}, cache: watch.Cache{}, notifier: &fakeNotifier{}}
+	return a, job{primary: &watch.Entry{Name: "meeting.txt", Path: path}}, cfg.FailedDir
 }
 
 func failedFiles(dir string) int {
@@ -137,7 +138,7 @@ func TestPairMovesTogetherAfterLimit(t *testing.T) {
 	if err := os.WriteFile(sumPath, []byte("y"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	j.summary = &entry{Name: "meeting-summary.txt", Path: sumPath}
+	j.summary = &watch.Entry{Name: "meeting-summary.txt", Path: sumPath}
 	now := time.Now()
 	a.handleError(context.Background(), j, errTrans, now)
 	if failedFiles(failed) != 0 {

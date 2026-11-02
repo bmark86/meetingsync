@@ -21,6 +21,7 @@ import (
 
 	"meetingsync/internal/config"
 	"meetingsync/internal/ledger"
+	"meetingsync/internal/watch"
 )
 
 // flowM ist die mtime der Eingaben (UTC, Archivmonat 2026-09).
@@ -76,7 +77,7 @@ func newFlowApp(t *testing.T, mod func(*config.Config)) *flowEnv {
 	}
 	app := &App{
 		cfg: cfg, loc: time.UTC, log: logger, llm: newLLMClient(cfg, logger, nil), ledger: l,
-		state: map[string]*fileState{}, warned: map[string]bool{}, cache: map[string]cachedKind{},
+		state: map[string]*fileState{}, warned: map[string]bool{}, cache: watch.Cache{},
 		notifier: &fakeNotifier{},
 	}
 	return &flowEnv{app: app, watch: cfg.WatchDir, archive: cfg.ArchiveDir, logBuf: buf, hits: hits, status: status}

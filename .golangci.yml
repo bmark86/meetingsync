@@ -33,15 +33,18 @@ linters:
       # gosec G301/G302/G306: Dateirechte 0644/0755 sind heutiges Verhalten.
       # Strengere Rechte: Befund S-12 / Task R-M3-04 (Verhaltensaenderung, nicht in M0).
       # Exclusion in R-M3-04 entfernen. internal/ledger: Code aus app.go
-      # verschoben (R-M2-03), gleiche Begründung, gleiche Task.
+      # verschoben (R-M2-03), internal/watch: Code aus app.go verschoben
+      # (R-M2-08), gleiche Begründung, gleiche Task. app.go braucht sie seit
+      # R-M2-08 nicht mehr (MkdirAll liegt in internal/watch/move.go).
       - linters: [gosec]
-        path: (^app\.go$|^internal/ledger/ledger\.go$|_test\.go$)
+        path: (^internal/ledger/ledger\.go$|^internal/watch/move\.go$|_test\.go$)
         text: "G30[126]:"
       # gosec G304: Der Watch-Ordner ist fremder Input (Symlinks). Befund S-04 /
       # Task R-M3-03. Exclusion in R-M3-03 entfernen. internal/ledger: Code aus
-      # app.go verschoben (R-M2-03), gleiche Begründung, gleiche Task.
+      # app.go verschoben (R-M2-03), internal/watch: Code aus app.go verschoben
+      # (R-M2-08), gleiche Begründung, gleiche Task.
       - linters: [gosec]
-        path: ^(app\.go|internal/ledger/ledger\.go)$
+        path: ^(app\.go|internal/ledger/ledger\.go|internal/watch/(fs|move)\.go)$
         text: "G304:"
       # gosec G204: feste Programme (security, osascript, go); Argumente werden
       # nicht durch eine Shell interpretiert. Befund S-10 / Task R-M3-07.

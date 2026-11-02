@@ -95,6 +95,16 @@ var archRules = []archRule{
 		},
 		forbidden: func(d string, _ bool) bool { return d == "os/exec" },
 	},
+	{
+		// x/sys/unix nur für renamex_np (ADR 0005); internal/transcript für
+		// Dateityp und Endungen beim Einlesen, internal/domain für Kind.
+		name:    "internal/watch importiert nur Standardbibliothek, golang.org/x/sys/unix, internal/domain und internal/transcript",
+		applies: func(p string) bool { return inPkg(p, modulePath+"/internal/watch") },
+		forbidden: func(d string, std bool) bool {
+			return !std && d != "golang.org/x/sys/unix" && !inPkg(d, modulePath+"/internal/domain") &&
+				!inPkg(d, modulePath+"/internal/transcript") && !inPkg(d, modulePath+"/internal/watch")
+		},
+	},
 }
 
 type listedPkg struct {
@@ -198,6 +208,7 @@ func TestArchRulesDetectViolations(t *testing.T) {
 		{ImportPath: modulePath + "/internal/notify", Deps: []string{"os/exec", modulePath + "/internal/domain", "go.yaml.in/yaml/v3"}},
 		{ImportPath: modulePath + "/internal/config", Deps: []string{"os", "go.yaml.in/yaml/v3", modulePath + "/internal/secret"}, TestImports: []string{"os/exec"}},
 		{ImportPath: modulePath + "/internal/secret", Deps: []string{"os/exec", "go.yaml.in/yaml/v3", modulePath + "/internal/config"}},
+		{ImportPath: modulePath + "/internal/watch", Deps: []string{"golang.org/x/sys/unix", modulePath + "/internal/domain", modulePath + "/internal/transcript", modulePath + "/internal/notion", "golang.org/x/sys/cpu"}},
 		{ImportPath: modulePath + "/internal/llm/sub", Deps: []string{"os/exec"}},
 		{ImportPath: modulePath, Deps: []string{modulePath + "/internal/pipeline"}},
 	}
@@ -220,6 +231,8 @@ func TestArchRulesDetectViolations(t *testing.T) {
 		archRules[9].name + ": " + modulePath + "/internal/config → os/exec",
 		archRules[8].name + ": " + modulePath + "/internal/secret → go.yaml.in/yaml/v3",
 		archRules[8].name + ": " + modulePath + "/internal/secret → " + modulePath + "/internal/config",
+		archRules[10].name + ": " + modulePath + "/internal/watch → " + modulePath + "/internal/notion",
+		archRules[10].name + ": " + modulePath + "/internal/watch → golang.org/x/sys/cpu",
 		archRules[9].name + ": " + modulePath + "/internal/llm/sub → os/exec",
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {

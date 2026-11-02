@@ -436,6 +436,7 @@ Logging stays `*log.Logger` with identical texts. Named constants (A-17) and rea
 - Depends on: R-M2-01, R-M1-04. Findings: A-04, A-05.
 - Model: opus, file atomicity behind a new abstraction.
 - Reviews: CR, SR, QA.
+- Status: done 2026-11-02. `internal/watch` (`watch.go`: `Lister`, `Entry`, `Cache` owned by `App`, `PairSummary`, `Near`; `fs.go`: `FS`, `OS`; `move.go`: `Mover`, `DirSyncError`). Decision (coordinator, deviates from the goal text above): `FS` covers the read side only (ReadDir, ReadFile, Lstat; in-memory FS test-only); the atomic move stays the unchanged real code as `Mover{Rename, Copy, SyncDir}` (nil = real functions), because rebuilding it on an FS abstraction could lose `os.SameFile` / `RENAME_EXCL` (ADR 0004/0005, ADR 0015). Seams `renameFn`, `copyFn`, `syncDirFn` became `Mover` fields. Arch rule: watch imports stdlib, x/sys/unix, domain, transcript. gosec G30[126]: `ledger.go` + `watch/move.go`, `app.go` removed; G304 adds `watch/fs.go`, `watch/move.go`. Coverage 96.2 %, tests 216 → 231, golden byte-identical, CR and SR approved. Follow-ups: R-M2-09, R-M3-04, R-M3-19.
 
 #### R-M2-09 pipeline
 - Goal: `handle`, `handleError`, `process`, `archive`, `fail`, `activeProjects` → `internal/pipeline`; Clock, FS, Summarizer, PageWriter, Notifier, Ledger injected; retry policy as its own type.
@@ -445,6 +446,7 @@ Logging stays `*log.Logger` with identical texts. Named constants (A-17) and rea
   - Replace the test helper `hookNotion` (app_crash_test.go), which duplicates client construction, by injecting the transport/`PageWriter` (follow-up of R-M2-04).
   - Wire `App` through `llm.Summarizer`, merge the two identical `mustJSON` copies (`app.go`, `internal/llm`), decide whether `llm.Normalize` moves inside `Summarize` (follow-up of R-M2-05).
   - Decide the placement of `FormatTitle` and `deadlineLabel` (`internal/notion` vs `domain`/`pipeline`).
+  - Inject `watch.FS` and `watch.Mover` into the pipeline; move `changedSinceRead` to `FS.Lstat` (`FS.Lstat` has no production caller yet); export an in-memory FS (e.g. package `watchtest`) with `Move` for pipeline tests (follow-up of R-M2-08).
 - Scope: `app.go`, `app_retry_test.go`, new `internal/pipeline/`.
 - Depends on: R-M2-02 to R-M2-08. Findings: A-04, A-05.
 - Model: opus, state, retry and ledger order.
@@ -491,7 +493,7 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 
 #### R-M3-04 File permissions
 - Goal: new ledger and `.fehler.txt` files 0600; newly created archive, error and month folders 0700; the copy path creates 0600.
-- Acceptance: tests check the mode (independent of umask, by `Chmod` after creation); existing files/folders are left as they are (OD-10, decided: proposal: new ones only); golden unchanged (permissions are not part of `tree.txt`); gosec G301/G302/G306 exclusions removed (prod files, including `internal/ledger/ledger.go`).
+- Acceptance: tests check the mode (independent of umask, by `Chmod` after creation); existing files/folders are left as they are (OD-10, decided: proposal: new ones only); golden unchanged (permissions are not part of `tree.txt`); gosec G301/G302/G306 exclusions removed (prod files, including `internal/ledger/ledger.go`). The line-wide `//nolint:gosec` on `writeFehlerTxt` in `app.go` also suppresses G302 (`.fehler.txt` is 0644); it must be resolved when the exclusions are removed (follow-up of R-M2-08).
 - Scope: `internal/ledger`, `internal/watch`, `internal/pipeline`, tests.
 - Depends on: R-M3-03. Findings: S-12.
 - Model: opus, permissions.
@@ -633,8 +635,8 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 #### R-M3-19 Open export files with O_NOFOLLOW
 - Goal: a regular file swapped for a symlink between `ReadDir` and `ReadFile` is not followed.
 - Acceptance: open with `O_NOFOLLOW` and check `fstat` `IsRegular`; test with a swap between listing and reading; golden unchanged. Risk low, local only.
-- Scope: `app.go` (`listEntries`), tests.
-- Depends on: R-M1-07.
+- Scope: `internal/watch/fs.go` (`OS.ReadFile`: open with `O_NOFOLLOW` + `fstat`; was `app.go` `listEntries`), tests.
+- Depends on: R-M1-07, R-M2-08.
 - Model: opus, file atomicity.
 - Reviews: CR, SR, QA.
 
