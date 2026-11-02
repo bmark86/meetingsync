@@ -13,7 +13,9 @@ Status: accepted (Mark, 2026-11-02), R-M1-04
 - Copy fallback only on `EXDEV` or `ENOTSUP`. `EINVAL` is not a trigger. Any other rename error is returned.
 - Fallback steps: source `Lstat` (regular file, same identity as the opened file, symlinks refused), copy with `O_CREATE|O_EXCL`, `Sync`, `Close`, fsync of the target folder, identity check (`Lstat` + `SameFile`) before `Remove(src)`.
 - Deletions (approved by Mark, 2026-11-02): only meetingsync's own fresh copy, identity-checked: when `Remove(src)` fails (original stays, warning), and a partial copy after an `io.Copy`, `Sync` or `Close` error.
-- No other deletion: after a folder fsync error or an identity mismatch both files stay (after a mismatch the copy is the only copy of the old version).
+- No other deletion: after an identity mismatch both files stay (the copy is then the only copy of the old version).
+- Folder fsync error (R-M1-07, decided by Mark on 2026-11-02): the copy is already written and synced, so the move goes on as normal (identity check, then `Remove(src)`). A German warning is logged (`<name>: Zielordner nicht synchronisiert, trotzdem verschoben nach <dst>: …`, target folder not synced, moved anyway). The file counts as moved, both for the archive and for `_fehler`. Nothing else is deleted. Residual risk: after a crash right then, the folder entry of the copy may be lost while the original is gone.
+- A failed move into the archive is retried after 2 minutes, not every poll (R-M1-07, see ADR 0004).
 - Supply chain: `go.sum` hashes checked against sum.golang.org by the security review, `govulncheck` clean, Dependabot already covers `gomod`.
 
 ## Alternatives considered
