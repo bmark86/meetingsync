@@ -23,8 +23,42 @@
 | R-M1-04 ⚠ | moveFile without overwriting: atomic `RenamexNp` (RENAME_EXCL), safe copy fallback, `.fehler.txt` with O_EXCL, failed move retried after 2 min; ADR 0005, ADR 0004. Decisions: Mark (2026-11-02) approved dependency `golang.org/x/sys` and deleting own fresh/partial copy; coordinator: no other deletions, EINVAL no fallback trigger, `go 1.26.0` accepted, Linux unsupported, TOCTOU between `Lstat` and `Remove` accepted | done | 2026-11-02 |
 | R-M1-05 ⚠ | TOCTOU recheck before archive (primary file only, size + mtime); ADR 0004. Decisions: coordinator: recheck only the primary (ledger key); a kept summary partner would become an orphan, lose its `HasNear` match and with `orphan_summary_action=note` create an extra summary-only note (reproduced by the reviewer, even for a plain touch); a changed partner is archived unprocessed as before. Intended behavior change: a transcript changed during processing gets its own note next pass (no summary context); first note stays | done | 2026-11-02 |
 | R-M1-07 ⚠ | Archive backoff and regular files only: `archive()` failures retried after 2 min (not counted against `max_attempts`) on all archive paths; `listEntries` skips non-regular files (log `keine reguläre Datei … übersprungen`, fixes a FIFO hang); golden unchanged; ADR 0004, ADR 0005. Decisions: Mark (2026-11-02): failed folder fsync after a synced copy warns, move continues (also for `_fehler`); coordinator: summary retry gate before `HasNear` (rare error case: archived at `nextTry`, at most 16 min later, never a second note); retry-state helper merged in R-M2-09 | done | 2026-11-02 |
-| R-M1-EXIT | M1 exit: errcheck `check-blank`, then M1 summary and gate for M2 | next | – |
+| R-M1-EXIT | M1 exit: errcheck `check-blank: true`; test files excluded for errcheck (path-scoped); 28 blank-ignored errors in production code carry `//nolint:errcheck` with a German reason; no code change (identical after stripping comments); body read errors handled in R-M3-05 | done | 2026-11-02 |
 | R-M1-06 | Config validation: clamps and unknown keys as startup warnings; `llm.timeout_minutes` min 1 | done | 2026-11-02 |
+
+## M1 summary (complete 2026-11-02: R-M1-01 to R-M1-07 + R-M1-EXIT)
+
+| Finding | Closed by |
+| --- | --- |
+| A-01 | R-M1-01, R-M1-02 |
+| A-02 | R-M1-03 |
+| A-11 | R-M1-01, R-M1-02, R-M1-03, R-M1-04 |
+| A-12 | R-M1-06 |
+| S-13 | R-M1-01, R-M1-02 |
+| S-14 | R-M1-04 |
+| S-15 | R-M1-05 |
+
+Exit criteria:
+- Golden unchanged except `ledger.jsonl` (`begonnen` lines, D1).
+- Crash matrix tests green.
+- errcheck `check-blank` on.
+
+Decisions taken in M1:
+
+| By | Decision | Task |
+| --- | --- | --- |
+| Mark | OD-05 residual risk (duplicate page after ambiguous `CreatePage` failure) becomes R-M3-17 | R-M1-02 |
+| Mark | Deleting meetingsync's own fresh/partial copy is allowed | R-M1-04 |
+| Mark | New dependency `golang.org/x/sys` | R-M1-04 |
+| Mark | Failed folder fsync warns and the move continues (supersedes the coordinator rule "no deletion after syncDir error" for syncDir) | R-M1-07 |
+| Coordinator | Identical-copy hash set per pass | R-M1-02 |
+| Coordinator | `LoadLedger` does not read the gap fields | R-M1-03 |
+| Coordinator | TOCTOU recheck on the primary file only | R-M1-05 |
+| Coordinator | `EINVAL` is not a fallback trigger | R-M1-04 |
+| Coordinator | `go 1.26.0` accepted | R-M1-04 |
+| Coordinator | No deletion after an identity mismatch (and after a syncDir error, see above) | R-M1-04 |
+
+Next: gate for M2. Fix the ADR numbering for the package split in the plan at the gate (follow-up 18).
 
 ## Open follow-ups
 

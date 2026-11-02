@@ -459,7 +459,7 @@ func (a *App) process(ctx context.Context, j job, hash string) (string, gaps, er
 			// Ohne "begonnen" keine Notion-Anfrage. verworfen setzt den Speicher
 			// zurück, damit der nächste Versuch normal läuft.
 			le.Status = StatusVerworfen
-			_ = a.ledger.Add(le) // gemeldet wird der erste Fehler; bleibt auf Platte "begonnen", greift beim Neustart die Prüfregel (sicher)
+			_ = a.ledger.Add(le) //nolint:errcheck // gemeldet wird der erste Fehler; bleibt auf Platte "begonnen", greift beim Neustart die Prüfregel (sicher)
 			return "", gaps{}, fmt.Errorf("Protokoll nicht schreibbar, Notion-Seite nicht angelegt: %w", err)
 		}
 	}
@@ -945,7 +945,7 @@ func copyExcl(src, dst string) (srcInfo, dstInfo os.FileInfo, err error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	defer func() { _ = in.Close() }() // nur gelesen, Close-Fehler ohne Folgen
+	defer func() { _ = in.Close() }() //nolint:errcheck // nur gelesen, Close-Fehler ohne Folgen
 	if srcInfo, err = in.Stat(); err != nil {
 		return nil, nil, err
 	}
@@ -1063,7 +1063,7 @@ func LoadLedger(path string, persist bool) (*Ledger, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = f.Close() }() // nur gelesen, Close-Fehler ohne Folgen
+	defer func() { _ = f.Close() }() //nolint:errcheck // nur gelesen, Close-Fehler ohne Folgen
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 64*1024), 1<<20)
 	for sc.Scan() {
@@ -1171,7 +1171,7 @@ func notify(title, msg string) {
 		return
 	}
 	q := func(s string) string { return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(s) + `"` }
-	_ = exec.Command("osascript", "-e", "display notification "+q(msg)+" with title "+q(title)).Run()
+	_ = exec.Command("osascript", "-e", "display notification "+q(msg)+" with title "+q(title)).Run() //nolint:errcheck // Benachrichtigung ist Best-Effort, Fehler egal
 }
 
 func sha256Hex(b []byte) string {

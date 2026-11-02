@@ -21,6 +21,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - R-M1-04 ⚠: new dependency `golang.org/x/sys` v0.49.0 (approved by Mark, 2026-11-02), only for the atomic no-overwrite rename. `go` directive `1.26` → `1.26.0` (forced by x/sys); toolchain go1.26.10 unchanged. Linux build unsupported (`RenamexNp` is darwin-only). See ADR 0005.
 - R-M1-04: a failed move (restart rule) is retried after 2 min via the retry state, not on every poll and not counted against `max_attempts`. See ADR 0004.
+- R-M1-EXIT: errcheck `check-blank: true` in `.golangci.yml`; test files excluded for errcheck (path-scoped). The 28 blank-ignored errors in production code carry `//nolint:errcheck // <reason>`. Lint only, no behavior change.
 - R-M0-03: 12 lint findings fixed, no behavior change.
 - R-M1-01 ⚠: ledger lines carry a status (`begonnen`, `fertig`, `verworfen`); last line per hash wins; `Has`/`HasNear` count only `fertig`. `fertig` lines stay byte-identical to v1.0.0; other lines use field `sha256`, so v1.0.0 skips them. `Add` fsyncs and returns write/sync/close errors. See ADR 0004.
 - R-M1-06 ⚠: `llm.timeout_minutes` below 1 (e.g. 0) is now clamped to 1 (was: no timeout).
