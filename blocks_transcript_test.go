@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"meetingsync/internal/domain"
 )
 
 const truncMarker = "… gekürzt. Das vollständige Transkript liegt im Archivordner."
@@ -93,7 +95,7 @@ func TestTranscriptParagraphsLongLineAtLimit(t *testing.T) {
 
 // Fängt: der Toggle in der Seite enthält den gekürzten Inhalt nicht (Verdrahtung).
 func TestBuildNoteBlocksTranscriptToggleTruncated(t *testing.T) {
-	blocks := buildNoteBlocks(&MeetingNote{}, NoteMeta{Transcript: truncLines(150)})
+	blocks := buildNoteBlocks(&domain.MeetingNote{}, domain.NoteMeta{Transcript: truncLines(150)})
 	raw, _ := json.Marshal(blocks)
 	s := string(raw)
 	if !strings.Contains(s, "🎙️ Transkript") || !strings.Contains(s, truncMarker) {

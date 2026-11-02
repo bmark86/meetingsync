@@ -372,7 +372,8 @@ Logging stays `*log.Logger` with identical texts. Named constants (A-17) and rea
 - Scope: new `internal/domain/`, changes in `*.go`.
 - Depends on: M1. Findings: A-03, A-06, A-15.
 - Model: opus, data model and error classes decide the retry semantics.
-- Reviews: CR, QA. ADR 0005.
+- Reviews: CR, QA. ADR 0015.
+- Status: done 2026-11-02. ADR 0015.
 
 #### R-M2-02 transcript
 - Goal: `classify.go` → `internal/transcript` (classify, parser, `meetingTiming`), pure functions; `*Config` replaced by an options struct.
@@ -752,7 +753,7 @@ Style like `docs/adr/0001-yaml-dependency.md` (Context, Decision, Alternatives c
 | 0003 | Golden test strategy | R-M0-05 | unit tests only / snapshots without normalization |
 | 0004 | Ledger states and crash behavior | R-M1-01, extended by R-M1-02 and R-M3-17 | idempotency marker in Notion (rejected by Mark: no DB change) |
 | 0005 | `golang.org/x/sys` for the atomic rename (delivered) | R-M1-04 | stdlib `os.Link` + `os.Remove`, status quo |
-| tbd | Package split and dependency direction (0005 is taken; use the next free number) | R-M2-01 | flat `package main` with one file per topic |
+| 0015 | Package split and dependency direction (number set by Mark at the M2 gate, 2026-11-02; 0005 is taken) | R-M2-01 | flat `package main` with one file per topic |
 | 0006 | Interfaces and dependency injection | R-M2-09 | package variables/monkeypatching for tests |
 | 0007 | LLM over loopback only | R-M3-01 | warning instead of abort |
 | 0008 | Notion over HTTPS only | R-M3-02 | warning instead of abort |

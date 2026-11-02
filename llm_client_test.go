@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"meetingsync/internal/domain"
 )
 
 // Hilfsmittel für die LLM-Client-Tests, Präfix lc (kollisionsfrei zu den anderen Testdateien).
@@ -105,7 +107,7 @@ func TestSummarizeParseErrorGivesUpAfterThreeAttempts(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "kein gültiges Notiz-JSON") {
 		t.Fatalf("err = %v", err)
 	}
-	if isTransient(err) {
+	if domain.IsTransient(err) {
 		t.Error("Parse-Fehler ist nicht transient (Datei soll nach max_attempts in _fehler)")
 	}
 	if len(s.reqs) != 3 {
@@ -194,7 +196,7 @@ func TestSummarizeNoFallbackWithoutSchemaOrOn5xx(t *testing.T) {
 
 	l, s = lcLLM(t, func(c *LLMConfig) { c.StructuredOutput = true }, lcReply{503, "down"}, lcChat(lcNote, "stop"))
 	_, err = l.Summarize(context.Background(), lcIn("hallo"))
-	if err == nil || !isTransient(err) || len(s.reqs) != 1 {
+	if err == nil || !domain.IsTransient(err) || len(s.reqs) != 1 {
 		t.Errorf("err = %v, Requests = %d, erwartet transient nach 1 Request", err, len(s.reqs))
 	}
 }
@@ -248,7 +250,7 @@ func TestSummarizeChunkBoundaryAndChunkError(t *testing.T) {
 
 	l, s = lcLLM(t, func(c *LLMConfig) { c.MaxChunkChars = 10 }, lcReply{503, "busy"})
 	_, err := l.Summarize(context.Background(), lcIn(strings.Repeat("y", 25)))
-	if err == nil || !isTransient(err) || len(s.reqs) != 1 {
+	if err == nil || !domain.IsTransient(err) || len(s.reqs) != 1 {
 		t.Errorf("err = %v, Requests = %d, erwartet transienten Fehler nach 1 Request", err, len(s.reqs))
 	}
 }
@@ -298,8 +300,8 @@ func TestChatErrorClassification(t *testing.T) {
 	for _, c := range cases {
 		l, _ := lcLLM(t, nil, c.reply)
 		_, err := l.chat(context.Background(), []chatMsg{{"user", "x"}}, nil)
-		if err == nil || !strings.Contains(err.Error(), c.contains) || isTransient(err) != c.transient {
-			t.Errorf("%s: err = %v (transient %v), erwartet %q / transient %v", c.name, err, err != nil && isTransient(err), c.contains, c.transient)
+		if err == nil || !strings.Contains(err.Error(), c.contains) || domain.IsTransient(err) != c.transient {
+			t.Errorf("%s: err = %v (transient %v), erwartet %q / transient %v", c.name, err, err != nil && domain.IsTransient(err), c.contains, c.transient)
 		}
 	}
 }
@@ -308,7 +310,7 @@ func TestChatErrorClassification(t *testing.T) {
 func TestChatUnreachableIsTransient(t *testing.T) {
 	l, _ := lcLLM(t, func(c *LLMConfig) { c.BaseURL = "http://127.0.0.1:1" })
 	_, err := l.chat(context.Background(), nil, nil)
-	if err == nil || !isTransient(err) || !strings.Contains(err.Error(), "nicht erreichbar") {
+	if err == nil || !domain.IsTransient(err) || !strings.Contains(err.Error(), "nicht erreichbar") {
 		t.Errorf("err = %v", err)
 	}
 }

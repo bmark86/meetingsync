@@ -25,6 +25,7 @@
 | R-M1-07 ⚠ | Archive backoff and regular files only: `archive()` failures retried after 2 min (not counted against `max_attempts`) on all archive paths; `listEntries` skips non-regular files (log `keine reguläre Datei … übersprungen`, fixes a FIFO hang); golden unchanged; ADR 0004, ADR 0005. Decisions: Mark (2026-11-02): failed folder fsync after a synced copy warns, move continues (also for `_fehler`); coordinator: summary retry gate before `HasNear` (rare error case: archived at `nextTry`, at most 16 min later, never a second note); retry-state helper merged in R-M2-09 | done | 2026-11-02 |
 | R-M1-EXIT | M1 exit: errcheck `check-blank: true`; test files excluded for errcheck (path-scoped); 28 blank-ignored errors in production code carry `//nolint:errcheck` with a German reason; no code change (identical after stripping comments); body read errors handled in R-M3-05 | done | 2026-11-02 |
 | R-M1-06 | Config validation: clamps and unknown keys as startup warnings; `llm.timeout_minutes` min 1 | done | 2026-11-02 |
+| R-M2-01 | `internal/domain` (types, `Transient`/`IsTransient`), `arch_test.go` dependency-direction test; domain coverage 100 %; golden byte-identical; ADR 0015. Decision: Mark (2026-11-02) ADR number 0015 | done | 2026-11-02 |
 
 ## M1 summary (complete 2026-11-02: R-M1-01 to R-M1-07 + R-M1-EXIT)
 
@@ -58,7 +59,7 @@ Decisions taken in M1:
 | Coordinator | `go 1.26.0` accepted | R-M1-04 |
 | Coordinator | No deletion after an identity mismatch (and after a syncDir error, see above) | R-M1-04 |
 
-Next: gate for M2. Fix the ADR numbering for the package split in the plan at the gate (follow-up 18).
+Next: M2 package split, R-M2-02 transcript.
 
 ## Open follow-ups
 
@@ -81,7 +82,7 @@ Next: gate for M2. Fix the ADR numbering for the package split in the plan at th
 | 15 | After an ambiguous `CreatePage` failure (5xx, network error, timeout, unreadable 2xx body) a retry can create duplicate pages (ADR 0004). Decided by Mark (2026-11-02) | Mark | planned (R-M3-17) |
 | 16 | R-M1-04 must not leave a growing number of copies in `_fehler` when `Remove(src)` fails; deleting meetingsync's own copy needs Mark's approval | Mark | done (R-M1-04, approved 2026-11-02) |
 | 17 | `archive()` failures (`Remove(src)`, folder fsync on the target volume) repeat every poll; `listEntries` accepts non-regular files | open | done (R-M1-07) |
-| 18 | Plan ADR numbering for the package split (was 0005, now taken by `golang.org/x/sys`): fix in the plan at the M2 gate | open | open (M2 gate) |
+| 18 | Plan ADR numbering for the package split (was 0005, now taken by `golang.org/x/sys`) | open | done (ADR 0015, Mark at the M2 gate, 2026-11-02) |
 | 19 | `handleError` deletes the retry state even when the move to `_fehler` fails: the file is reprocessed and `max_attempts` restarts from 0 (pre-existing since v1.0.0) | open | planned (R-M3-18) |
 | 20 | A regular file swapped for a symlink between `ReadDir` and `ReadFile` is still followed (low risk, local only) | open | planned (R-M3-19) |
 | 21 | Three copies of "get or create state, `nextTry` = now + 2 min" (`interrupted`, `archiveAt`, `handleError`) | open | planned (R-M2-09) |

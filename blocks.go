@@ -5,18 +5,12 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"meetingsync/internal/domain"
 )
 
-// NoteMeta enthält alles, was nicht vom Modell kommt.
-type NoteMeta struct {
-	Timing        Timing
-	SourceFiles   []string
-	ReviewReasons []string
-	Transcript    string // nur gesetzt, wenn include_transcript aktiv ist
-}
-
 // buildNoteBlocks baut die Seite exakt nach "📋 TEMPLATE - Meeting Notes".
-func buildNoteBlocks(n *MeetingNote, m NoteMeta) []any {
+func buildNoteBlocks(n *domain.MeetingNote, m domain.NoteMeta) []any {
 	var b []any
 
 	if len(m.ReviewReasons) > 0 {
@@ -102,7 +96,7 @@ func buildNoteBlocks(n *MeetingNote, m NoteMeta) []any {
 	return b
 }
 
-func formatTitle(format string, n *MeetingNote, t Timing) string {
+func formatTitle(format string, n *domain.MeetingNote, t domain.Timing) string {
 	r := strings.NewReplacer(
 		"{date}", t.Start.Format("2006-01-02"),
 		"{date_de}", t.Start.Format("02.01.2006"),

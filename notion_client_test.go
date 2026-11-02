@@ -12,6 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"meetingsync/internal/domain"
 )
 
 // Hilfsmittel für die Notion-Client-Tests. Alle Namen tragen das Präfix nc,
@@ -182,7 +184,7 @@ func TestDo429ExhaustedIsTransient(t *testing.T) {
 	sl := ncSleeps(t, true)
 	n, s := ncNotion(t, ncReply{status: 429, body: `{"code":"rate_limited","message":"slow down"}`})
 	err := n.do(context.Background(), http.MethodGet, "/x", nil, nil, true)
-	if err == nil || !isTransient(err) {
+	if err == nil || !domain.IsTransient(err) {
 		t.Fatalf("erwartet transienten Fehler, bekam %v", err)
 	}
 	var ae *apiError
@@ -202,7 +204,7 @@ func TestDoStopsRetryWhenSleepIsCancelled(t *testing.T) {
 	sl := ncSleeps(t, false)
 	n, s := ncNotion(t, ncReply{status: 429}, ncReply{status: 200})
 	err := n.do(context.Background(), http.MethodGet, "/x", nil, nil, true)
-	if err == nil || !isTransient(err) {
+	if err == nil || !domain.IsTransient(err) {
 		t.Fatalf("erwartet transienten 429-Fehler, bekam %v", err)
 	}
 	if len(s.reqs) != 1 || len(*sl) != 1 {
@@ -228,7 +230,7 @@ func TestDo5xxNotRetriedWhenNotIdempotent(t *testing.T) {
 	n, s := ncNotion(t, ncReply{status: 500, body: `{"code":"internal","message":"boom"}`}, ncReply{status: 200})
 	err := n.do(context.Background(), http.MethodPost, "/v1/pages", map[string]any{}, nil, false)
 	var ae *apiError
-	if !errors.As(err, &ae) || ae.Status != 500 || !isTransient(err) {
+	if !errors.As(err, &ae) || ae.Status != 500 || !domain.IsTransient(err) {
 		t.Fatalf("erwartet transienten 500-Fehler, bekam %v", err)
 	}
 	if len(s.reqs) != 1 || len(*sl) != 0 {
@@ -248,7 +250,7 @@ func TestDoNetworkErrorRetryOnlyWhenIdempotent(t *testing.T) {
 			return nil, errors.New("verbindung abgelehnt")
 		})
 		err := n.do(context.Background(), http.MethodPost, "/x", map[string]any{}, nil, idem)
-		if err == nil || !isTransient(err) || !strings.Contains(err.Error(), "Notion nicht erreichbar") {
+		if err == nil || !domain.IsTransient(err) || !strings.Contains(err.Error(), "Notion nicht erreichbar") {
 			t.Fatalf("idem=%v: erwartet transienten Netzwerkfehler, bekam %v", idem, err)
 		}
 		wantCalls, wantSleeps := 1, []time.Duration(nil)
@@ -294,8 +296,8 @@ func TestDoStatusClassification(t *testing.T) {
 		if !errors.As(err, &ae) || ae.Status != c.status || ae.Code != "c" || ae.Message != "m" {
 			t.Fatalf("%d: apiError = %v", c.status, err)
 		}
-		if isTransient(err) != c.transient {
-			t.Errorf("%d: transient = %v, erwartet %v", c.status, isTransient(err), c.transient)
+		if domain.IsTransient(err) != c.transient {
+			t.Errorf("%d: transient = %v, erwartet %v", c.status, domain.IsTransient(err), c.transient)
 		}
 		if strings.Contains(err.Error(), "Token gültig?") != c.hint {
 			t.Errorf("%d: Hinweistext = %v, erwartet %v (%v)", c.status, !c.hint, c.hint, err)
@@ -311,7 +313,7 @@ func TestDoErrorBodyNotJSON(t *testing.T) {
 	n, _ := ncNotion(t, ncReply{status: 400, body: "<html>bad</html>"})
 	err := n.do(context.Background(), http.MethodGet, "/x", nil, nil, true)
 	var ae *apiError
-	if !errors.As(err, &ae) || ae.Status != 400 || ae.Code != "" || isTransient(err) {
+	if !errors.As(err, &ae) || ae.Status != 400 || ae.Code != "" || domain.IsTransient(err) {
 		t.Errorf("err = %v", err)
 	}
 }

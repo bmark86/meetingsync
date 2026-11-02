@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 	"unicode/utf8"
+
+	"meetingsync/internal/domain"
 )
 
 func testCfg() *Config {
@@ -35,16 +37,16 @@ func TestClassify(t *testing.T) {
 	cfg := testCfg()
 	cases := []struct {
 		name, content string
-		want          Kind
+		want          domain.Kind
 	}{
-		{"a.srt", srtSample, KindTranscript},
-		{"b.txt", "[00:00:01] Speaker 1: Hallo\n[00:00:05] Speaker 2: Hi Mark\n[00:00:09] Speaker 1: Los geht's\n[00:00:15] Speaker 2: Okay\n", KindTranscript},
-		{"c.txt", "Speaker 1  00:00:01\nHallo zusammen\n\nSpeaker 2  00:00:07\nHi Mark\n\nSpeaker 1  00:00:12\nWir starten\n", KindTranscript},
-		{"d.md", "# Zusammenfassung\n\nDas Team hat über Sirius gesprochen.\n\n## Entscheidungen\n- Release am 15.11.\n- Mark klärt Budget\n\n## Nächste Schritte\n- Sascha baut Pipeline\n", KindSummary},
-		{"e.txt", "Kurze Zusammenfassung: Es ging um 10:30 Uhr Termine und das Budget.\nWeitere Punkte folgen.\n", KindSummary},
-		{"f.json", `{"segments":[{"start":0.5,"speaker":"SPEAKER_00","text":"Hallo"},{"start":3.2,"speaker":"SPEAKER_01","text":"Hi"}]}`, KindTranscript},
-		{"g.json", `{"summary":"Nur eine Zusammenfassung"}`, KindSummary},
-		{"h.m4a", "binary", KindUnsupported},
+		{"a.srt", srtSample, domain.KindTranscript},
+		{"b.txt", "[00:00:01] Speaker 1: Hallo\n[00:00:05] Speaker 2: Hi Mark\n[00:00:09] Speaker 1: Los geht's\n[00:00:15] Speaker 2: Okay\n", domain.KindTranscript},
+		{"c.txt", "Speaker 1  00:00:01\nHallo zusammen\n\nSpeaker 2  00:00:07\nHi Mark\n\nSpeaker 1  00:00:12\nWir starten\n", domain.KindTranscript},
+		{"d.md", "# Zusammenfassung\n\nDas Team hat über Sirius gesprochen.\n\n## Entscheidungen\n- Release am 15.11.\n- Mark klärt Budget\n\n## Nächste Schritte\n- Sascha baut Pipeline\n", domain.KindSummary},
+		{"e.txt", "Kurze Zusammenfassung: Es ging um 10:30 Uhr Termine und das Budget.\nWeitere Punkte folgen.\n", domain.KindSummary},
+		{"f.json", `{"segments":[{"start":0.5,"speaker":"SPEAKER_00","text":"Hallo"},{"start":3.2,"speaker":"SPEAKER_01","text":"Hi"}]}`, domain.KindTranscript},
+		{"g.json", `{"summary":"Nur eine Zusammenfassung"}`, domain.KindSummary},
+		{"h.m4a", "binary", domain.KindUnsupported},
 	}
 	for _, c := range cases {
 		if got := classify(c.name, []byte(c.content), cfg); got != c.want {
@@ -56,7 +58,7 @@ func TestClassify(t *testing.T) {
 func TestClassifyForcedExtension(t *testing.T) {
 	cfg := testCfg()
 	cfg.SummaryExtensions = normExts([]string{"txt"})
-	if got := classify("x.txt", []byte(srtSample), cfg); got != KindSummary {
+	if got := classify("x.txt", []byte(srtSample), cfg); got != domain.KindSummary {
 		t.Fatalf("erzwungene Endung ignoriert: %s", got)
 	}
 }

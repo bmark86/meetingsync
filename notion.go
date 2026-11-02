@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"meetingsync/internal/domain"
 )
 
 // Notion ist ein schlanker Client für die Notion-API (Version 2025-09-03,
@@ -67,7 +69,7 @@ func (n *Notion) do(ctx context.Context, method, path string, in, out any, idemp
 			if idempotent && attempt < 3 && sleepFn(ctx, backoff(attempt)) {
 				continue
 			}
-			return transient(fmt.Errorf("Notion nicht erreichbar: %w", err))
+			return domain.Transient(fmt.Errorf("Notion nicht erreichbar: %w", err))
 		}
 		body, _ := io.ReadAll(resp.Body) //nolint:errcheck // Lesefehler fuehrt unten zu Statusfehler ohne Details
 		_ = resp.Body.Close()            //nolint:errcheck // Body ist bereits gelesen, Close-Fehler ohne Folgen
@@ -87,10 +89,10 @@ func (n *Notion) do(ctx context.Context, method, path string, in, out any, idemp
 			ae := &apiError{Status: resp.StatusCode, Code: e.Code, Message: e.Message}
 			switch {
 			case resp.StatusCode == 429 || resp.StatusCode >= 500:
-				return transient(ae)
+				return domain.Transient(ae)
 			case resp.StatusCode == 401 || resp.StatusCode == 403 || resp.StatusCode == 404:
 				// Token oder Freigabe fehlt: Dateien sollen warten, nicht im Fehlerordner landen.
-				return transient(fmt.Errorf("%w – Token gültig? Ist die Integration mit der Datenbank verbunden?", ae))
+				return domain.Transient(fmt.Errorf("%w – Token gültig? Ist die Integration mit der Datenbank verbunden?", ae))
 			}
 			return ae
 		}
@@ -251,21 +253,7 @@ func (n *Notion) AppendChildren(ctx context.Context, blockID string, children []
 	return nil
 }
 
-// --- Fehlerklassen & Helfer ----------------------------------------------------
-
-type transientError struct{ err error }
-
-func (e transientError) Error() string { return e.err.Error() }
-func (e transientError) Unwrap() error { return e.err }
-
-// transient markiert Fehler, bei denen sich Warten lohnt (LM Studio aus,
-// kein Netz, Rate-Limit). Solche Dateien bleiben liegen und werden später erneut versucht.
-func transient(err error) error { return transientError{err} }
-
-func isTransient(err error) bool {
-	var t transientError
-	return errors.As(err, &t) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
-}
+// --- Helfer -------------------------------------------------------------------
 
 func backoff(attempt int) time.Duration {
 	d := time.Second << attempt
