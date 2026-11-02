@@ -17,6 +17,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 type App struct {
@@ -281,7 +283,7 @@ func (a *App) handle(ctx context.Context, j job, now time.Time) {
 		return
 	}
 	if a.ledger.Started(hash) || a.interruptedNow[hash] {
-		a.interrupted(j, hash)
+		a.interrupted(j, hash, now)
 		return
 	}
 	a.log.Printf("→ %s (%s, %d KB)", p.Name, map[bool]string{true: "nur Zusammenfassung", false: "Transkript"}[j.summaryOnly], p.Size/1024)
@@ -311,7 +313,7 @@ var errUnterbrochen = errors.New("Notion-Seite existiert evtl. schon – bitte i
 // interrupted: Der letzte Eintrag zu hash ist "begonnen", der Lauf davor
 // endete also zwischen "begonnen" und "fertig". Die Seite kann existieren:
 // nicht neu anlegen, sondern nach _fehler zur Prüfung durch Mark.
-func (a *App) interrupted(j job, hash string) {
+func (a *App) interrupted(j job, hash string, now time.Time) {
 	p := j.primary
 	a.log.Printf("✗ %s: letzter Lauf wurde beim Anlegen in Notion unterbrochen → %s (bitte in Notion prüfen)", p.Name, a.cfg.FailedDir)
 	// Partner zuerst, das Transkript zuletzt, Stopp beim ersten Fehler: bleibt
@@ -320,7 +322,16 @@ func (a *App) interrupted(j job, hash string) {
 	files := j.files()
 	for i := len(files) - 1; i >= 0; i-- {
 		if !a.fail(errUnterbrochen, files[i]) {
-			return // bleibt "begonnen": der nächste Durchlauf versucht es erneut
+			// bleibt "begonnen": neuer Versuch in 2 min statt bei jedem Durchlauf
+			// (Logzeile und Verschieben nicht alle poll_interval_seconds).
+			// Zählt nicht gegen max_attempts.
+			st := a.state[p.Path]
+			if st == nil {
+				st = &fileState{}
+				a.state[p.Path] = st
+			}
+			st.nextTry = now.Add(2 * time.Minute)
+			return
 		}
 	}
 	delete(a.state, p.Path)
@@ -727,7 +738,9 @@ func (a *App) fail(cause error, files ...*entry) (ok bool) {
 			continue
 		}
 		delete(a.cache, f.Path)
-		_ = os.WriteFile(dst+".fehler.txt", []byte(fmt.Sprintf("%s\n%v\n", time.Now().Format(time.RFC3339), cause)), 0o644)
+		if err := writeFehlerTxt(dst, cause); err != nil {
+			a.log.Printf("   ⚠️  Fehlerhinweis zu %s nicht geschrieben: %v", f.Name, err)
+		}
 	}
 	return ok
 }
@@ -740,7 +753,48 @@ func (a *App) warnOnce(key, format string, args ...any) {
 	a.log.Printf(format, args...)
 }
 
+// writeFehlerTxt legt dst.fehler.txt an, ohne einen vorhandenen Hinweis zu
+// überschreiben; ist der Name belegt, "dst (n).fehler.txt".
+func writeFehlerTxt(dst string, cause error) error {
+	data := []byte(fmt.Sprintf("%s\n%v\n", time.Now().Format(time.RFC3339), cause))
+	name := dst + ".fehler.txt"
+	for i := 2; ; i++ {
+		f, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644) //nolint:gosec // G304: Pfad aus moveFile unter failed_dir
+		if errors.Is(err, os.ErrExist) {
+			name = fmt.Sprintf("%s (%d).fehler.txt", dst, i)
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		_, err = f.Write(data)
+		if cerr := f.Close(); err == nil {
+			err = cerr
+		}
+		return err
+	}
+}
+
+// renameFn benennt src exklusiv in dst um (renamex_np mit RENAME_EXCL):
+// atomar, ein vorhandenes dst bleibt unangetastet (EEXIST). Nur Tests tauschen
+// sie aus.
+var renameFn = func(src, dst string) error {
+	if err := unix.RenamexNp(src, dst, unix.RENAME_EXCL); err != nil {
+		return &os.LinkError{Op: "renamex_np", Old: src, New: dst, Err: err}
+	}
+	return nil
+}
+
+// copyFn kopiert den Inhalt; nur Tests tauschen sie aus.
+var copyFn = io.Copy
+
 // moveFile verschiebt src nach dir, ohne vorhandene Dateien zu überschreiben.
+// Gleiches Volume: atomares Umbenennen mit RENAME_EXCL (ein Symlink wird als
+// Symlink verschoben). Anderes Volume oder Flag nicht unterstützt: Kopie mit
+// O_EXCL, Zielordner sync, dann src löschen, aber nur, wenn src noch die
+// kopierte Datei ist. Ist der Name belegt, "stem (n).ext". Gelöscht wird
+// außer src nur die eigene, eben angelegte Kopie (von Mark erlaubt,
+// 2026-11-02), und nur nach Identitätsprüfung.
 func moveFile(src, dir string) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
@@ -748,34 +802,119 @@ func moveFile(src, dir string) (string, error) {
 	base := filepath.Base(src)
 	ext := filepath.Ext(base)
 	stem := strings.TrimSuffix(base, ext)
-	dst := filepath.Join(dir, base)
-	for i := 2; ; i++ {
-		if _, err := os.Stat(dst); errors.Is(err, os.ErrNotExist) {
-			break
+	name := func(i int) string {
+		if i == 1 {
+			return filepath.Join(dir, base)
 		}
-		dst = filepath.Join(dir, fmt.Sprintf("%s (%d)%s", stem, i, ext))
+		return filepath.Join(dir, fmt.Sprintf("%s (%d)%s", stem, i, ext))
 	}
-	if err := os.Rename(src, dst); err == nil {
+	i := 1
+	for ; ; i++ {
+		err := renameFn(src, name(i))
+		if err == nil {
+			return name(i), nil
+		}
+		if errors.Is(err, os.ErrExist) {
+			continue
+		}
+		if !errors.Is(err, unix.EXDEV) && !errors.Is(err, unix.ENOTSUP) {
+			return "", err
+		}
+		break // anderes Volume oder RENAME_EXCL nicht unterstützt: kopieren
+	}
+	for ; ; i++ {
+		dst := name(i)
+		srcInfo, dstInfo, err := copyExcl(src, dst)
+		if errors.Is(err, os.ErrExist) {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		// Ordnereintrag der Kopie muss einen Absturz überstehen, bevor src weg ist.
+		if err := syncDir(dir); err != nil {
+			return "", fmt.Errorf("Zielordner nicht synchronisiert, Original und Kopie %s bleiben liegen: %w", dst, err)
+		}
+		cur, err := os.Lstat(src)
+		if err != nil || !os.SameFile(cur, srcInfo) {
+			msg := fmt.Sprintf("Quelle %s während des Kopierens ersetzt oder entfernt, Quelle und Kopie %s bleiben liegen", src, dst)
+			if err != nil {
+				msg += fmt.Sprintf(" (%v)", err)
+			}
+			return "", errors.New(msg)
+		}
+		if err := os.Remove(src); err != nil {
+			// Keine Kopie je Versuch ansammeln: nur die eigene, frische Kopie löschen,
+			// einmal und ohne Wiederholung.
+			if rerr := removeOwn(dst, dstInfo); rerr != nil {
+				return "", fmt.Errorf("Quelle nicht löschbar, Original bleibt liegen: %w; eigene Kopie %s nicht entfernt: %v", err, dst, rerr)
+			}
+			return "", fmt.Errorf("Quelle nicht löschbar, Original bleibt liegen, eigene Kopie entfernt: %w", err)
+		}
 		return dst, nil
 	}
-	// anderes Volume: kopieren + löschen
-	in, err := os.Open(src)
+}
+
+// copyExcl kopiert src nach dst; dst darf noch nicht existieren (O_EXCL).
+// Sync vor Close, damit die Kopie vor dem Löschen der Quelle auf Platte ist.
+// Liefert die Identität von Quelle und Kopie. Schlägt das Kopieren fehl,
+// löscht copyExcl die eigene Teilkopie (von Mark erlaubt, 2026-11-02).
+func copyExcl(src, dst string) (srcInfo, dstInfo os.FileInfo, err error) {
+	in, err := os.Open(src) //nolint:gosec // G304: Pfad aus dem Exportordner
 	if err != nil {
-		return "", err
+		return nil, nil, err
 	}
 	defer func() { _ = in.Close() }() // nur gelesen, Close-Fehler ohne Folgen
-	out, err := os.Create(dst)
+	if srcInfo, err = in.Stat(); err != nil {
+		return nil, nil, err
+	}
+	// Nur eine reguläre Datei, die noch unter src liegt (kein Symlink): sonst
+	// würde die Kopie bei jedem Versuch neu angelegt und bliebe liegen.
+	li, err := os.Lstat(src)
 	if err != nil {
-		return "", err
+		return nil, nil, err
 	}
-	if _, err := io.Copy(out, in); err != nil {
-		_ = out.Close() // der Kopierfehler wird zurückgegeben, Close-Fehler zweitrangig
-		return "", err
+	if !li.Mode().IsRegular() || !os.SameFile(li, srcInfo) {
+		return nil, nil, fmt.Errorf("Quelle %s ist keine reguläre Datei oder wurde ersetzt, nicht kopiert", src)
 	}
-	if err := out.Close(); err != nil {
-		return "", err
+
+	// Rechte wie bisher os.Create
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666) //nolint:gosec // G302/G304: Pfad aus moveFile
+	if err != nil {
+		return nil, nil, err
 	}
-	return dst, os.Remove(src)
+	dstInfo, err = out.Stat()
+	if err == nil {
+		_, err = copyFn(out, in)
+	}
+	if err == nil {
+		err = out.Sync()
+	}
+	if cerr := out.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		if rerr := removeOwn(dst, dstInfo); rerr != nil {
+			return nil, nil, fmt.Errorf("Kopie nach %s fehlgeschlagen: %w; Teilkopie nicht entfernt: %v", dst, err, rerr)
+		}
+		return nil, nil, fmt.Errorf("Kopie nach %s fehlgeschlagen, Teilkopie entfernt: %w", dst, err)
+	}
+	return srcInfo, dstInfo, nil
+}
+
+// removeOwn löscht path nur, wenn es noch die selbst angelegte Datei own ist.
+func removeOwn(path string, own os.FileInfo) error {
+	if own == nil {
+		return errors.New("Identität der eigenen Kopie unbekannt")
+	}
+	cur, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if !os.SameFile(cur, own) {
+		return fmt.Errorf("%s ist nicht mehr die eigene Kopie", path)
+	}
+	return os.Remove(path)
 }
 
 // --- Protokoll gegen Doppelverarbeitung ---------------------------------------

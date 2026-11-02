@@ -19,6 +19,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - R-M1-06: config warnings at startup (log): clamps as `Konfiguration: <key>=<n> ist zu klein, verwende <min>` (`poll_interval_seconds`, `max_attempts`, `llm.max_chunk_chars`, `llm.timeout_minutes`); unknown keys (YAML/JSON, nested) as `Konfiguration: unbekannter Schlüssel "<pfad>" wird ignoriert`, key path only, never the value.
 
 ### Changed
+- R-M1-04 ⚠: new dependency `golang.org/x/sys` v0.49.0 (approved by Mark, 2026-11-02), only for the atomic no-overwrite rename. `go` directive `1.26` → `1.26.0` (forced by x/sys); toolchain go1.26.10 unchanged. Linux build unsupported (`RenamexNp` is darwin-only). See ADR 0005.
+- R-M1-04: a failed move (restart rule) is retried after 2 min via the retry state, not on every poll and not counted against `max_attempts`. See ADR 0004.
 - R-M0-03: 12 lint findings fixed, no behavior change.
 - R-M1-01 ⚠: ledger lines carry a status (`begonnen`, `fertig`, `verworfen`); last line per hash wins; `Has`/`HasNear` count only `fertig`. `fertig` lines stay byte-identical to v1.0.0; other lines use field `sha256`, so v1.0.0 skips them. `Add` fsyncs and returns write/sync/close errors. See ADR 0004.
 - R-M1-06 ⚠: `llm.timeout_minutes` below 1 (e.g. 0) is now clamped to 1 (was: no timeout).
@@ -27,11 +29,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Docs: review report, refactoring plan; documentation switched to plain English.
 
 ### Fixed
+- R-M1-04: `moveFile` never overwrites an existing target: same volume uses `unix.RenamexNp` with `RENAME_EXCL` (on `EEXIST` the next name `stem (n).ext`). On `EXDEV`/`ENOTSUP` the copy fallback checks the source (regular file, same identity, symlinks refused), copies with `O_CREATE|O_EXCL`, syncs file and target folder, and checks identity before `Remove(src)`. Other rename errors are returned.
+- R-M1-04: no accumulating copies. If `Remove(src)` fails, only meetingsync's own fresh copy is deleted (identity-checked), the original stays, with a warning. A partial copy after an `io.Copy`/`Sync`/`Close` error is deleted too (own copy only). Both deletions approved by Mark. After a folder fsync error or an identity mismatch both files stay.
+- R-M1-04: `.fehler.txt` is created with `O_EXCL` (next name on conflict); write errors are logged (`Fehlerhinweis zu <name> nicht geschrieben: …`).
 - R-M1-02: restart rule: a file whose last ledger status is `begonnen` goes to `_fehler` (partner first, primary last) with a `.fehler.txt` note to check Notion, log line `letzter Lauf wurde beim Anlegen in Notion unterbrochen`, then `verworfen`; identical copies in the same pass follow. No second page at the tested crash points (after `begonnen`, `CreatePage`, tasks, `fertig`, archive; failed partner move; identical copy).
 - R-M1-03: missing tasks and blocks are no longer silent. The `fertig` ledger line gets optional fields `todos_fehlen` and `bloecke_fehler` (only when something is missing; normal path byte-identical to v1.0.0, v1.0.0 reads such lines as done). New log line `⚠️  <Datei>: Notiz unvollständig – N To-do(s) nicht angelegt, M Fehler beim Anhängen von Blöcken (nicht nachgeholt)` (file name and counts only). A context cancel in `createTasks` stops further task requests; a cancel after the page exists ends as `fertig` with URL (archived, no `_fehler` after restart, no second page). Missing parts are only recorded, not made up later (OD-04). See ADR 0004.
 - e2e test archive month no longer depends on the local time zone
 
 ### Security
+- R-M1-04: closes the overwrite window in `moveFile` (S-14). New dependency `golang.org/x/sys`: `go.sum` hashes verified against sum.golang.org, govulncheck clean, Dependabot covers `gomod`. Accepted residual risk: path-based `Remove` between `Lstat` and unlink. See ADR 0005.
 - Toolchain pinned to go1.26.10 (fixes 26 reachable stdlib vulnerabilities, govulncheck clean). See ADR 0002.
 - R-M0-11: go directive raised to 1.26 – stricter TLS/x509/URL defaults, post-quantum key exchange; no change in output (golden tests unchanged, live -check green)
 

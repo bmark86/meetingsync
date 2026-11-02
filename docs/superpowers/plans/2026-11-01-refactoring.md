@@ -12,21 +12,21 @@ Finding IDs (A-xx, S-xx) and decisions (D1-D13): [review report](../../reviews/2
 | Milestone | Tasks | Count |
 | --- | --- | --- |
 | M0 Safety net and tooling | R-M0-01 to R-M0-11 | 11 |
-| M1 Correct error paths | R-M1-01 to R-M1-06 | 6 |
+| M1 Correct error paths | R-M1-01 to R-M1-07 | 7 |
 | M2 Package split | R-M2-01 to R-M2-10 | 10 |
 | M3 Security hardening | R-M3-01 to R-M3-17 | 17 |
 | M4 Repo hygiene | R-M4-01 to R-M4-03 | 3 |
 | M5 Performance and robustness | R-M5-01 to R-M5-03 | 3 |
 | M6 Documentation | R-M6-01 to R-M6-03 | 3 |
-| **Total** | | **53** |
+| **Total** | | **54** |
 
 | Model | Tasks |
 | --- | --- |
-| opus | 24 |
+| opus | 25 |
 | sonnet | 22 |
 | haiku | 7 |
 
-New in this version: R-M0-11 (raise the `go` directive, see ADR 0002), R-M3-13, R-M3-14, R-M3-15 (formerly optional R-OPT-02, R-OPT-03, R-OPT-04, now mandatory), R-M3-16 (to-do count, decided 2026-11-02), R-M3-17 (no duplicate page after an ambiguous `CreatePage` failure, decided 2026-11-02). R-OPT-01 and R-OPT-05 are rejected, no task.
+New in this version: R-M0-11 (raise the `go` directive, see ADR 0002), R-M3-13, R-M3-14, R-M3-15 (formerly optional R-OPT-02, R-OPT-03, R-OPT-04, now mandatory), R-M3-16 (to-do count, decided 2026-11-02), R-M3-17 (no duplicate page after an ambiguous `CreatePage` failure, decided 2026-11-02). R-M1-07 (follow-up of R-M1-04: archive backoff, regular files only). R-OPT-01 and R-OPT-05 are rejected, no task.
 
 ### Top guardrail: same output and outcome on the normal path
 
@@ -44,6 +44,7 @@ Exceptions only with Mark's decision. They are marked in the task as **⚠ behav
 | ⚠ task | Change | Decision | ADR |
 | --- | --- | --- | --- |
 | R-M1-01, R-M1-02 | Ledger lines with status; "started without URL" → `_fehler` | D1 | 0004 |
+| R-M1-04 | New dependency `golang.org/x/sys` for the atomic rename; `go` 1.26 → 1.26.0; deleting own fresh/partial copy | Mark, 2026-11-02 | 0005 |
 | R-M3-01 | Abort at start if `llm.base_url` is not loopback | D3 | 0007 |
 | R-M3-12 | Note with to-dos for Mark → `Prüfen` flag, notice box, notification | D5 | 0010 |
 | R-M0-11 | `go` directive 1.22 → 1.26: stricter TLS/x509/url/http defaults | Mark, 2026-11-01 (OD-01 revisited) | 0002 (extended) |
@@ -66,7 +67,7 @@ Error paths (M1, M3) may get new log lines and error messages. This goes into th
 
 **Non-goals:**
 - No new features. No new CLI flags. The behavior changes in the ⚠ table are the only exceptions.
-- No new prod dependencies. Stays: stdlib + `go.yaml.in/yaml/v3`. Tools for CI/lint that do not go into the binary are allowed (golangci-lint, govulncheck), with no entry in `go.mod`.
+- No new prod dependencies. Stays: stdlib + `go.yaml.in/yaml/v3` + `golang.org/x/sys` (approved by Mark, 2026-11-02, only for the atomic rename in R-M1-04, ADR 0005). Tools for CI/lint that do not go into the binary are allowed (golangci-lint, govulncheck), with no entry in `go.mod`.
 - No switch to `log/slog` (rejected, OD-21).
 - No log rotation and no reduced log content (rejected, OD-19).
 - No change to Notion databases, to `~/.config/meetingsync/`, to the watch folder, or to `~/bin/meetingsync`.
@@ -147,7 +148,7 @@ Confirmed by Mark (OD-16: yes). Measure with: `go test -coverprofile=cover.out .
 
 1. `make check` is green (from R-M0-02: vet + lint + test -race + vuln).
 2. `git diff --exit-code -- testdata/golden` is empty (exception: ⚠ tasks, diff explained).
-3. `go.mod`/`go.sum`: no new prod dependency (`go list -m all` unchanged, except R-M0-01).
+3. `go.mod`/`go.sum`: no new prod dependency (`go list -m all` unchanged, except R-M0-01 and R-M1-04: `golang.org/x/sys`).
 4. Docs and ADR in the same task (docs-writer), in plain English (Language guardrail): changelog line, `docs/progress.md`, ADR as in table 7.
 5. Reviews: code-reviewer always; security-reviewer for secrets, network, files, processes or supply chain (column "SR"); qa against the acceptance criteria.
 6. No build to `~/bin`, no access to `~/.config/meetingsync/`, the watch folder or `~/Library/LaunchAgents`.
@@ -319,7 +320,8 @@ Exit: A-01, A-02, A-11, A-12, S-13, S-14, S-15 closed; golden unchanged except `
 - Model: opus, error path with persistence.
 - Reviews: CR, QA.
 
-#### R-M1-04 moveFile without overwriting
+#### R-M1-04 moveFile without overwriting ⚠
+⚠ Delivered 2026-11-02 with a different technique than first planned (`RenamexNp` instead of `os.Link` + `os.Remove`), see ADR 0005. The acceptance text below is the original plan.
 - Goal: exclusive target, sync in the copy path, errors from `.fehler.txt` logged.
 - Acceptance: the target is never overwritten (same volume: `os.Link` + `os.Remove`; otherwise copy with `O_CREATE|O_EXCL`, `Sync`, then `Remove`); on `EEXIST` the next name `stem (n).ext` as today; test with a target created beforehand and a target created in parallel; test for the fallback without hardlink support (seam); normal-path golden (`tree.txt`) unchanged.
   - No accumulating copies (deferred from R-M1-02 review): if the copy fallback copies successfully but `Remove(src)` fails, the restart rule (ADR 0004, no backoff) must not leave one more copy in `_fehler` on every pass, and the log line `letzter Lauf wurde beim Anlegen in Notion unterbrochen …` must not repeat every poll. Either backoff for the restart rule or no copy fallback when the source cannot be removed; test with a failing `Remove`.
@@ -335,6 +337,18 @@ Exit: A-01, A-02, A-11, A-12, S-13, S-14, S-15 closed; golden unchanged except `
 - Scope: `app.go` (`handle`, `archive`), tests.
 - Depends on: R-M1-04. Findings: S-15.
 - Model: opus, file atomicity.
+- Reviews: CR, SR, QA.
+
+#### R-M1-07 Archive backoff and regular files only
+- Goal: failures in `archive()` do not repeat every poll; only regular files are picked up.
+- Acceptance:
+  - (a) `archive()` failures (`Remove(src)` fails, folder fsync fails on the target volume) set a `nextTry` backoff like the restart rule, so neither log lines nor copies repeat every poll.
+  - (b) `listEntries` skips anything that is not a regular file (symlinks etc.).
+  - (c) OPEN, decide with Mark: should a failed folder fsync on the target volume warn and continue?
+  - Pass-level tests over 3 passes count files and log lines; golden unchanged.
+- Scope: `app.go` (`archive`, `listEntries`), tests.
+- Depends on: R-M1-05 (both change `app.go`, sequential). Findings: follow-up of R-M1-04.
+- Model: opus, file atomicity and retry state.
 - Reviews: CR, SR, QA.
 
 #### R-M1-06 Config validation
@@ -703,7 +717,7 @@ Parallel only with disjoint files and `isolation: "worktree"`.
 | P1 | R-M0-01 → R-M0-02 → R-M0-03 → R-M0-04 (R-M0-11 follows in P3 once R-M0-05 to R-M0-07 are done) | after R-M0-01: R-M0-05 (new test files only); right away: R-M4-01 (example configs, README, config_test.go); R-M3-10 (plist, launchd.md) | `go.mod`/Makefile/CI chain vs. new files |
 | P2 | R-M0-05 → R-M0-06 / R-M0-07 | R-M0-06 ∥ R-M0-07 only if scenarios are in separate files (`golden_flow_test.go`, `golden_cli_test.go`) | Shared golden directories are disjoint |
 | P3 | R-M0-08, R-M0-09, R-M0-10, R-M0-11 | in parallel with each other (separate test files); R-M0-11 touches only `go.mod` and docs | R-M0-09 only after R-M0-03; R-M0-11 only after R-M0-05 to R-M0-07 |
-| P4 | R-M1-01 → R-M1-02 → R-M1-03; R-M1-04 → R-M1-05 | R-M1-06 (config.go, main.go) | All other M1 tasks change `app.go` → one after another (order: 01, 02, 03, 04, 05) |
+| P4 | R-M1-01 → R-M1-02 → R-M1-03; R-M1-04 → R-M1-05 → R-M1-07 | R-M1-06 (config.go, main.go) | All other M1 tasks change `app.go` → one after another (order: 01, 02, 03, 04, 05, 07) |
 | P5 | R-M2-01 → 02 → 03 → 04 → 05 → 06 → 07 → 08 → 09 → 10 | none | Every cut changes callers in `app.go` |
 | P6 | Lane Config: R-M3-09 → R-M3-01 → R-M3-02 → R-M3-11 → R-M3-15 (R-M3-15 also after R-M3-07) | Lane Files: R-M3-03 → R-M3-04 → R-M3-14; Lane HTTP: R-M3-05 → R-M3-06 (after OD-11) → R-M3-08; Lane Processes: R-M3-07; Lane CLI: R-M3-13; R-M3-12 → R-M3-16 (sequential: same notification/log code and golden G16b) | Packages are disjoint after M2 |
 | P7 | R-M4-02 | nothing (no open branches) | The rewrite needs a quiet state; earliest after R-M4-01, latest before the next release; ask OD-15 first |
@@ -719,7 +733,8 @@ Style like `docs/adr/0001-yaml-dependency.md` (Context, Decision, Alternatives c
 | 0002 | Toolchain pin, CI and supply chain | R-M0-01, extended by R-M0-04 | only install a newer Go locally |
 | 0003 | Golden test strategy | R-M0-05 | unit tests only / snapshots without normalization |
 | 0004 | Ledger states and crash behavior | R-M1-01, extended by R-M1-02 and R-M3-17 | idempotency marker in Notion (rejected by Mark: no DB change) |
-| 0005 | Package split and dependency direction | R-M2-01 | flat `package main` with one file per topic |
+| 0005 | `golang.org/x/sys` for the atomic rename (delivered) | R-M1-04 | stdlib `os.Link` + `os.Remove`, status quo |
+| tbd | Package split and dependency direction (0005 is taken; use the next free number) | R-M2-01 | flat `package main` with one file per topic |
 | 0006 | Interfaces and dependency injection | R-M2-09 | package variables/monkeypatching for tests |
 | 0007 | LLM over loopback only | R-M3-01 | warning instead of abort |
 | 0008 | Notion over HTTPS only | R-M3-02 | warning instead of abort |

@@ -20,7 +20,9 @@
 | R-M1-01 | Ledger with status (`begonnen`/`fertig`/`verworfen`), fsync in `Add`; v1.0.0 compatible; ADR 0004 | done | 2026-11-02 |
 | R-M1-02 ⚠ | Crash-safe flow: `begonnen` before `CreatePage`, restart rule to `_fehler`, crash matrix tests; ADR 0004. Decisions: identical-copy hash set per pass (coordinator); OD-05 residual risk becomes R-M3-17 (Mark, 2026-11-02); moveFile copy-fallback accumulation deferred to R-M1-04 | done | 2026-11-02 |
 | R-M1-03 | Do not lose tasks and remaining blocks silently: gaps counted in the `fertig` line (`todos_fehlen`, `bloecke_fehler`) and logged; cancel stops task requests; `CreatePage` returns `errUnvollstaendig`; golden unchanged; ADR 0004. Decisions: `LoadLedger` does not read the gap fields back (coordinator); per-task log line `To-do %q nicht angelegt` still contains the task text, stays per D10 (coordinator); OD-04: missing parts only recorded | done | 2026-11-02 |
-| R-M1-04 | Archive/move failures (next). OPEN gate question for Mark: may meetingsync delete its own fresh copy when `Remove(src)` fails? | next | – |
+| R-M1-04 ⚠ | moveFile without overwriting: atomic `RenamexNp` (RENAME_EXCL), safe copy fallback, `.fehler.txt` with O_EXCL, failed move retried after 2 min; ADR 0005, ADR 0004. Decisions: Mark (2026-11-02) approved dependency `golang.org/x/sys` and deleting own fresh/partial copy; coordinator: no other deletions, EINVAL no fallback trigger, `go 1.26.0` accepted, Linux unsupported, TOCTOU between `Lstat` and `Remove` accepted | done | 2026-11-02 |
+| R-M1-05 | TOCTOU recheck before archive (next) | next | – |
+| R-M1-07 | Archive backoff and regular files only (follow-up of R-M1-04, after R-M1-05) | planned | – |
 | R-M1-06 | Config validation: clamps and unknown keys as startup warnings; `llm.timeout_minutes` min 1 | done | 2026-11-02 |
 
 ## Open follow-ups
@@ -42,4 +44,5 @@
 | 13 | G10b freezes OS/Go-specific "connection refused" text. Watched in R-M0-11 | Mark | done (unchanged with go 1.26) |
 | 14 | Before rebuilding `~/bin` (R-M1-02): new `begonnen` lines appear in the ledger (v1.0.0 skips them). A crash during page creation leaves the file in `_fehler` with a note to check Notion; if the page is missing, move the file(s) back into the export folder | Mark | open |
 | 15 | After an ambiguous `CreatePage` failure (5xx, network error, timeout, unreadable 2xx body) a retry can create duplicate pages (ADR 0004). Decided by Mark (2026-11-02) | Mark | planned (R-M3-17) |
-| 16 | R-M1-04 must not leave a growing number of copies in `_fehler` when `Remove(src)` fails; deleting meetingsync's own copy needs Mark's approval | Mark | planned (R-M1-04, question for the gate) |
+| 16 | R-M1-04 must not leave a growing number of copies in `_fehler` when `Remove(src)` fails; deleting meetingsync's own copy needs Mark's approval | Mark | done (R-M1-04, approved 2026-11-02) |
+| 17 | `archive()` failures (`Remove(src)`, folder fsync on the target volume) repeat every poll; `listEntries` accepts non-regular files | open | planned (R-M1-07) |

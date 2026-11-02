@@ -1,6 +1,6 @@
 # meetingsync
 
-Go tool (macOS, stdlib plus `go.yaml.in/yaml/v3`, `go 1.26`, `toolchain go1.26.10`): MacWhisper export → local LLM (LM Studio, Gemma) → meeting note in Notion (Notes, Tasks, Projects). Runs all the time via launchd. Details and configuration: `README.md`.
+Go tool (macOS, stdlib plus `go.yaml.in/yaml/v3` and `golang.org/x/sys`, `go 1.26.0`, `toolchain go1.26.10`): MacWhisper export → local LLM (LM Studio, Gemma) → meeting note in Notion (Notes, Tasks, Projects). Runs all the time via launchd. Details and configuration: `README.md`.
 
 ## Flow
 
@@ -40,7 +40,7 @@ Retry: temporary errors (LM Studio or Notion not reachable (including timeout), 
 
 - Privacy: the raw transcript never leaves the Mac. Only the finished note goes to Notion (transcript only with `include_transcript`).
 - Never put the Notion token in the repo: `NOTION_TOKEN` → Keychain (`meetingsync-notion`, only if `token_keychain_service` is set; an error there aborts) → `notion.token`. The real `config.yaml` (or `config.json`) is in `~/.config/meetingsync/`.
-- Stdlib only, the single exception is `go.yaml.in/yaml/v3`; no other dependencies without asking first.
+- Stdlib only, the exceptions are `go.yaml.in/yaml/v3` and `golang.org/x/sys` (only for the atomic no-overwrite rename `unix.RenamexNp` with `RENAME_EXCL`, approved 2026-11-02); no other dependencies without asking first.
 - Code comments, log messages and Notion content are German; all documentation (README, CLAUDE.md, docs/) is plain English.
 
 ## Agent team
