@@ -1,4 +1,4 @@
-package main
+package notion
 
 import (
 	"path/filepath"
@@ -9,8 +9,8 @@ import (
 	"meetingsync/internal/domain"
 )
 
-// buildNoteBlocks baut die Seite exakt nach "📋 TEMPLATE - Meeting Notes".
-func buildNoteBlocks(n *domain.MeetingNote, m domain.NoteMeta) []any {
+// NoteBlocks baut die Seite exakt nach "📋 TEMPLATE - Meeting Notes".
+func NoteBlocks(n *domain.MeetingNote, m domain.NoteMeta) []any {
 	var b []any
 
 	if len(m.ReviewReasons) > 0 {
@@ -96,7 +96,8 @@ func buildNoteBlocks(n *domain.MeetingNote, m domain.NoteMeta) []any {
 	return b
 }
 
-func formatTitle(format string, n *domain.MeetingNote, t domain.Timing) string {
+// FormatTitle setzt Datum, Titel und Typ in das Titelformat ein.
+func FormatTitle(format string, n *domain.MeetingNote, t domain.Timing) string {
 	r := strings.NewReplacer(
 		"{date}", t.Start.Format("2006-01-02"),
 		"{date_de}", t.Start.Format("02.01.2006"),

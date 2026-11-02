@@ -398,6 +398,7 @@ Logging stays `*log.Logger` with identical texts. Named constants (A-17) and rea
 - Acceptance: 0 string-literal comparisons of property types outside the mapping function; payload byte-identical (golden G01-G16); no `url.PathEscape` yet (R-M3-08).
 - Scope: `notion.go`, `blocks.go`, `app.go` (Init, noteProps, createTasks), new `internal/notion/`.
 - Depends on: R-M2-01. Findings: A-07, A-04, A-15.
+- Status: done 2026-11-02. `PropertyKind` is a string type with the Notion API names; `PageWriter` is defined, `App` still holds `*notion.Client` (wiring in R-M2-09). Follow-ups: R-M3-05, R-M2-09.
 - Model: opus, data model of the Notion payload, every deviation ends up in Notion.
 - Reviews: CR, SR, QA.
 
@@ -438,6 +439,8 @@ Logging stays `*log.Logger` with identical texts. Named constants (A-17) and rea
 - Acceptance: no `time.Now()` and no `os.*` in `pipeline`; the three copies of "get or create the file state, `nextTry` = now + 2 min" (`interrupted`, `archiveAt`, `handleError`) are merged into one helper (follow-up of R-M1-07); retry tests use the constructor (no struct literal like app_retry_test.go:26); golden unchanged; coverage of `pipeline` ≥ 85 %.
   - Replace the temporary package variable `sleepFn` (notion.go, from R-M0-09) by dependency injection.
   - Switch the test helper `newFlowApp` (app_flow_test.go, builds App with notion=nil) to the new interface fakes.
+  - Replace the test helper `hookNotion` (app_crash_test.go), which duplicates client construction, by injecting the transport/`PageWriter` (follow-up of R-M2-04).
+  - Decide the placement of `FormatTitle` and `deadlineLabel` (`internal/notion` vs `domain`/`pipeline`).
 - Scope: `app.go`, `app_retry_test.go`, new `internal/pipeline/`.
 - Depends on: R-M2-02 to R-M2-08. Findings: A-04, A-05.
 - Model: opus, state, retry and ledger order.
@@ -491,7 +494,7 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 
 #### R-M3-05 Limit response sizes
 - Goal: `io.LimitReader` for LLM and Notion responses, `Models()` checks the status code.
-- Acceptance: limit per client as a constant (value in the task, well above real responses); exceeding it → own error; `Models()` at ≥ 300 → error with status; tests with an oversized response; read errors of response bodies are no longer discarded (notion.go `data, _ := io.ReadAll`, llm.go): a truncated 2xx response is treated safely (security review: a truncated 2xx answer to POST /v1/pages risks a duplicate); golden unchanged.
+- Acceptance: limit per client as a constant (value in the task, well above real responses); exceeding it → own error; `Models()` at ≥ 300 → error with status; tests with an oversized response; read errors of response bodies are no longer discarded (notion.go `data, _ := io.ReadAll`, llm.go): a truncated 2xx response is treated safely (security review: a truncated 2xx answer to POST /v1/pages risks a duplicate); golden unchanged. Also limit response body reads with `io.LimitReader` (e.g. 10 MiB) in `internal/notion/client.go` and the LLM client (security review R-M2-04, LOW, pre-existing).
 - Scope: `internal/llm`, `internal/notion`, tests.
 - Depends on: M2. Findings: S-08, A-15.
 - Model: sonnet, clearly bounded limit.

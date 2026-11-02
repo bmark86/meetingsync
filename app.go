@@ -21,6 +21,7 @@ import (
 
 	"meetingsync/internal/domain"
 	"meetingsync/internal/ledger"
+	"meetingsync/internal/notion"
 	"meetingsync/internal/transcript"
 )
 
@@ -29,11 +30,11 @@ type App struct {
 	log    *log.Logger
 	dry    bool
 	llm    *LLM
-	notion *Notion
+	notion *notion.Client
 	ledger *ledger.Ledger
 
 	notesDS, tasksDS, projectsDS          string
-	notesTypes, tasksTypes, projectsTypes map[string]string
+	notesTypes, tasksTypes, projectsTypes notion.Schema
 
 	state  map[string]*fileState
 	warned map[string]bool
@@ -44,7 +45,7 @@ type App struct {
 	// Datei auch ohne Neustart des Prozesses wieder normal läuft (ADR 0004).
 	interruptedNow map[string]bool
 
-	projects   []pageRef
+	projects   []notion.Page
 	projectsAt time.Time
 }
 
@@ -96,7 +97,7 @@ func NewApp(cfg *Config, logger *log.Logger, dry bool) (*App, error) {
 	token, err := cfg.NotionToken()
 	switch {
 	case err == nil:
-		a.notion = NewNotion(cfg.Notion, token)
+		a.notion = notion.NewClient(cfg.Notion.BaseURL, cfg.Notion.APIVersion, token, nil)
 	case dry:
 		logger.Printf("Hinweis: %v – Dry-Run läuft ohne Notion (keine Projektliste).", err)
 	default:
@@ -125,13 +126,10 @@ func (a *App) Init(ctx context.Context) error {
 	if a.notesDS, a.notesTypes, err = a.notion.ResolveDataSource(ctx, nc.NotesDataSourceID); err != nil {
 		return fmt.Errorf("Notes-Datenbank nicht lesbar: %w", err)
 	}
-	if a.notesTypes[nc.Notes.Title] != "title" {
-		return fmt.Errorf("Notes-Datenbank: Titel-Property %q nicht gefunden", nc.Notes.Title)
+	if err := a.notesTypes.CheckNotes(notion.NotesProps(nc.Notes)); err != nil {
+		return err
 	}
-	if t := a.notesTypes[nc.Notes.Status]; t != "status" && t != "select" {
-		return fmt.Errorf("Notes-Datenbank: Status-Property %q nicht gefunden", nc.Notes.Status)
-	}
-	if a.notesTypes[nc.Notes.Review] != "checkbox" {
+	if !a.notesTypes.Is(nc.Notes.Review, notion.KindCheckbox) {
 		a.log.Printf("Hinweis: Notes hat keine Checkbox %q – Prüf-Hinweise stehen nur als Hinweisbox oben auf der Seite.", nc.Notes.Review)
 	}
 
@@ -139,8 +137,8 @@ func (a *App) Init(ctx context.Context) error {
 		if a.tasksDS, a.tasksTypes, err = a.notion.ResolveDataSource(ctx, nc.TasksDataSourceID); err != nil {
 			return fmt.Errorf("Tasks-Datenbank nicht lesbar: %w", err)
 		}
-		if a.tasksTypes[nc.Tasks.Title] != "title" {
-			return fmt.Errorf("Tasks-Datenbank: Titel-Property %q nicht gefunden", nc.Tasks.Title)
+		if err := a.tasksTypes.CheckTasks(notion.TasksProps(nc.Tasks)); err != nil {
+			return err
 		}
 	}
 	if nc.ProjectsDataSourceID != "" {
@@ -439,14 +437,14 @@ func (a *App) process(ctx context.Context, j job, hash string) (string, gaps, er
 	if j.summaryOnly {
 		reasons = append(reasons, "Kein Transkript mit Zeitmarken gefunden – Notiz basiert auf einer Datei ohne Sprecher/Zeitstempel")
 	}
-	var project *pageRef
+	var project *notion.Page
 	for i := range projects {
 		if strings.EqualFold(projects[i].Name, note.Projekt) {
 			project = &projects[i]
 			break
 		}
 	}
-	title := formatTitle(a.cfg.TitleFormat, note, timing)
+	title := notion.FormatTitle(a.cfg.TitleFormat, note, timing)
 	meta := domain.NoteMeta{Timing: timing, ReviewReasons: reasons}
 	for _, f := range j.files() {
 		meta.SourceFiles = append(meta.SourceFiles, f.Name)
@@ -454,7 +452,7 @@ func (a *App) process(ctx context.Context, j job, hash string) (string, gaps, er
 	if a.cfg.IncludeTranscript {
 		meta.Transcript = text
 	}
-	blocks := buildNoteBlocks(note, meta)
+	blocks := notion.NoteBlocks(note, meta)
 
 	if a.dry {
 		a.printDryRun(title, project, note, reasons, len(blocks))
@@ -472,8 +470,8 @@ func (a *App) process(ctx context.Context, j job, hash string) (string, gaps, er
 		}
 	}
 	var g gaps
-	pageID, url, err := a.notion.CreatePage(ctx, a.notesDS, a.noteProps(title, project, len(reasons) > 0), blocks)
-	if errors.Is(err, errUnvollstaendig) {
+	pageID, url, err := a.notion.CreatePage(ctx, a.notesDS, notion.NoteProperties(a.notesTypes, notion.NotesProps(a.cfg.Notion.Notes), title, project, len(reasons) > 0), blocks)
+	if errors.Is(err, notion.ErrUnvollstaendig) {
 		// Seite existiert: kein Fehler, sonst entsteht beim nächsten Versuch eine Dublette.
 		a.log.Printf("   ⚠️  %v", err)
 		g.blocks, err = 1, nil
@@ -510,32 +508,14 @@ func (a *App) process(ctx context.Context, j job, hash string) (string, gaps, er
 	return url, g, nil
 }
 
-func (a *App) noteProps(title string, project *pageRef, review bool) map[string]any {
-	np := a.cfg.Notion.Notes
-	props := map[string]any{np.Title: map[string]any{"title": rt(title)}}
-	switch a.notesTypes[np.Status] {
-	case "status":
-		props[np.Status] = map[string]any{"status": map[string]any{"name": np.StatusValue}}
-	case "select":
-		props[np.Status] = map[string]any{"select": map[string]any{"name": np.StatusValue}}
-	}
-	if project != nil && a.notesTypes[np.Projects] == "relation" {
-		props[np.Projects] = map[string]any{"relation": []any{map[string]any{"id": project.ID}}}
-	}
-	if a.notesTypes[np.Review] == "checkbox" {
-		props[np.Review] = map[string]any{"checkbox": review}
-	}
-	return props
-}
-
 // createTasks legt To-dos in der Tasks-Datenbank an und verknüpft sie mit der Notiz.
 // Liefert die Zahl der angelegten und der fehlenden To-dos (Fehler oder Abbruch).
-func (a *App) createTasks(ctx context.Context, n *domain.MeetingNote, noteID string, project *pageRef, title string) (created, missing int) {
+func (a *App) createTasks(ctx context.Context, n *domain.MeetingNote, noteID string, project *notion.Page, title string) (created, missing int) {
 	mode := a.cfg.Notion.CreateTasksFor
 	if a.tasksDS == "" || mode == "none" {
 		return 0, 0
 	}
-	tp, types := a.cfg.Notion.Tasks, a.tasksTypes
+	tp := notion.TasksProps(a.cfg.Notion.Tasks)
 	for _, act := range n.NextActions {
 		if mode == "me" && !act.FuerMich {
 			continue
@@ -544,26 +524,7 @@ func (a *App) createTasks(ctx context.Context, n *domain.MeetingNote, noteID str
 			missing++ // Abbruch: keine weiteren Anfragen, nur zählen
 			continue
 		}
-		props := map[string]any{tp.Title: map[string]any{"title": rt(act.Aufgabe)}}
-		if types[tp.Description] == "rich_text" {
-			desc := "Aus Meeting: " + title
-			if act.Owner != "" {
-				desc += " · Owner: " + act.Owner
-			}
-			props[tp.Description] = map[string]any{"rich_text": rt(desc)}
-		}
-		if act.Deadline != "" && types[tp.DueDate] == "date" {
-			props[tp.DueDate] = map[string]any{"date": map[string]any{"start": act.Deadline}}
-		}
-		if types[tp.Notes] == "relation" {
-			props[tp.Notes] = map[string]any{"relation": []any{map[string]any{"id": noteID}}}
-		}
-		if project != nil && types[tp.Projects] == "relation" {
-			props[tp.Projects] = map[string]any{"relation": []any{map[string]any{"id": project.ID}}}
-		}
-		if types[tp.Completed] == "checkbox" {
-			props[tp.Completed] = map[string]any{"checkbox": false}
-		}
+		props := notion.TaskProperties(a.tasksTypes, tp, act, title, noteID, project)
 		if _, _, err := a.notion.CreatePage(ctx, a.tasksDS, props, nil); err != nil {
 			a.log.Printf("   ⚠️  To-do %q nicht angelegt: %v", act.Aufgabe, err)
 			missing++
@@ -574,14 +535,14 @@ func (a *App) createTasks(ctx context.Context, n *domain.MeetingNote, noteID str
 	return created, missing
 }
 
-func (a *App) activeProjects(ctx context.Context) []pageRef {
+func (a *App) activeProjects(ctx context.Context) []notion.Page {
 	if a.notion == nil || a.projectsDS == "" {
 		return nil
 	}
 	if time.Since(a.projectsAt) < 15*time.Minute {
 		return a.projects
 	}
-	p, err := a.notion.ActiveProjects(ctx, a.projectsDS, a.cfg.Notion.Projects, a.projectsTypes)
+	p, err := a.notion.ActiveProjects(ctx, a.projectsDS, notion.ProjectsProps(a.cfg.Notion.Projects), a.projectsTypes)
 	if err != nil {
 		a.log.Printf("Hinweis: Projektliste nicht abrufbar: %v", err)
 		return a.projects
@@ -618,7 +579,7 @@ func (a *App) ProcessSingleFile(ctx context.Context, path string) error {
 	return nil
 }
 
-func (a *App) printDryRun(title string, project *pageRef, n *domain.MeetingNote, reasons []string, blocks int) {
+func (a *App) printDryRun(title string, project *notion.Page, n *domain.MeetingNote, reasons []string, blocks int) {
 	fmt.Println("────────── DRY-RUN ──────────")
 	fmt.Println("Titel:   ", title)
 	if project != nil {

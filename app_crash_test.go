@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"meetingsync/internal/ledger"
+	"meetingsync/internal/notion"
 )
 
 type crash struct{}
@@ -43,6 +44,17 @@ func (h *hookRT) RoundTrip(r *http.Request) (*http.Response, error) {
 		h.after(r)
 	}
 	return resp, err
+}
+
+// hookNotion ersetzt den Notion-Client der App durch einen gleich
+// konfigurierten mit dem Hook-Transport rt.
+func hookNotion(t *testing.T, app *App, rt http.RoundTripper) {
+	t.Helper()
+	token, err := app.cfg.NotionToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.notion = notion.NewClient(app.cfg.Notion.BaseURL, app.cfg.Notion.APIVersion, token, rt)
 }
 
 // isNotePost: POST /v1/pages in die Notes-Datenbank (nicht Tasks).
@@ -94,7 +106,7 @@ func newCrashEnv(t *testing.T) *crashEnv {
 	app, dir := setup(t, f)
 	e := &crashEnv{f: f, app: app, dir: dir, log: &hookLog{}, rt: &hookRT{}}
 	app.log = log.New(e.log, "", 0)
-	app.notion.http.Transport = e.rt
+	hookNotion(t, app, e.rt)
 	e.tr = filepath.Join(dir, "Meeting 2026-10-28 14-00.txt")
 	e.sum = filepath.Join(dir, "Meeting 2026-10-28 14-00 (1).txt")
 	writeOld(t, e.tr, srtLikeText(), 5*time.Minute)
@@ -121,7 +133,7 @@ func (e *crashEnv) restart(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.rt = &hookRT{}
-	app.notion.http.Transport = e.rt
+	hookNotion(t, app, e.rt)
 	e.app = app
 }
 

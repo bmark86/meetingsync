@@ -1,4 +1,4 @@
-package main
+package notion
 
 // Kürzung des Transkript-Toggles (progress.md Punkt 12, R-M0-08): höchstens
 // 100 Blöcke je Request, davon der letzte der Kürzungshinweis.
@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"meetingsync/internal/domain"
 )
@@ -95,7 +96,7 @@ func TestTranscriptParagraphsLongLineAtLimit(t *testing.T) {
 
 // Fängt: der Toggle in der Seite enthält den gekürzten Inhalt nicht (Verdrahtung).
 func TestBuildNoteBlocksTranscriptToggleTruncated(t *testing.T) {
-	blocks := buildNoteBlocks(&domain.MeetingNote{}, domain.NoteMeta{Transcript: truncLines(150)})
+	blocks := NoteBlocks(&domain.MeetingNote{}, domain.NoteMeta{Transcript: truncLines(150)})
 	raw, _ := json.Marshal(blocks)
 	s := string(raw)
 	if !strings.Contains(s, "🎙️ Transkript") || !strings.Contains(s, truncMarker) {
@@ -103,5 +104,58 @@ func TestBuildNoteBlocksTranscriptToggleTruncated(t *testing.T) {
 	}
 	if strings.Contains(s, fmt.Sprintf("%04d", 99)+"aaa") {
 		t.Fatal("Absatz 100 darf nicht mehr im Toggle stehen")
+	}
+}
+
+// Fängt: rt zerschneidet UTF-8 oder baut Text-Objekte über dem Notion-Limit
+// (aus TestSplitHelpersKeepUTF8 in package main herausgelöst, R-M2-04).
+func TestRichTextKeepsUTF8(t *testing.T) {
+	long := strings.Repeat("äöü ", 2000)
+	parts := rt(long)
+	var joined strings.Builder
+	for _, p := range parts {
+		content := p.(map[string]any)["text"].(map[string]any)["content"].(string)
+		if !utf8.ValidString(content) {
+			t.Fatal("ungültiges UTF-8 im Teil")
+		}
+		if utf8.RuneCountInString(content) > 2000 {
+			t.Fatal("Text-Objekt länger als 2000 Zeichen")
+		}
+		joined.WriteString(content)
+	}
+	if joined.String() != long {
+		t.Fatalf("zusammengesetzte Teile (%d Bytes) != Eingabe (%d Bytes)", joined.Len(), len(long))
+	}
+}
+
+// Fängt: Reihenfolge der Abschnitte, Hinweisbox, ⭐ für eigene To-dos und
+// Deadline-Format in der Tabelle (Golden prüft die Bytes, hier die Struktur).
+func TestNoteBlocksSections(t *testing.T) {
+	n := &domain.MeetingNote{
+		Typ: "Team", Teilnehmer: []string{"Mark", "Anna"},
+		Themen:         []domain.Thema{{Titel: "Pipeline", Punkte: []string{"Cache"}}},
+		Entscheidungen: []string{"Cache kommt"},
+		NextActions:    []domain.Action{{Aufgabe: "Budget", Owner: "Mark", Deadline: "2026-10-30", FuerMich: true}},
+	}
+	blocks := NoteBlocks(n, domain.NoteMeta{ReviewReasons: []string{"a", "b"}, SourceFiles: []string{"/x/y.txt"}})
+	var types []string
+	for _, b := range blocks {
+		types = append(types, b.(map[string]any)["type"].(string))
+	}
+	want := "callout heading_2 table divider heading_2 bulleted_list_item bulleted_list_item divider " +
+		"heading_2 paragraph divider heading_2 heading_3 bulleted_list_item divider heading_2 to_do divider " +
+		"heading_2 table divider heading_2 bulleted_list_item divider heading_2 bulleted_list_item bulleted_list_item"
+	if got := strings.Join(types, " "); got != want {
+		t.Fatalf("Blocktypen =\n%s\nerwartet\n%s", got, want)
+	}
+	raw, err := json.Marshal(blocks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(raw)
+	for _, sub := range []string{`"Bitte prüfen: a · b"`, `"yellow_background"`, `"Mark ⭐"`, `"30.10.2026"`, `"y.txt"`, `"checked":false`} {
+		if !strings.Contains(s, sub) {
+			t.Errorf("%s fehlt in den Blöcken", sub)
+		}
 	}
 }
