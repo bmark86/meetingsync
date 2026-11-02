@@ -196,6 +196,7 @@ func setup(t *testing.T, f *fakeServer) (*App, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	app.notifier = &fakeNotifier{}
 	if err := app.Init(context.Background()); err != nil {
 		t.Fatal(err)
 	}

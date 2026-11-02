@@ -356,7 +356,7 @@ func failApp(t *testing.T) (*App, *bytes.Buffer) {
 	t.Helper()
 	var buf bytes.Buffer
 	cfg := &Config{FailedDir: filepath.Join(t.TempDir(), "_fehler")}
-	return &App{cfg: cfg, log: log.New(&buf, "", 0), cache: map[string]cachedKind{}}, &buf
+	return &App{cfg: cfg, log: log.New(&buf, "", 0), cache: map[string]cachedKind{}, notifier: &fakeNotifier{}}, &buf
 }
 
 // Fängt: vorhandene .fehler.txt wird überschrieben (os.WriteFile).
