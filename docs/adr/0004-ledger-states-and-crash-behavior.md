@@ -48,7 +48,7 @@ Status: draft (R-M1-01, extended by R-M1-02 and R-M1-03), 2026-11-02. Decided by
 - A context cancel during the tasks or the append stops further task requests, but still writes `fertig` with the URL and the counts. Keeping `begonnen` would send a note that already exists to `_fehler` after the restart.
 - `CreatePage` returns ID, URL and an error that wraps `errUnvollstaendig` when the append fails. The caller treats this as success with a gap, so there is no retry and no second page.
 - `todos_fehlen` is an upper bound: a task request cancelled in flight may have reached Notion, so at most 1 task may exist although it is counted.
-- `LoadLedger` does not read the gap fields back; they are for humans only.
+- `ledger.Load` does not read the gap fields back; they are for humans only.
 
 ### Restart rule (D1, OD-03)
 - If a pass finds a file whose hash has `begonnen` as its last status, the run before stopped between `begonnen` and `fertig`. The page may exist.

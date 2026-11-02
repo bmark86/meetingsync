@@ -27,6 +27,7 @@
 | R-M1-06 | Config validation: clamps and unknown keys as startup warnings; `llm.timeout_minutes` min 1 | done | 2026-11-02 |
 | R-M2-01 | `internal/domain` (types, `Transient`/`IsTransient`), `arch_test.go` dependency-direction test; domain coverage 100 %; golden byte-identical; ADR 0015. Decision: Mark (2026-11-02) ADR number 0015 | done | 2026-11-02 |
 | R-M2-02 | `internal/transcript` (classify, text, timing; pure, imports stdlib + `internal/domain` only, arch_test rule); coverage 100 %; golden byte-identical. QA found a pre-existing date bug, not fixed: follow-up 22 | done | 2026-11-02 |
+| R-M2-03 | `internal/ledger` (`ledger.Ledger`, `ledger.Entry`, `ledger.Load`, `Add`, `Has`, `HasNear`, `Started`; stdlib only, arch_test rule); fixture moved to `internal/ledger/testdata/`; coverage 97.3 %; golden byte-identical. Decisions: coordinator: no `Begin`/`Finish` redesign, method set stays to avoid API churn; `syncDir`/`absDur` duplicated in `app.go` and `internal/ledger` (accepted, shared helper possible later); gosec G30[126]/G304 exclusions extended to `internal/ledger/ledger.go`, to be removed in R-M3-03/R-M3-04 | done | 2026-11-02 |
 
 ## M1 summary (complete 2026-11-02: R-M1-01 to R-M1-07 + R-M1-EXIT)
 
@@ -54,13 +55,13 @@ Decisions taken in M1:
 | Mark | New dependency `golang.org/x/sys` | R-M1-04 |
 | Mark | Failed folder fsync warns and the move continues (supersedes the coordinator rule "no deletion after syncDir error" for syncDir) | R-M1-07 |
 | Coordinator | Identical-copy hash set per pass | R-M1-02 |
-| Coordinator | `LoadLedger` does not read the gap fields | R-M1-03 |
+| Coordinator | `ledger.Load` (formerly `LoadLedger`) does not read the gap fields | R-M1-03 |
 | Coordinator | TOCTOU recheck on the primary file only | R-M1-05 |
 | Coordinator | `EINVAL` is not a fallback trigger | R-M1-04 |
 | Coordinator | `go 1.26.0` accepted | R-M1-04 |
 | Coordinator | No deletion after an identity mismatch (and after a syncDir error, see above) | R-M1-04 |
 
-Next: M2 package split, R-M2-03 ledger.
+Next: M2 package split, R-M2-04 notion with PropertyKind (opus).
 
 ## Open follow-ups
 

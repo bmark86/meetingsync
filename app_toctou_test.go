@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"meetingsync/internal/ledger"
 )
 
 const toctouWarn = "seit dem Einlesen geändert → nicht archiviert"
@@ -58,11 +60,7 @@ func (e *toctouEnv) notes() int {
 
 func (e *toctouEnv) status(t *testing.T, hash string) string {
 	t.Helper()
-	l, err := LoadLedger(filepath.Join(e.app.cfg.ArchiveDir, ".meetingsync-ledger.jsonl"), false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return l.byHash[hash].Status
+	return diskStatus(t, ledgerPath(e.app.cfg), hash)
 }
 
 func (e *toctouEnv) archived(t *testing.T) []string {
@@ -136,7 +134,7 @@ func TestTOCTOUChangedDuringLLM(t *testing.T) {
 			if !strings.Contains(e.log.String(), "Meeting 2026-10-28 14-00.txt wurde "+toctouWarn) {
 				t.Fatalf("Warnung fehlt:\n%s", e.log)
 			}
-			if s := e.status(t, sha256Hex([]byte(old))); s != StatusFertig {
+			if s := e.status(t, sha256Hex([]byte(old))); s != ledger.StatusFertig {
 				t.Fatalf("Status alter Hash = %q, will fertig", s)
 			}
 			if n := e.notes(); n != 1 {
@@ -150,7 +148,7 @@ func TestTOCTOUChangedDuringLLM(t *testing.T) {
 			if n := e.notes(); n != 2 {
 				t.Fatalf("Notizen nach Durchlauf 2 = %d, will 2", n)
 			}
-			if s := e.status(t, sha256Hex([]byte(c.content))); s != StatusFertig {
+			if s := e.status(t, sha256Hex([]byte(c.content))); s != ledger.StatusFertig {
 				t.Fatalf("Status neuer Hash = %q, will fertig", s)
 			}
 			if strings.Contains(e.log.String(), "unterbrochen") || strings.Contains(e.log.String(), toctouWarn) {
@@ -208,7 +206,7 @@ func TestTOCTOUPairTranscriptChanged(t *testing.T) {
 	if !strings.Contains(logs, filepath.Base(tr)+" wurde "+toctouWarn) || strings.Count(logs, toctouWarn) != 1 {
 		t.Fatalf("genau eine Warnung für %s erwartet:\n%s", filepath.Base(tr), logs)
 	}
-	if s := e.status(t, sha256Hex([]byte(srtLikeText()))); s != StatusFertig {
+	if s := e.status(t, sha256Hex([]byte(srtLikeText()))); s != ledger.StatusFertig {
 		t.Fatalf("Status = %q, will fertig", s)
 	}
 }
@@ -279,7 +277,7 @@ func TestTOCTOUPrimaryRemoved(t *testing.T) {
 	if a := e.archived(t); len(a) != 1 || a[0] != filepath.Base(sum) {
 		t.Fatalf("Archiv = %v, will nur %s", a, filepath.Base(sum))
 	}
-	if s := e.status(t, sha256Hex([]byte(srtLikeText()))); s != StatusFertig {
+	if s := e.status(t, sha256Hex([]byte(srtLikeText()))); s != ledger.StatusFertig {
 		t.Fatalf("Status = %q, will fertig", s)
 	}
 }
@@ -296,7 +294,7 @@ func TestTOCTOUAlreadyProcessedChanged(t *testing.T) {
 	}
 	stale := &entry{Path: p, Name: "a.txt", ModTime: st.ModTime(), Size: st.Size(), Content: []byte("alt\n")}
 	hash := sha256Hex(stale.Content)
-	if err := e.app.ledger.Add(LedgerEntry{Hash: hash, File: "a.txt", ModTime: st.ModTime(), At: time.Now()}); err != nil {
+	if err := e.app.ledger.Add(ledger.Entry{Hash: hash, File: "a.txt", ModTime: st.ModTime(), At: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
 	rewrite(t, p, "neu, länger\n", st.ModTime().Add(time.Second))

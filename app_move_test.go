@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"meetingsync/internal/ledger"
 )
 
 // moveEnv: Quelle src mit Inhalt "neu" und leerer Zielordner dir.
@@ -323,7 +325,7 @@ func TestMoveFilePartialCopyRemoved(t *testing.T) {
 // Fängt: kein Backoff → Logzeile und Verschieben bei jedem Durchlauf.
 func TestRestartRuleRemoveFailsBackoff(t *testing.T) {
 	e := newCrashEnv(t)
-	if err := e.app.ledger.Add(LedgerEntry{Hash: e.hash(), Status: StatusBegonnen, File: "x", ModTime: flowM}); err != nil {
+	if err := e.app.ledger.Add(ledger.Entry{Hash: e.hash(), Status: ledger.StatusBegonnen, File: "x", ModTime: flowM}); err != nil {
 		t.Fatal(err)
 	}
 	lockFile(t, e.tr)
@@ -335,7 +337,7 @@ func TestRestartRuleRemoveFailsBackoff(t *testing.T) {
 	if n := strings.Count(e.log.String(), line); n != 1 {
 		t.Fatalf("Logzeile %d-mal, want 1\nLog:\n%s", n, e.log.String())
 	}
-	if !exists(e.tr) || e.lastStatus(t, e.hash()) != StatusBegonnen {
+	if !exists(e.tr) || e.lastStatus(t, e.hash()) != ledger.StatusBegonnen {
 		t.Fatal("Transkript muss mit begonnen liegen bleiben")
 	}
 	data, _ := e.inFailed(t)

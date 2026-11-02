@@ -1,11 +1,9 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -22,6 +20,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"meetingsync/internal/domain"
+	"meetingsync/internal/ledger"
 	"meetingsync/internal/transcript"
 )
 
@@ -31,7 +30,7 @@ type App struct {
 	dry    bool
 	llm    *LLM
 	notion *Notion
-	ledger *Ledger
+	ledger *ledger.Ledger
 
 	notesDS, tasksDS, projectsDS          string
 	notesTypes, tasksTypes, projectsTypes map[string]string
@@ -113,11 +112,11 @@ func (a *App) transcriptOpts() transcript.Options {
 
 // Init prüft die Notion-Datenbanken und lädt das Verarbeitungsprotokoll.
 func (a *App) Init(ctx context.Context) error {
-	ledger, err := LoadLedger(filepath.Join(a.cfg.ArchiveDir, ".meetingsync-ledger.jsonl"), !a.dry)
+	l, err := ledger.Load(filepath.Join(a.cfg.ArchiveDir, ".meetingsync-ledger.jsonl"), !a.dry)
 	if err != nil {
 		return err
 	}
-	a.ledger = ledger
+	a.ledger = l
 	if a.notion == nil {
 		return nil
 	}
@@ -301,7 +300,7 @@ func (a *App) handle(ctx context.Context, j job, now time.Time) {
 	if err == nil {
 		// Auch nach einem Abbruch in createTasks: die Seite existiert, also fertig
 		// (mit den Lücken), sonst schickt der Neustart sie nach _fehler (ADR 0004).
-		if err := a.ledger.Add(LedgerEntry{Hash: hash, File: p.Name, ModTime: p.ModTime, URL: url, At: time.Now(), MissingTasks: g.tasks, BlockErrors: g.blocks}); err != nil {
+		if err := a.ledger.Add(ledger.Entry{Hash: hash, File: p.Name, ModTime: p.ModTime, URL: url, At: time.Now(), MissingTasks: g.tasks, BlockErrors: g.blocks}); err != nil {
 			// Die Notiz existiert. Im Speicher gilt der Hash als fertig (keine
 			// zweite Seite in diesem Prozess), die Dateien gehen ins Archiv.
 			a.log.Printf("   ⚠️  Protokoll nicht geschrieben (Notiz existiert: %s): %v", url, err)
@@ -352,7 +351,7 @@ func (a *App) interrupted(j job, hash string, now time.Time) {
 		return // Kopie: verworfen steht schon im Protokoll
 	}
 	// verworfen: legt Mark die Datei zurück, läuft sie normal.
-	if err := a.ledger.Add(LedgerEntry{Hash: hash, Status: StatusVerworfen, File: p.Name, ModTime: p.ModTime, At: time.Now()}); err != nil {
+	if err := a.ledger.Add(ledger.Entry{Hash: hash, Status: ledger.StatusVerworfen, File: p.Name, ModTime: p.ModTime, At: time.Now()}); err != nil {
 		a.log.Printf("   ⚠️  Protokoll nicht geschrieben: %v", err)
 	}
 }
@@ -462,12 +461,12 @@ func (a *App) process(ctx context.Context, j job, hash string) (string, gaps, er
 		return "dry-run", gaps{}, nil
 	}
 
-	le := LedgerEntry{Hash: hash, Status: StatusBegonnen, File: p.Name, ModTime: p.ModTime, At: time.Now()}
+	le := ledger.Entry{Hash: hash, Status: ledger.StatusBegonnen, File: p.Name, ModTime: p.ModTime, At: time.Now()}
 	if hash != "" {
 		if err := a.ledger.Add(le); err != nil {
 			// Ohne "begonnen" keine Notion-Anfrage. verworfen setzt den Speicher
 			// zurück, damit der nächste Versuch normal läuft.
-			le.Status = StatusVerworfen
+			le.Status = ledger.StatusVerworfen
 			_ = a.ledger.Add(le) //nolint:errcheck // gemeldet wird der erste Fehler; bleibt auf Platte "begonnen", greift beim Neustart die Prüfregel (sicher)
 			return "", gaps{}, fmt.Errorf("Protokoll nicht schreibbar, Notion-Seite nicht angelegt: %w", err)
 		}
@@ -484,7 +483,7 @@ func (a *App) process(ctx context.Context, j job, hash string) (string, gaps, er
 		// Bei Abbruch per Kontext bleibt "begonnen": die Anfrage kann Notion
 		// erreicht haben, der Neustart schickt die Datei zur Prüfung.
 		if hash != "" && ctx.Err() == nil {
-			le.Status, le.At = StatusVerworfen, time.Now()
+			le.Status, le.At = ledger.StatusVerworfen, time.Now()
 			if lerr := a.ledger.Add(le); lerr != nil {
 				a.log.Printf("   ⚠️  Protokoll nicht geschrieben: %v", lerr)
 			}
@@ -1005,160 +1004,6 @@ func removeOwn(path string, own os.FileInfo) error {
 		return fmt.Errorf("%s ist nicht mehr die eigene Kopie", path)
 	}
 	return os.Remove(path)
-}
-
-// --- Protokoll gegen Doppelverarbeitung ---------------------------------------
-
-// Status eines Ledger-Eintrags (ADR 0004). Pro Hash gilt die letzte Zeile.
-// Leerer Status (Zeilen von v1.0.0, Add ohne Status) bedeutet fertig.
-const (
-	StatusBegonnen  = "begonnen"  // Verarbeitung gestartet, Notion-Seite evtl. angelegt
-	StatusFertig    = "fertig"    // Notiz angelegt
-	StatusVerworfen = "verworfen" // nach _fehler verschoben, darf neu laufen
-)
-
-type LedgerEntry struct {
-	Hash    string
-	Status  string
-	File    string
-	ModTime time.Time
-	URL     string
-	At      time.Time
-	// Nur bei fertig, 0 im Normalfall (R-M1-03, OD-04: nur protokolliert);
-	// nur für das Schreiben, LoadLedger liest sie nicht zurück.
-	MissingTasks int // nicht angelegte To-dos
-	BlockErrors  int // Fehler beim Anhängen der restlichen Blöcke
-}
-
-// ledgerLine ist das Zeilenformat auf Platte. Fertige Zeilen tragen den Hash
-// in "hash" und keinen Status, byte-gleich zu v1.0.0. Alle anderen Zeilen
-// tragen ihn in "sha256": v1.0.0 wertet jede Zeile mit "hash" als verarbeitet
-// und würde sonst eine begonnene Datei ohne Notiz archivieren.
-type ledgerLine struct {
-	Hash    string    `json:"hash,omitempty"`
-	SHA256  string    `json:"sha256,omitempty"`
-	Status  string    `json:"status,omitempty"`
-	File    string    `json:"file"`
-	ModTime time.Time `json:"mtime"`
-	URL     string    `json:"url"`
-	At      time.Time `json:"at"`
-	// omitempty: ohne Lücken bleibt die fertig-Zeile byte-gleich zu v1.0.0;
-	// v1.0.0 ignoriert die Zusatzfelder beim Lesen.
-	TodosFehlen   int `json:"todos_fehlen,omitempty"`
-	BloeckeFehler int `json:"bloecke_fehler,omitempty"`
-}
-
-type Ledger struct {
-	path    string
-	persist bool
-	byHash  map[string]LedgerEntry
-}
-
-// put übernimmt e als letzten Stand für e.Hash.
-func (l *Ledger) put(e LedgerEntry) LedgerEntry {
-	if e.Status == "" {
-		e.Status = StatusFertig
-	}
-	l.byHash[e.Hash] = e
-	return e
-}
-
-func LoadLedger(path string, persist bool) (*Ledger, error) {
-	l := &Ledger{path: path, persist: persist, byHash: map[string]LedgerEntry{}}
-	f, err := os.Open(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return l, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = f.Close() }() //nolint:errcheck // nur gelesen, Close-Fehler ohne Folgen
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 64*1024), 1<<20)
-	for sc.Scan() {
-		var ln ledgerLine
-		if json.Unmarshal(sc.Bytes(), &ln) != nil {
-			continue
-		}
-		hash := ln.Hash
-		if hash == "" {
-			hash = ln.SHA256
-		}
-		if hash == "" {
-			continue
-		}
-		l.put(LedgerEntry{Hash: hash, Status: ln.Status, File: ln.File, ModTime: ln.ModTime, URL: ln.URL, At: ln.At})
-	}
-	return l, sc.Err()
-}
-
-// Has meldet, ob der letzte Eintrag zu hash fertig ist.
-func (l *Ledger) Has(hash string) bool { return l.byHash[hash].Status == StatusFertig }
-
-// Started meldet, ob der letzte Eintrag zu hash "begonnen" ist.
-func (l *Ledger) Started(hash string) bool { return l.byHash[hash].Status == StatusBegonnen }
-
-// HasNear meldet, ob ein fertiger Eintrag eine mtime im Fenster um t hat.
-func (l *Ledger) HasNear(t time.Time, window time.Duration) bool {
-	for _, e := range l.byHash {
-		if e.Status == StatusFertig && absDur(e.ModTime.Sub(t)) <= window {
-			return true
-		}
-	}
-	return false
-}
-
-// Add übernimmt e sofort in den Speicher und hängt danach eine Zeile an die
-// Datei an (mit fsync, beim ersten Anlegen auch des Ordners). Fehler von
-// Write, Sync und Close kommen zurück; der Eintrag im Speicher bleibt dann
-// trotzdem stehen.
-func (l *Ledger) Add(e LedgerEntry) error {
-	e = l.put(e)
-	if !l.persist {
-		return nil
-	}
-	ln := ledgerLine{File: e.File, ModTime: e.ModTime, URL: e.URL, At: e.At, TodosFehlen: e.MissingTasks, BloeckeFehler: e.BlockErrors}
-	if e.Status == StatusFertig {
-		ln.Hash = e.Hash
-	} else {
-		ln.SHA256, ln.Status = e.Hash, e.Status
-	}
-	b, err := json.Marshal(ln)
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(l.path), 0o755); err != nil {
-		return err
-	}
-	_, statErr := os.Lstat(l.path)
-	created := errors.Is(statErr, os.ErrNotExist)
-	f, err := os.OpenFile(l.path, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0o644)
-	if err != nil {
-		return err
-	}
-	line := append(b, '\n')
-	// Abgerissene letzte Zeile (Absturz beim Schreiben): erst '\n', sonst
-	// verschmilzt die neue Zeile mit dem Rest und geht beim Laden verloren.
-	info, err := f.Stat()
-	if err == nil && info.Size() > 0 {
-		last := []byte{0}
-		if _, err = f.ReadAt(last, info.Size()-1); err == nil && last[0] != '\n' {
-			line = append([]byte{'\n'}, line...)
-		}
-	}
-	if err == nil {
-		_, err = f.Write(line)
-	}
-	if err == nil {
-		err = f.Sync()
-	}
-	if cerr := f.Close(); err == nil {
-		err = cerr
-	}
-	if err == nil && created {
-		err = syncDir(filepath.Dir(l.path)) // neuer Ordnereintrag soll den Absturz überstehen
-	}
-	return err
 }
 
 func syncDir(dir string) error {

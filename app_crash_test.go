@@ -9,6 +9,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"log"
 	"net/http"
@@ -19,6 +20,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"meetingsync/internal/ledger"
 )
 
 type crash struct{}
@@ -151,14 +154,41 @@ func (e *crashEnv) pages() (notes, tasks int) {
 	return notes, tasks
 }
 
+// ledgerPath ist der Pfad der Ledger-Datei im Archivordner von cfg.
+func ledgerPath(cfg *Config) string {
+	return filepath.Join(cfg.ArchiveDir, ".meetingsync-ledger.jsonl")
+}
+
+// diskStatus liest den letzten Status zu hash roh aus der Ledger-Datei, wie
+// ledger.Load: Hash steht in "hash" oder "sha256", ein leerer Status ist
+// fertig (ADR 0004); "" wenn es keine Zeile gibt.
+func diskStatus(t *testing.T, path, hash string) string {
+	t.Helper()
+	status := ""
+	for _, raw := range strings.Split(mustRead(t, path), "\n") {
+		var ln struct{ Hash, SHA256, Status string }
+		if json.Unmarshal([]byte(raw), &ln) != nil {
+			continue
+		}
+		h := ln.Hash
+		if h == "" {
+			h = ln.SHA256
+		}
+		if h != hash {
+			continue
+		}
+		status = ln.Status
+		if status == "" {
+			status = ledger.StatusFertig
+		}
+	}
+	return status
+}
+
 // lastStatus liest den letzten Status zu hash von Platte.
 func (e *crashEnv) lastStatus(t *testing.T, hash string) string {
 	t.Helper()
-	l, err := LoadLedger(filepath.Join(e.app.cfg.ArchiveDir, ".meetingsync-ledger.jsonl"), false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return l.byHash[hash].Status
+	return diskStatus(t, ledgerPath(e.app.cfg), hash)
 }
 
 func (e *crashEnv) inFailed(t *testing.T) (data, notes []string) {
@@ -209,12 +239,12 @@ func TestCrashAfterEachStepNoSecondPage(t *testing.T) {
 					return nil, nil
 				}
 			},
-			wantDisk: StatusBegonnen, wantNotes: 0, wantTasks: 0, toFailed: true,
+			wantDisk: ledger.StatusBegonnen, wantNotes: 0, wantTasks: 0, toFailed: true,
 		},
 		{
 			name:     "nach CreatePage",
 			arm:      func(_ *testing.T, e *crashEnv) { e.rt.after = onNotePost(func() { panic(crash{}) }) },
-			wantDisk: StatusBegonnen, wantNotes: 1, wantTasks: 0, toFailed: true,
+			wantDisk: ledger.StatusBegonnen, wantNotes: 1, wantTasks: 0, toFailed: true,
 		},
 		{
 			name: "nach Tasks",
@@ -225,7 +255,7 @@ func TestCrashAfterEachStepNoSecondPage(t *testing.T) {
 					}
 				}
 			},
-			wantDisk: StatusBegonnen, wantNotes: 1, wantTasks: 1, toFailed: true,
+			wantDisk: ledger.StatusBegonnen, wantNotes: 1, wantTasks: 1, toFailed: true,
 		},
 		{
 			// Archiv blockiert (Datei statt Monatsordner), Absturz bei der Warnung:
@@ -249,7 +279,7 @@ func TestCrashAfterEachStepNoSecondPage(t *testing.T) {
 					t.Fatal(err)
 				}
 			},
-			wantDisk: StatusFertig, wantNotes: 1, wantTasks: 1,
+			wantDisk: ledger.StatusFertig, wantNotes: 1, wantTasks: 1,
 		},
 		{
 			// Transkript archiviert, Partner liegt noch: Neustart archiviert ihn per HasNear.
@@ -261,7 +291,7 @@ func TestCrashAfterEachStepNoSecondPage(t *testing.T) {
 					}
 				}
 			},
-			wantDisk: StatusFertig, wantNotes: 1, wantTasks: 1,
+			wantDisk: ledger.StatusFertig, wantNotes: 1, wantTasks: 1,
 		},
 	}
 	for _, tc := range cases {
@@ -298,7 +328,7 @@ func TestCrashAfterEachStepNoSecondPage(t *testing.T) {
 				if len(data) != 0 {
 					t.Fatalf("unerwartet in _fehler: %v", data)
 				}
-				if got := e.lastStatus(t, e.hash()); got != StatusFertig {
+				if got := e.lastStatus(t, e.hash()); got != ledger.StatusFertig {
 					t.Fatalf("Status = %q, want fertig", got)
 				}
 				return
@@ -311,7 +341,7 @@ func TestCrashAfterEachStepNoSecondPage(t *testing.T) {
 					t.Fatalf(".fehler.txt ohne Hinweis:\n%s", n)
 				}
 			}
-			if got := e.lastStatus(t, e.hash()); got != StatusVerworfen {
+			if got := e.lastStatus(t, e.hash()); got != ledger.StatusVerworfen {
 				t.Fatalf("Status nach Neustart-Regel = %q, want verworfen", got)
 			}
 			if !strings.Contains(e.log.String(), "letzter Lauf wurde beim Anlegen in Notion unterbrochen") {
@@ -359,7 +389,7 @@ func TestRestartRuleFileMovedBackRunsAgain(t *testing.T) {
 	if left := remaining(t, e.dir); len(left) != 0 {
 		t.Fatalf("nicht archiviert: %v", left)
 	}
-	if got := e.lastStatus(t, e.hash()); got != StatusFertig {
+	if got := e.lastStatus(t, e.hash()); got != ledger.StatusFertig {
 		t.Fatalf("Status = %q, want fertig", got)
 	}
 }
@@ -369,7 +399,7 @@ func TestRestartRuleFileMovedBackRunsAgain(t *testing.T) {
 func TestRestartRuleMoveFailsKeepsBegonnen(t *testing.T) {
 	e := newCrashEnv(t)
 	l := e.app.ledger
-	if err := l.Add(LedgerEntry{Hash: e.hash(), Status: StatusBegonnen, File: "x", ModTime: flowM}); err != nil {
+	if err := l.Add(ledger.Entry{Hash: e.hash(), Status: ledger.StatusBegonnen, File: "x", ModTime: flowM}); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(e.app.cfg.FailedDir, nil, 0o644); err != nil { // Datei statt Ordner
@@ -379,7 +409,7 @@ func TestRestartRuleMoveFailsKeepsBegonnen(t *testing.T) {
 	if !exists(e.tr) || !exists(e.sum) {
 		t.Fatal("Dateien müssen liegen bleiben")
 	}
-	if !l.Started(e.hash()) || e.lastStatus(t, e.hash()) != StatusBegonnen {
+	if !l.Started(e.hash()) || e.lastStatus(t, e.hash()) != ledger.StatusBegonnen {
 		t.Fatal("ohne Verschieben bleibt begonnen (Speicher und Platte)")
 	}
 	e.f.mu.Lock()
@@ -428,7 +458,7 @@ func TestRestartRulePartialMoveNoSecondPage(t *testing.T) {
 	if n, _ := e.pages(); n != 1 {
 		t.Fatalf("Notizen = %d, want 1 (keine zweite Seite)\nLog:\n%s", n, e.log.String())
 	}
-	if !exists(e.tr) || e.lastStatus(t, e.hash()) != StatusBegonnen {
+	if !exists(e.tr) || e.lastStatus(t, e.hash()) != ledger.StatusBegonnen {
 		t.Fatal("Transkript muss mit begonnen liegen bleiben")
 	}
 
@@ -440,7 +470,7 @@ func TestRestartRulePartialMoveNoSecondPage(t *testing.T) {
 	if left := remaining(t, e.dir); len(left) != 0 {
 		t.Fatalf("Dateien im Exportordner: %v", left)
 	}
-	if got := e.lastStatus(t, e.hash()); got != StatusVerworfen {
+	if got := e.lastStatus(t, e.hash()); got != ledger.StatusVerworfen {
 		t.Fatalf("Status = %q, want verworfen", got)
 	}
 }
@@ -496,7 +526,7 @@ func TestRestartRuleMovedBackSameProcessRunsAgain(t *testing.T) {
 	if n, _ := e.pages(); n != 1 {
 		t.Fatalf("Notizen = %d, want 1\nLog:\n%s", n, e.log.String())
 	}
-	if got := e.lastStatus(t, e.hash()); got != StatusFertig {
+	if got := e.lastStatus(t, e.hash()); got != ledger.StatusFertig {
 		t.Fatalf("Status = %q, want fertig", got)
 	}
 }
@@ -505,7 +535,7 @@ func TestRestartRuleMovedBackSameProcessRunsAgain(t *testing.T) {
 // Mark zurückgelegte Datei hätte sonst schon Versuche verbraucht.
 func TestRestartRuleClearsRetryState(t *testing.T) {
 	e := newCrashEnv(t)
-	if err := e.app.ledger.Add(LedgerEntry{Hash: e.hash(), Status: StatusBegonnen, File: "x", ModTime: flowM}); err != nil {
+	if err := e.app.ledger.Add(ledger.Entry{Hash: e.hash(), Status: ledger.StatusBegonnen, File: "x", ModTime: flowM}); err != nil {
 		t.Fatal(err)
 	}
 	e.app.state[e.tr] = &fileState{attempts: e.app.cfg.MaxAttempts - 1}
@@ -531,12 +561,11 @@ func mustRead(t *testing.T, path string) string {
 // zählt nicht als Versuch / der Retry landet als Abbruch in _fehler.
 func TestBeginLedgerErrorNoNotionRequest(t *testing.T) {
 	e := newCrashEnv(t)
-	blocker := filepath.Join(t.TempDir(), "datei")
-	if err := os.WriteFile(blocker, nil, 0o644); err != nil {
+	// Ledger-Pfad durch einen Ordner ersetzen: Add scheitert (EISDIR).
+	path := ledgerPath(e.app.cfg)
+	if err := os.MkdirAll(path, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	good := e.app.ledger.path
-	e.app.ledger.path = filepath.Join(blocker, "l.jsonl") // ENOTDIR
 	var posts int
 	e.rt.before = func(r *http.Request) (*http.Response, error) {
 		if r.Method == http.MethodPost && r.URL.Path == "/v1/pages" {
@@ -555,7 +584,9 @@ func TestBeginLedgerErrorNoNotionRequest(t *testing.T) {
 	if !exists(e.tr) || !strings.Contains(e.log.String(), "Protokoll nicht schreibbar, Notion-Seite nicht angelegt") {
 		t.Fatalf("Datei muss liegen bleiben, Log:\n%s", e.log.String())
 	}
-	e.app.ledger.path = good
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
 	e.pass(now.Add(2 * time.Minute))
 	if n, _ := e.pages(); n != 1 || posts != 2 {
 		t.Fatalf("Retry: %d Notizen, %d POSTs; want 1 Notiz + 1 Task\nLog:\n%s", n, posts, e.log.String())
@@ -569,7 +600,7 @@ func TestBeginLedgerErrorNoNotionRequest(t *testing.T) {
 // fertig (zweite Seite im selben Prozess) / Dateien bleiben liegen.
 func TestFinishLedgerErrorLoggedNoSecondPage(t *testing.T) {
 	e := newCrashEnv(t)
-	path := e.app.ledger.path
+	path := ledgerPath(e.app.cfg)
 	e.rt.after = onNotePost(func() {
 		// Ledger-Datei durch einen Ordner ersetzen: Add(fertig) scheitert (EISDIR).
 		if err := os.Remove(path); err != nil {
@@ -618,7 +649,7 @@ func TestCreatePageErrorSetsVerworfen(t *testing.T) {
 			if !exists(e.tr) || !strings.Contains(e.log.String(), tc.wantLog) {
 				t.Fatalf("Datei muss liegen bleiben, Log mit %q:\n%s", tc.wantLog, e.log.String())
 			}
-			if got := e.lastStatus(t, e.hash()); got != StatusVerworfen {
+			if got := e.lastStatus(t, e.hash()); got != ledger.StatusVerworfen {
 				t.Fatalf("Status = %q, want verworfen", got)
 			}
 			e.restart(t)
@@ -647,7 +678,7 @@ func TestCreatePageCanceledKeepsBegonnen(t *testing.T) {
 		return nil, context.Canceled
 	}
 	e.app.Pass(ctx, time.Now())
-	if got := e.lastStatus(t, e.hash()); got != StatusBegonnen {
+	if got := e.lastStatus(t, e.hash()); got != ledger.StatusBegonnen {
 		t.Fatalf("Status = %q, want begonnen", got)
 	}
 	if st := e.app.state[e.tr]; st != nil && st.attempts != 0 {
@@ -669,7 +700,7 @@ func TestProcessSingleFileWritesNoLedger(t *testing.T) {
 	if err := e.app.ProcessSingleFile(context.Background(), e.tr); err != nil {
 		t.Fatal(err)
 	}
-	if exists(e.app.ledger.path) {
+	if exists(ledgerPath(e.app.cfg)) {
 		t.Fatal("-file darf kein Protokoll schreiben")
 	}
 }
