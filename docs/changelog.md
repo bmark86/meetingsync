@@ -53,6 +53,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - e2e test archive month no longer depends on the local time zone
 
 ### Security
+- R-M3-09: config error messages for `orphan_summary_action`, `create_tasks_for` and `timezone` no longer contain the configured value (S-17); the time zone error does not wrap the `time.LoadLocation` error. Tests assert value absence; golden unchanged.
 - R-M1-04: closes the overwrite window in `moveFile` (S-14). New dependency `golang.org/x/sys`: `go.sum` hashes verified against sum.golang.org, govulncheck clean, Dependabot covers `gomod`. Accepted residual risk: path-based `Remove` between `Lstat` and unlink. See ADR 0005.
 - Toolchain pinned to go1.26.10 (fixes 26 reachable stdlib vulnerabilities, govulncheck clean). See ADR 0002.
 - R-M0-11: go directive raised to 1.26 – stricter TLS/x509/URL defaults, post-quantum key exchange; no change in output (golden tests unchanged, live -check green)

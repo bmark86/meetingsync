@@ -80,9 +80,12 @@ func TestLoadLocation(t *testing.T) {
 	if err != nil || loc.String() != "Europe/Berlin" {
 		t.Fatalf("loc = %v, err = %v", loc, err)
 	}
-	_, err = loadLocation("Nirgendwo/Stadt")
-	if err == nil || !strings.HasPrefix(err.Error(), `unbekannte Zeitzone "Nirgendwo/Stadt": `) {
+	_, err = loadLocation("GEHEIM-xyz")
+	if err == nil || !strings.Contains(err.Error(), "timezone") {
 		t.Fatalf("err = %v", err)
+	}
+	if strings.Contains(err.Error(), "GEHEIM-xyz") {
+		t.Fatalf("Zeitzonenwert im Fehler: %v", err)
 	}
 }
 
@@ -94,7 +97,8 @@ func TestConfigCLIBadTimezone(t *testing.T) {
 	writeCfg(t, p, "watch_dir: "+filepath.Join(home, "w")+"\ntimezone: Nirgendwo/Stadt\nfoo: 1\nllm:\n  model: m\nnotion:\n  token_keychain_service: \"\"\n  notes_data_source_id: n\n")
 	stdout, stderr, _ := goldenRunCLI(t, env, "-config", p, "-check")
 	out := stdout + stderr
-	if !strings.Contains(out, `Konfiguration: unbekannte Zeitzone "Nirgendwo/Stadt": `) ||
+	if !strings.Contains(out, "Konfiguration: unbekannte Zeitzone in timezone (") ||
+		strings.Contains(out, "Nirgendwo/Stadt") ||
 		strings.Contains(out, "Konfiguration: "+p+"\n") || strings.Contains(out, "unbekannter Schlüssel") {
 		t.Fatalf("Ausgabe:\n%s", out)
 	}

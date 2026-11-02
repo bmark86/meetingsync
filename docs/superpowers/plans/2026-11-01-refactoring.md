@@ -544,6 +544,7 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 - Reviews: CR, SR, QA.
 
 #### R-M3-09 Config values out of error messages
+- Status: done 2026-11-02. Messages: `orphan_summary_action muss note, archive oder keep sein`, `create_tasks_for muss me, all oder none sein`, `unbekannte Zeitzone in timezone (IANA-Name erwartet, z. B. Europe/Berlin)` (no `time.LoadLocation` error wrapped). Tests assert value absence; golden unchanged; CR and SR approved. Remaining messages echo only the `-config` path and unknown key names (outside S-17).
 - Goal: `orphan_summary_action`, `create_tasks_for`, `timezone`: message without the value (progress #1).
 - Acceptance: internal/config/config.go:210, 215, 234 (line numbers from before the move, re-check) without the `%q` value; a test checks that a test value is not in the message; `docs/progress.md` #1 done.
 - Scope: `internal/config`, tests.
@@ -622,15 +623,17 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 
 #### R-M3-17 No duplicate page after an ambiguous CreatePage failure ⚠
 ⚠ Behavior change, decided by Mark on 2026-11-02 (OD-05 residual risk, ADR 0004).
+- Marker decision (Mark, M3 gate 2026-11-02): a new optional text column in the Notes database (suggested name "Quelle", created by Mark); the column name is configurable via `notes_properties` and optional. meetingsync writes a file identifier into it and queries it before a retry. Without the column, behavior stays as today. Mark must create the column before the task is tested live (the coordinator asks him).
 - Goal: after a `CreatePage` failure where the page may exist, do not create a second page.
 - Ambiguous failures: Notion 5xx, network error, 60 s client timeout, 2xx with an unreadable or unparsable body. Today the ledger gets `verworfen` and the retry can create up to `max_attempts` pages (2xx with unreadable body: a certain second page).
 - Acceptance:
-  - Before retrying after an ambiguous failure, look up whether the page already exists (for example query the Notes data source by a unique marker such as the file hash, or title + date) and reuse it instead of creating a new one. The marker and lookup are set in the task.
+  - Before retrying after an ambiguous failure, query the Notes data source for the file identifier in the marker column and reuse the page if found instead of creating a new one. Without the configured column: no lookup, behavior as today. The identifier format is set in the task.
+  - Tests: marker written on create; lookup before retry; column not configured keeps today's behavior.
   - Tests: each ambiguous failure (5xx, network error, timeout, unreadable 2xx body) produces exactly one page.
   - Golden outputs unchanged for the non-failure scenarios.
   - ADR 0004 updated (residual risk OD-05 removed or narrowed).
 - Scope: `app.go` (`handle`, `process`) or the pipeline package after M2, `notion.go` (lookup), tests.
-- Out of scope: Notion database changes unless the task shows the marker needs one (then ask Mark first, see ADR 0004 alternatives).
+- Out of scope: creating the column (Mark does it in Notion).
 - Depends on: R-M1-02; M2 pipeline split preferred.
 - Model: opus, crash and retry semantics.
 - Reviews: CR, SR, QA. Update ADR 0004.
@@ -653,7 +656,7 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 - Reviews: CR, SR, QA.
 
 #### R-M3-20 German date with underscore time is misparsed ⚠
-⚠ Output change for affected file names only. Ask Mark at the M3 gate.
+⚠ Output change for affected file names only. Decided by Mark at the M3 gate (2026-11-02): fix it.
 - Problem: in a name like `Weekly 07.01.2026_08-45.txt`, `reDateISO` matches `2026_08-45` as year 2026 / month 08 / day 45; `dateFromName` returns ok=false and never tries `reDateDE`, so the meeting date falls back to an estimate (pre-existing since v1.0.0). Found by QA in R-M2-02.
 - Acceptance:
   - Test for `Weekly 07.01.2026_08-45.txt` → 2026-01-07 08:45.
@@ -796,7 +799,7 @@ Style like `docs/adr/0001-yaml-dependency.md` (Context, Decision, Alternatives c
 | --- | --- | --- | --- |
 | 0002 | Toolchain pin, CI and supply chain | R-M0-01, extended by R-M0-04 | only install a newer Go locally |
 | 0003 | Golden test strategy | R-M0-05 | unit tests only / snapshots without normalization |
-| 0004 | Ledger states and crash behavior | R-M1-01, extended by R-M1-02 and R-M3-17 | idempotency marker in Notion (rejected by Mark: no DB change) |
+| 0004 | Ledger states and crash behavior | R-M1-01, extended by R-M1-02 and R-M3-17 | idempotency marker in Notion (first rejected; accepted 2026-11-02 for R-M3-17 as an optional text column) |
 | 0005 | `golang.org/x/sys` for the atomic rename (delivered) | R-M1-04 | stdlib `os.Link` + `os.Remove`, status quo |
 | 0015 | Package split and dependency direction (number set by Mark at the M2 gate, 2026-11-02; 0005 is taken) | R-M2-01 | flat `package main` with one file per topic |
 | 0006 | Interfaces and dependency injection | R-M2-09 | package variables/monkeypatching for tests |

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -96,7 +97,8 @@ func loadConfig(path string) (*config.Config, *time.Location, []string, error) {
 func loadLocation(tz string) (*time.Location, error) {
 	loc, err := time.LoadLocation(tz)
 	if err != nil {
-		return nil, fmt.Errorf("unbekannte Zeitzone %q: %w", tz, err)
+		// Kein %w: der Fehler von time.LoadLocation nennt den Namen ("unknown time zone …").
+		return nil, errors.New("unbekannte Zeitzone in timezone (IANA-Name erwartet, z. B. Europe/Berlin)")
 	}
 	return loc, nil
 }

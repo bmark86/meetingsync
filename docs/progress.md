@@ -35,7 +35,8 @@
 | R-M2-08 | `internal/watch` (`Lister`, `PairSummary`, `Near`, `FS`/`OS` read side, `Mover{Rename, Copy, SyncDir}` atomic move unchanged; nil fields = real functions). Decision: coordinator: FS covers ReadDir/ReadFile/Lstat only, the move is not rebuilt on an FS abstraction (`os.SameFile`/`RENAME_EXCL` risk, ADR 0015); arch rule; gosec G30[126]/G304 paths moved to `internal/watch`. Coverage 96.2 %, tests 216 → 231, golden byte-identical, CR and SR approved. Next: R-M2-09 pipeline (opus) | done | 2026-11-02 |
 | R-M2-09a | `internal/pipeline` core: flow, retry policy type, archive, fail moved from `app.go`; injection via `Deps` (clock, FS, Mover, Summarizer, Notion port, Notifier port, `*ledger.Ledger`); state helpers merged (follow-up 21); ADR 0006. Decisions: coordinator: split R-M2-09 into 09a/09b; concrete `*ledger.Ledger` accepted; own `Notifier` port (arch rule); `handleError` computes its own backoff. Coverage 93.5 % own / 98.8 % combined, tests 231 → 251, golden byte-identical, CR and SR approved. Incident: a reviewer ran `git stash` and popped it at once; working tree verified intact. Next: R-M2-09b (opus) | done | 2026-11-02 |
 | R-M2-09b | Pipeline leftovers: `Client.sleep` replaces `sleepFn`; `appSeams` + `newApp` (zero value in `NewApp`); `newFlowApp` on fakes, `hookNotion` removed; nil-guards for `Notifier`/`DryRun` in `pipeline.New`. Decisions: coordinator: `mustJSON` stays twice, `Normalize` stays a separate call, `FormatTitle`/`deadlineLabel` stay in `internal/notion`, no `watchtest` FS (real temp dirs). Tests 251 → 253, golden byte-identical, review approved | done | 2026-11-02 |
-| R-M2-10 | Entry point and wiring: `app.go` deleted; new `internal/cli` (`Env`, `Init` → `Setup`, `NewPipeline`, `Check`, `Run`, `ProcessSingleFile`, `printDryRun`); `cli.Notion` interface; `main.go` only file of package `main` (flags, `loadConfig`, `newEnv`, exit codes); `appSeams` removed; arch rules incl. `TestArchRootPackageOnlyMain`; G304 exclusion path `internal/cli/cli.go`. Decisions: coordinator: two wiring helpers (one would move the `Konfiguration:` line), notify/secret built only in `main`, Run/ticker in `cli`, Notion transport stays a `newEnv` parameter. Tests 253 → 264+, coverage 86–100 % per package, golden byte-identical, review approved | done | 2026-11-02 |
+| R-M2-10 | Entry point and wiring: `app.go` deleted; new `internal/cli` (`Env`, `Init` → `Setup`, `NewPipeline`, `Check`, `Run`, `ProcessSingleFile`, `printDryRun`); `cli.Notion` interface; `main.go` only file of package `main` (flags, `loadConfig`, `newEnv`, exit codes); `appSeams` removed; arch rules incl. `TestArchRootPackageOnlyMain`; G304 exclusion path `internal/cli/cli.go`. Decisions: coordinator: two wiring helpers (one would move the `Konfiguration:` line), notify/secret built only in `main`, Run/ticker in `cli`, Notion transport stays a `newEnv` parameter. Tests 253 → 268, coverage 86–100 % per package, golden byte-identical, review approved | done | 2026-11-02 |
+| R-M3-09 | Config values out of error messages (S-17): `orphan_summary_action muss note, archive oder keep sein`, `create_tasks_for muss me, all oder none sein`, `unbekannte Zeitzone in timezone (IANA-Name erwartet, z. B. Europe/Berlin)` (no wrapping of the `time.LoadLocation` error, it contains the name). Tests assert value absence; golden unchanged; code and security review approved. Remaining messages echo only the `-config` path and unknown key names (outside S-17). Follow-up #1 done | done | 2026-11-02 |
 
 ## M1 summary (complete 2026-11-02: R-M1-01 to R-M1-07 + R-M1-EXIT)
 
@@ -86,7 +87,7 @@ Exit criteria (met):
 - Package `main` contains only `main.go` (`TestArchRootPackageOnlyMain`).
 - Dependency-direction test in `arch_test.go` (`go list -deps`).
 - Golden byte-identical over the whole of M2.
-- Coverage per package 86–100 %; tests 253 → 264+ in the last task.
+- Coverage per package 86–100 %; tests 253 → 268 Test functions after R-M2-10.
 
 Decisions taken in M2:
 
@@ -105,13 +106,24 @@ Incidents:
 - R-M2-05: the first report claimed an arch rule that did not exist; caught in verification, rule added in fix round 1.
 - R-M2-09a: a reviewer ran `git stash` and popped it at once; working tree verified intact, harmless.
 
-Next: M3 gate.
+Next: M3 (gate passed 2026-11-02).
+
+## M3 gate decisions (2026-11-02)
+
+| By | Decision | Task |
+| --- | --- | --- |
+| Mark | M3 approved as planned (20 tasks, incl. security changes: secrets, permissions, plist); tasks marked ⚠ change visible behavior as described in the plan | M3 |
+| Mark | German date with underscore time is fixed | R-M3-20 |
+| Mark | No duplicate page after an ambiguous `CreatePage` failure: marker in a new optional text column in the Notes database (e.g. "Quelle", created by Mark, name configurable via `notes_properties`); file identifier written there and queried before a retry; without the column behavior stays as today | R-M3-17 |
+| Coordinator | M3 lanes run partly in parallel git worktrees (disjoint packages); results are applied to the branch only after review and a green `make check` | M3 |
+
+Open: Mark must create the text column in the Notes database before R-M3-17 is tested live (the coordinator asks him).
 
 ## Open follow-ups
 
 | # | Item | Owner | Status |
 | --- | --- | --- | --- |
-| 1 | Error messages for `orphan_summary_action`, `create_tasks_for` and `timezone` print the value with `%q` (pre-existing, affects JSON and YAML) | open | planned (R-M3-09) |
+| 1 | Error messages for `orphan_summary_action`, `create_tasks_for` and `timezone` printed the value with `%q` (pre-existing, affects JSON and YAML); fixed in R-M3-09 | open | done (R-M3-09) |
 | 2 | Local toolchain go1.25.5 has stdlib vulnerabilities (security review). Recommendation: rebuild with Go 1.26.10 or newer | open | done (R-M0-01) |
 | 3 | Migrate the real config to `config.yaml` and update the installed plist | Mark | open |
 | 4 | One week of manual testing from 2026-11-01, then set up the launchd service (see `docs/launchd.md`) | Mark | open |
@@ -132,5 +144,5 @@ Next: M3 gate.
 | 19 | `handleError` deletes the retry state even when the move to `_fehler` fails: the file is reprocessed and `max_attempts` restarts from 0 (pre-existing since v1.0.0) | open | planned (R-M3-18) |
 | 20 | A regular file swapped for a symlink between `ReadDir` and `ReadFile` is still followed (low risk, local only) | open | planned (R-M3-19) |
 | 21 | Three copies of "get or create state, `nextTry` = now + 2 min" (`interrupted`, `archiveAt`, `handleError`) | open | done (R-M2-09a) |
-| 22 | A German date followed by an underscore and a time (`Weekly 07.01.2026_08-45.txt`) is misparsed: `reDateISO` matches `2026_08-45`, `dateFromName` never tries `reDateDE`, the meeting date falls back to an estimate (pre-existing since v1.0.0, found by QA in R-M2-02). Ask Mark at the M3 gate | Mark | planned (R-M3-20) |
+| 22 | A German date followed by an underscore and a time (`Weekly 07.01.2026_08-45.txt`) is misparsed: `reDateISO` matches `2026_08-45`, `dateFromName` never tries `reDateDE`, the meeting date falls back to an estimate (pre-existing since v1.0.0, found by QA in R-M2-02). Mark decided at the M3 gate (2026-11-02): fix it | Mark | planned (R-M3-20) |
 | 23 | Root tests still need exported `pipeline.FileState`, `States()`, `ErrUnterbrochen` and `config.Finalize` (e2e builds its config in code). Move tests into `internal/pipeline`, load e2e config from a file, then unexport | open | planned (R-M4-04) |
