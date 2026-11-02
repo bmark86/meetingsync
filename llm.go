@@ -184,8 +184,8 @@ func (l *LLM) chat(ctx context.Context, msgs []chatMsg, schema any) (string, err
 	if err != nil {
 		return "", transient(fmt.Errorf("LM Studio nicht erreichbar (%s) – läuft der lokale Server? %w", l.cfg.BaseURL, err))
 	}
-	defer func() { _ = resp.Body.Close() }() // nur gelesen, Close-Fehler ohne Folgen
-	data, _ := io.ReadAll(resp.Body)
+	defer func() { _ = resp.Body.Close() }() //nolint:errcheck // nur gelesen, Close-Fehler ohne Folgen
+	data, _ := io.ReadAll(resp.Body)         //nolint:errcheck // Lesefehler fuehrt unten ohnehin zu einem JSON-/Statusfehler
 
 	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
 		return "", transient(&httpError{resp.StatusCode, string(data)})
@@ -232,7 +232,7 @@ func (l *LLM) Models(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = resp.Body.Close() }() // nur gelesen, Close-Fehler ohne Folgen
+	defer func() { _ = resp.Body.Close() }() //nolint:errcheck // nur gelesen, Close-Fehler ohne Folgen
 	var out struct {
 		Data []struct {
 			ID string `json:"id"`
@@ -331,7 +331,7 @@ func (o omap) MarshalJSON() ([]byte, error) {
 		if i > 0 {
 			b.WriteByte(',')
 		}
-		k, _ := json.Marshal(e.K)
+		k, _ := json.Marshal(e.K) //nolint:errcheck // Schluessel ist ein String, Marshal kann nicht scheitern
 		v, err := json.Marshal(e.V)
 		if err != nil {
 			return nil, err
@@ -489,7 +489,7 @@ func splitByLines(s string, max int) []string {
 }
 
 func mustJSON(v any) string {
-	b, _ := json.MarshalIndent(v, "", "  ")
+	b, _ := json.MarshalIndent(v, "", "  ") //nolint:errcheck // Marshal von Schema/Notiz (nur Strings, Zahlen, Listen) scheitert nicht
 	return string(b)
 }
 

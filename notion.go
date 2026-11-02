@@ -69,8 +69,8 @@ func (n *Notion) do(ctx context.Context, method, path string, in, out any, idemp
 			}
 			return transient(fmt.Errorf("Notion nicht erreichbar: %w", err))
 		}
-		body, _ := io.ReadAll(resp.Body)
-		_ = resp.Body.Close() // Body ist bereits gelesen, Close-Fehler ohne Folgen
+		body, _ := io.ReadAll(resp.Body) //nolint:errcheck // Lesefehler fuehrt unten zu Statusfehler ohne Details
+		_ = resp.Body.Close()            //nolint:errcheck // Body ist bereits gelesen, Close-Fehler ohne Folgen
 
 		if resp.StatusCode == http.StatusTooManyRequests ||
 			(idempotent && resp.StatusCode >= 500) {
@@ -83,7 +83,7 @@ func (n *Notion) do(ctx context.Context, method, path string, in, out any, idemp
 				Code    string `json:"code"`
 				Message string `json:"message"`
 			}
-			_ = json.Unmarshal(body, &e)
+			_ = json.Unmarshal(body, &e) //nolint:errcheck // Fehlerdetails sind optional, Status wird ohnehin gemeldet
 			ae := &apiError{Status: resp.StatusCode, Code: e.Code, Message: e.Message}
 			switch {
 			case resp.StatusCode == 429 || resp.StatusCode >= 500:

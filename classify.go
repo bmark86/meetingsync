@@ -228,10 +228,10 @@ func maxLeadingTimestamp(s string) time.Duration {
 		if m := reCueTiming.FindStringSubmatch(l); m != nil {
 			d = hmsms(m[5], m[6], m[7], m[8])
 		} else if m := reLeadingTS.FindStringSubmatch(l); m != nil {
-			a, _ := strconv.Atoi(m[1])
-			b, _ := strconv.Atoi(m[2])
-			if m[3] != "" { // h:mm:ss
-				c, _ := strconv.Atoi(m[3])
+			a, _ := strconv.Atoi(m[1]) //nolint:errcheck // Ziffern per Regexp sichergestellt, höchstens 4 Stellen, kein Überlauf
+			b, _ := strconv.Atoi(m[2]) //nolint:errcheck // Ziffern per Regexp sichergestellt, höchstens 4 Stellen, kein Überlauf
+			if m[3] != "" {            // h:mm:ss
+				c, _ := strconv.Atoi(m[3]) //nolint:errcheck // Ziffern per Regexp sichergestellt, höchstens 4 Stellen, kein Überlauf
 				d = time.Duration(a)*time.Hour + time.Duration(b)*time.Minute + time.Duration(c)*time.Second
 			} else { // mm:ss
 				d = time.Duration(a)*time.Minute + time.Duration(b)*time.Second
@@ -285,23 +285,23 @@ func estimatedTiming(mtime time.Time, dur time.Duration) Timing {
 func dateFromName(name string) (y, mo, d, h, mi int, hasTime, ok bool) {
 	base := strings.TrimSuffix(filepath.Base(name), filepath.Ext(name))
 	if m := reDateISO.FindStringSubmatch(base); m != nil {
-		y, _ = strconv.Atoi(m[1])
-		mo, _ = strconv.Atoi(m[2])
-		d, _ = strconv.Atoi(m[3])
+		y, _ = strconv.Atoi(m[1])  //nolint:errcheck // Ziffern per Regexp sichergestellt, höchstens 4 Stellen, kein Überlauf
+		mo, _ = strconv.Atoi(m[2]) //nolint:errcheck // Ziffern per Regexp sichergestellt, höchstens 4 Stellen, kein Überlauf
+		d, _ = strconv.Atoi(m[3])  //nolint:errcheck // Ziffern per Regexp sichergestellt, höchstens 4 Stellen, kein Überlauf
 		if m[4] != "" {
-			h, _ = strconv.Atoi(m[4])
-			mi, _ = strconv.Atoi(m[5])
+			h, _ = strconv.Atoi(m[4])  //nolint:errcheck // Ziffern per Regexp sichergestellt, höchstens 4 Stellen, kein Überlauf
+			mi, _ = strconv.Atoi(m[5]) //nolint:errcheck // Ziffern per Regexp sichergestellt, höchstens 4 Stellen, kein Überlauf
 			hasTime = h < 24 && mi < 60
 		}
 		return y, mo, d, h, mi, hasTime, validDate(y, mo, d)
 	}
 	if m := reDateDE.FindStringSubmatch(base); m != nil {
-		d, _ = strconv.Atoi(m[1])
-		mo, _ = strconv.Atoi(m[2])
-		y, _ = strconv.Atoi(m[3])
+		d, _ = strconv.Atoi(m[1])  //nolint:errcheck // Ziffern per Regexp sichergestellt, höchstens 4 Stellen, kein Überlauf
+		mo, _ = strconv.Atoi(m[2]) //nolint:errcheck // Ziffern per Regexp sichergestellt, höchstens 4 Stellen, kein Überlauf
+		y, _ = strconv.Atoi(m[3])  //nolint:errcheck // Ziffern per Regexp sichergestellt, höchstens 4 Stellen, kein Überlauf
 		if m[4] != "" {
-			h, _ = strconv.Atoi(m[4])
-			mi, _ = strconv.Atoi(m[5])
+			h, _ = strconv.Atoi(m[4])  //nolint:errcheck // Ziffern per Regexp sichergestellt, höchstens 4 Stellen, kein Überlauf
+			mi, _ = strconv.Atoi(m[5]) //nolint:errcheck // Ziffern per Regexp sichergestellt, höchstens 4 Stellen, kein Überlauf
 			hasTime = h < 24 && mi < 60
 		}
 		return y, mo, d, h, mi, hasTime, validDate(y, mo, d)
@@ -351,13 +351,13 @@ func normalizeNewlines(s string) string {
 }
 
 func hmsms(h, m, s, ms string) time.Duration {
-	hi, _ := strconv.Atoi(h)
-	mi, _ := strconv.Atoi(m)
-	si, _ := strconv.Atoi(s)
+	hi, _ := strconv.Atoi(h) //nolint:errcheck // Ziffern per Regexp sichergestellt, höchstens 4 Stellen, kein Überlauf
+	mi, _ := strconv.Atoi(m) //nolint:errcheck // Ziffern per Regexp sichergestellt, höchstens 4 Stellen, kein Überlauf
+	si, _ := strconv.Atoi(s) //nolint:errcheck // Ziffern per Regexp sichergestellt, höchstens 4 Stellen, kein Überlauf
 	for len(ms) < 3 {
 		ms += "0"
 	}
-	msi, _ := strconv.Atoi(ms)
+	msi, _ := strconv.Atoi(ms) //nolint:errcheck // Ziffern per Regexp sichergestellt, höchstens 4 Stellen, kein Überlauf
 	return time.Duration(hi)*time.Hour + time.Duration(mi)*time.Minute +
 		time.Duration(si)*time.Second + time.Duration(msi)*time.Millisecond
 }
