@@ -544,6 +544,7 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 - Status: **done 2026-11-02.** Absolute paths as constants, environment `HOME`, `USER`, `LANG` (each only if set) + `PATH=/usr/bin:/bin`; G204 exclusion removed, line-level `nolint` with reason; `minimalEnv` duplicated in both packages; security review approved. CI/golden PATH stubs kept (optional cleanup). Manual check for the next real run: progress.md follow-up 24.
 
 #### R-M3-08 IDs in the URL path
+- Status: **done 2026-11-03.** `url.PathEscape` on the four ID paths in `internal/notion/client.go`; `/v1/pages` carries no ID. Valid UUIDs unchanged (golden byte-identical). Tests: `TestIDsAreEscapedInPath`, `TestValidUUIDPathUnchanged`. Review approved. Accepted residual risk (OD-12, no change): `.` and `..` are left as they are; a config value `..` could be normalized by a server or proxy.
 - Goal: config IDs go into paths with `url.PathEscape`.
 - Acceptance: all path segments from config or responses are escaped; for valid UUIDs the path is identical (golden); test with `../` and `?` in the ID; no format check at start (OD-12, decided: proposal: PathEscape only).
 - Scope: `internal/notion`, tests.

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -86,6 +87,7 @@ func (e *apiError) Error() string {
 // do schickt einen Request. Rate-Limits (429) werden immer wiederholt,
 // Netzwerk- und Serverfehler nur bei idempotenten Aufrufen, damit beim
 // Anlegen keine doppelten Seiten entstehen.
+// IDs aus Config und API-Antworten gehen nur über url.PathEscape in den Pfad (S-16).
 func (n *Client) do(ctx context.Context, method, path string, in, out any, idempotent bool) error {
 	var payload []byte
 	if in != nil {
@@ -169,7 +171,7 @@ func (n *Client) ResolveDataSource(ctx context.Context, id string) (string, Sche
 			ID string `json:"id"`
 		} `json:"data_sources"`
 	}
-	if derr := n.do(ctx, http.MethodGet, "/v1/databases/"+id, nil, &db, true); derr == nil && len(db.DataSources) > 0 {
+	if derr := n.do(ctx, http.MethodGet, "/v1/databases/"+url.PathEscape(id), nil, &db, true); derr == nil && len(db.DataSources) > 0 {
 		dsID := db.DataSources[0].ID
 		props, err2 := n.dataSourceProps(ctx, dsID)
 		return dsID, props, err2
@@ -183,7 +185,7 @@ func (n *Client) dataSourceProps(ctx context.Context, id string) (Schema, error)
 			Type PropertyKind `json:"type"`
 		} `json:"properties"`
 	}
-	if err := n.do(ctx, http.MethodGet, "/v1/data_sources/"+id, nil, &out, true); err != nil {
+	if err := n.do(ctx, http.MethodGet, "/v1/data_sources/"+url.PathEscape(id), nil, &out, true); err != nil {
 		return nil, err
 	}
 	m := make(Schema, len(out.Properties))
@@ -226,7 +228,7 @@ func (n *Client) ActiveProjects(ctx context.Context, dsID string, p ProjectsProp
 			HasMore    bool   `json:"has_more"`
 			NextCursor string `json:"next_cursor"`
 		}
-		if err := n.do(ctx, http.MethodPost, "/v1/data_sources/"+dsID+"/query", body, &out, true); err != nil {
+		if err := n.do(ctx, http.MethodPost, "/v1/data_sources/"+url.PathEscape(dsID)+"/query", body, &out, true); err != nil {
 			return nil, err
 		}
 		for _, r := range out.Results {
@@ -304,7 +306,7 @@ func (n *Client) appendChildren(ctx context.Context, blockID string, children []
 			batch = children[:100]
 		}
 		children = children[len(batch):]
-		if err := n.do(ctx, http.MethodPatch, "/v1/blocks/"+blockID+"/children", map[string]any{"children": batch}, nil, false); err != nil {
+		if err := n.do(ctx, http.MethodPatch, "/v1/blocks/"+url.PathEscape(blockID)+"/children", map[string]any{"children": batch}, nil, false); err != nil {
 			return err
 		}
 	}

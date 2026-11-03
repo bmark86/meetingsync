@@ -479,3 +479,54 @@ func TestNotionTruncatedBody(t *testing.T) {
 		t.Errorf("GET: %v", err)
 	}
 }
+
+// Fängt: ID mit ../, ?, # oder / landet unmaskiert im Pfad und trifft einen anderen Endpunkt (S-16).
+func TestIDsAreEscapedInPath(t *testing.T) {
+	const bad = "a/../b?x=1#f%41"
+	const esc = "a%2F..%2Fb%3Fx=1%23f%2541"
+	ok := ncReply{status: 200, header: map[string]string{"Content-Type": "application/json"}, body: `{"properties":{},"results":[],"data_sources":[{"id":"` + bad + `"}],"id":"` + bad + `","url":"u"}`}
+	cases := map[string]struct {
+		call func(n *Client) error
+		want string
+	}{
+		"data_sources": {func(n *Client) error { _, err := n.dataSourceProps(context.Background(), bad); return err }, "/v1/data_sources/" + esc},
+		"query": {func(n *Client) error {
+			_, err := n.ActiveProjects(context.Background(), bad, ProjectsProps{}, Schema{})
+			return err
+		}, "/v1/data_sources/" + esc + "/query"},
+		"children":  {func(n *Client) error { return n.appendChildren(context.Background(), bad, []any{map[string]any{}}) }, "/v1/blocks/" + esc + "/children"},
+		"databases": {func(n *Client) error { _, _, err := n.ResolveDataSource(context.Background(), bad); return err }, "/v1/databases/" + esc},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			n, s := ncNotion(t, ncReply{status: 404, body: `{"code":"object_not_found"}`}, ok)
+			if name != "databases" {
+				n, s = ncNotion(t, ok)
+			}
+			_ = c.call(n)
+			found := false
+			for _, r := range s.reqs {
+				if r.URL.EscapedPath() == c.want && r.URL.RawQuery == "" && r.URL.Fragment == "" {
+					found = true
+				}
+				if strings.Contains(r.URL.EscapedPath(), "/../") || !strings.HasPrefix(r.URL.EscapedPath(), "/v1/") {
+					t.Errorf("unerwarteter Pfad %q", r.URL.EscapedPath())
+				}
+			}
+			if !found {
+				t.Errorf("kein Request mit Pfad %q", c.want)
+			}
+		})
+	}
+}
+
+// Fängt: gültige UUIDs (mit/ohne Bindestriche) werden verändert.
+func TestValidUUIDPathUnchanged(t *testing.T) {
+	for _, id := range []string{"1a2b3c4d-1111-2222-3333-444455556666", "1a2b3c4d111122223333444455556666"} {
+		n, s := ncNotion(t, ncReply{status: 200, body: `{"properties":{}}`})
+		_, _ = n.dataSourceProps(context.Background(), id)
+		if got := s.reqs[0].URL.EscapedPath(); got != "/v1/data_sources/"+id {
+			t.Errorf("Pfad = %q", got)
+		}
+	}
+}
