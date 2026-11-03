@@ -41,6 +41,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Docs: review report, refactoring plan; documentation switched to plain English.
 
 ### Fixed
+- R-M3-20 ⚠: a German date followed by `_`, `-` or `.` and a time (`07.01.2026_08-45`) is no longer read as ISO date; the German date is used when it starts before the ISO match. `DD.MM.YYYY_HH-MM` and `_HH.MM` now give 2026-01-07 08:45 (was estimate, or wrong 2026-08-15 for `_08-15`); `DD.MM.YYYY.HH.MM` gives the date only. Other name patterns unchanged. Golden unchanged. See progress follow-up 22.
 - R-M1-07 ⚠: a failed archive move (`moveFile` error, e.g. `Remove(src)`) is retried after 2 min via the retry state, on all archive paths; the warning `… konnte nicht archiviert werden …` and the copy no longer repeat every poll. Not counted against `max_attempts`, never sends the file to `_fehler`; state cleared on success. In `Pass` the summary retry gate now runs before `HasNear`. Golden unchanged. See ADR 0004.
 - R-M1-07 ⚠: `listEntries` skips non-regular files (symlinks, FIFOs, devices), logged once per path: `<name>: keine reguläre Datei (z. B. Symlink) → übersprungen`. Fixes a hang: a FIFO with a supported extension blocked `ReadFile`. Visible change: symlinks in the export folder are no longer processed.
 - R-M1-07: a failed folder fsync on the target volume after a synced copy is a warning (`Zielordner nicht synchronisiert, trotzdem verschoben nach …`), the move continues; also for `_fehler` (`.fehler.txt` still written). Decided by Mark, 2026-11-02. See ADR 0005.

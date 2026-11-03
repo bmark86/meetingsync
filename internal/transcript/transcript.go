@@ -269,7 +269,7 @@ func estimatedTiming(mtime time.Time, dur time.Duration) domain.Timing {
 
 func dateFromName(name string) (y, mo, d, h, mi int, hasTime, ok bool) {
 	base := strings.TrimSuffix(filepath.Base(name), filepath.Ext(name))
-	if m := reDateISO.FindStringSubmatch(base); m != nil {
+	if m := reDateISO.FindStringSubmatch(base); m != nil && !isoInsideDE(base) {
 		y, _ = strconv.Atoi(m[1])  //nolint:errcheck // Ziffern per Regexp sichergestellt, höchstens 4 Stellen, kein Überlauf
 		mo, _ = strconv.Atoi(m[2]) //nolint:errcheck // Ziffern per Regexp sichergestellt, höchstens 4 Stellen, kein Überlauf
 		d, _ = strconv.Atoi(m[3])  //nolint:errcheck // Ziffern per Regexp sichergestellt, höchstens 4 Stellen, kein Überlauf
@@ -292,6 +292,14 @@ func dateFromName(name string) (y, mo, d, h, mi int, hasTime, ok bool) {
 		return y, mo, d, h, mi, hasTime, validDate(y, mo, d)
 	}
 	return 0, 0, 0, 0, 0, false, false
+}
+
+// isoInsideDE meldet, ob der ISO-Treffer im Jahr eines deutschen Datums
+// beginnt, z. B. "07.01.2026_08-45" (sonst Jahr 2026, Monat 08, Tag 45).
+func isoInsideDE(base string) bool {
+	iso := reDateISO.FindStringIndex(base)
+	de := reDateDE.FindStringIndex(base)
+	return de != nil && de[0] < iso[0] && iso[0] < de[1]
 }
 
 func validDate(y, mo, d int) bool {
