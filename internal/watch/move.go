@@ -76,7 +76,7 @@ func (e *DirSyncError) Unwrap() error { return e.err }
 // Zielordners, geht es weiter wie sonst; dann kommen dst und ein
 // *DirSyncError zurück (Mark, 2026-11-02).
 func (m Mover) Move(src, dir string) (string, error) {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := mkdirPrivate(dir); err != nil {
 		return "", err
 	}
 	base := filepath.Base(src)
@@ -165,12 +165,15 @@ func (m Mover) copyExcl(src, dst string) (srcInfo, dstInfo os.FileInfo, err erro
 		return nil, nil, fmt.Errorf("Quelle %s ist keine reguläre Datei oder wurde ersetzt, nicht kopiert", src)
 	}
 
-	// Rechte wie bisher os.Create
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666) //nolint:gosec // G302/G304: Pfad aus Move
+	// Kopie 0600 (S-12); O_EXCL: die Datei ist die eigene, Chmod unabhängig von der umask.
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) //nolint:gosec // G304: Pfad aus Move
 	if err != nil {
 		return nil, nil, err
 	}
 	dstInfo, err = out.Stat()
+	if err == nil {
+		err = out.Chmod(0o600)
+	}
 	if err == nil {
 		_, err = m.copy(out, in)
 	}
@@ -204,6 +207,51 @@ func removeOwn(path string, own os.FileInfo) error {
 	return os.Remove(path)
 }
 
+// mkdirPrivate legt dir samt fehlender Elternordner an wie os.MkdirAll.
+// Nur die hier neu angelegten Ordner bekommen 0700, unabhängig von der umask
+// (S-12); vorhandene behalten ihre Rechte (OD-10). Gleiche Funktion in
+// internal/ledger (dort nur Standardbibliothek erlaubt).
+func mkdirPrivate(dir string) error {
+	var missing []string
+	for d := filepath.Clean(dir); ; d = filepath.Dir(d) {
+		fi, err := os.Stat(d)
+		if err == nil {
+			if !fi.IsDir() {
+				return &os.PathError{Op: "mkdir", Path: d, Err: unix.ENOTDIR}
+			}
+			break
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		missing = append(missing, d)
+		if filepath.Dir(d) == d {
+			break
+		}
+	}
+	for i := len(missing) - 1; i >= 0; i-- {
+		err := os.Mkdir(missing[i], 0o700)
+		if errors.Is(err, os.ErrExist) {
+			continue // inzwischen von anderer Seite angelegt: Rechte nicht anfassen
+		}
+		if err != nil {
+			return err
+		}
+		if err := os.Chmod(missing[i], 0o700); err != nil { //nolint:gosec // G302: Ordner, 0700 nötig zum Betreten; nur der eben angelegte
+			return err
+		}
+	}
+	// wie os.MkdirAll: der Pfad muss am Ende ein Ordner sein (folgt Symlinks)
+	fi, err := os.Stat(dir)
+	if err != nil {
+		return err
+	}
+	if !fi.IsDir() {
+		return &os.PathError{Op: "mkdir", Path: dir, Err: unix.ENOTDIR}
+	}
+	return nil
+}
+
 func syncDir(dir string) error {
 	d, err := os.Open(dir) //nolint:gosec // G304: Zielordner aus der eigenen Konfiguration, nur für fsync geöffnet
 	if err != nil {
@@ -223,7 +271,7 @@ func WriteFehlerTxt(dst string, at time.Time, cause error) error {
 	data := []byte(fmt.Sprintf("%s\n%v\n", at.Format(time.RFC3339), cause))
 	name := dst + ".fehler.txt"
 	for i := 2; ; i++ {
-		f, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644) //nolint:gosec // G304: Pfad aus Mover.Move unter failed_dir; G302: 0o644 für .fehler.txt, Dateirechte geplant in S-12 / R-M3-04 (Entfernung geplant)
+		f, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) //nolint:gosec // G304: Pfad aus Mover.Move unter failed_dir
 		if errors.Is(err, os.ErrExist) {
 			name = fmt.Sprintf("%s (%d).fehler.txt", dst, i)
 			continue
@@ -231,7 +279,11 @@ func WriteFehlerTxt(dst string, at time.Time, cause error) error {
 		if err != nil {
 			return err
 		}
-		_, err = f.Write(data)
+		// 0600 (S-12); O_EXCL: die Datei ist die eigene, Chmod unabhängig von der umask.
+		err = f.Chmod(0o600)
+		if err == nil {
+			_, err = f.Write(data)
+		}
 		if cerr := f.Close(); err == nil {
 			err = cerr
 		}

@@ -30,14 +30,11 @@ linters:
       # scheitern. Die Regel gilt daher nur fuer Produktionscode.
       - linters: [errcheck]
         path: _test\.go$
-      # gosec G301/G302/G306: Dateirechte 0644/0755 sind heutiges Verhalten.
-      # Strengere Rechte: Befund S-12 / Task R-M3-04 (Verhaltensaenderung, nicht in M0).
-      # Exclusion in R-M3-04 entfernen. internal/ledger: Code aus app.go
-      # verschoben (R-M2-03), internal/watch: Code aus app.go verschoben
-      # (R-M2-08), gleiche Begründung, gleiche Task. app.go braucht sie seit
-      # R-M2-08 nicht mehr (MkdirAll liegt in internal/watch/move.go).
+      # gosec G301/G302/G306 nur in Tests: Fixtures unter t.TempDir() mit
+      # 0644/0755 bilden vorhandene Dateien/Ordner nach (OD-10). Produktionscode
+      # legt seit R-M3-04 (S-12) mit 0600/0700 an und braucht keine Ausnahme.
       - linters: [gosec]
-        path: (^internal/ledger/ledger\.go$|^internal/watch/move\.go$|_test\.go$)
+        path: _test\.go$
         text: "G30[126]:"
       # version wird nur per -ldflags "-X main.version=..." gesetzt und per
       # "go version -m" gelesen (OD-02), nicht im Code.
