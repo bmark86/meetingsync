@@ -214,7 +214,7 @@ func ProcessSingleFile(ctx context.Context, e Env, p *pipeline.Pipeline, path st
 	if err != nil {
 		return err
 	}
-	content, err := os.ReadFile(path)
+	content, err := os.ReadFile(path) //nolint:gosec // G304: Pfad gibt der Nutzer bewusst mit -file an (Testaufruf, auch außerhalb des Exportordners)
 	if err != nil {
 		return err
 	}

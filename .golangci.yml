@@ -39,14 +39,6 @@ linters:
       - linters: [gosec]
         path: (^internal/ledger/ledger\.go$|^internal/watch/move\.go$|_test\.go$)
         text: "G30[126]:"
-      # gosec G304: Der Watch-Ordner ist fremder Input (Symlinks). Befund S-04 /
-      # Task R-M3-03. Exclusion in R-M3-03 entfernen. internal/ledger: Code aus
-      # app.go verschoben (R-M2-03), internal/watch: Code aus app.go verschoben
-      # (R-M2-08), internal/cli: ProcessSingleFile aus app.go verschoben
-      # (R-M2-10), gleiche Begründung, gleiche Task.
-      - linters: [gosec]
-        path: ^(internal/cli/cli\.go|internal/ledger/ledger\.go|internal/watch/(fs|move)\.go)$
-        text: "G304:"
       # version wird nur per -ldflags "-X main.version=..." gesetzt und per
       # "go version -m" gelesen (OD-02), nicht im Code.
       - path: ^main\.go$

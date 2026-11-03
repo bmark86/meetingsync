@@ -499,6 +499,7 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 - Follow-ups from R-M3-01: add redirect protection (`CheckRedirect`) to the Notion client (Go drops `Authorization` on cross-host redirects, but a 307/308 re-sends the note body); errors and log lines that show a base URL (`internal/llm/client.go` ~226 `nicht erreichbar unter …`, `internal/cli/cli.go` ~177 `-check` output) print only scheme://host:port (no path, query or userinfo).
 
 #### R-M3-03 Skip symlinks
+- Status: **done 2026-11-03** (merged with R-M3-19). `OS.ReadFile` and the `move.go` copy source open with `O_RDONLY|O_NOFOLLOW|O_NONBLOCK` + `fstat` regular file + 20 MB `LimitReader`; G304 path exclusion removed, line-level `nolint` with reasons remain. `-file` still follows a user-given symlink (decision: coordinator); hard links not refused.
 - Goal: process only regular files in the watch folder.
 - Acceptance: symlink to a file and to a folder → skipped, one warning (text in the task), no read; test with a symlink to a file outside the watch folder; golden unchanged; gosec G304 exclusion for `internal/cli/cli.go` (formerly `app.go`; `ProcessSingleFile`), `internal/ledger/ledger.go`, `internal/watch/fs.go` and `internal/watch/move.go` removed from `.golangci.yml`. OD-09 (decided: proposal): no symlinks are in use, so skip them.
 - Scope: `internal/watch`, tests.
@@ -509,7 +510,7 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 
 #### R-M3-04 File permissions
 - Goal: new ledger and `.fehler.txt` files 0600; newly created archive, error and month folders 0700; the copy path creates 0600.
-- Acceptance: tests check the mode (independent of umask, by `Chmod` after creation); existing files/folders are left as they are (OD-10, decided: proposal: new ones only); golden unchanged (permissions are not part of `tree.txt`); gosec G301/G302/G306 exclusions removed (prod files, including `internal/ledger/ledger.go`). The line-wide `//nolint:gosec` on `writeFehlerTxt` (now `watch.WriteFehlerTxt` in `internal/watch/move.go`) also suppresses G302 (`.fehler.txt` is 0644); it must be resolved when the exclusions are removed (follow-up of R-M2-08).
+- Acceptance: tests check the mode (independent of umask, by `Chmod` after creation); existing files/folders are left as they are (OD-10, decided: proposal: new ones only); golden unchanged (permissions are not part of `tree.txt`); gosec G301/G302/G306 exclusions removed (prod files, including `internal/ledger/ledger.go`). The line-wide `//nolint:gosec` on `writeFehlerTxt` (now `watch.WriteFehlerTxt` in `internal/watch/move.go`) also suppresses G302 (`.fehler.txt` is 0644); it must be resolved when the exclusions are removed (follow-up of R-M2-08). Likewise the `nolint:gosec` on the `out` `OpenFile` in `copyExcl` (`internal/watch/move.go`, added in R-M3-03) hides G302 (mode for copies); resolve it here.
 - Scope: `internal/ledger`, `internal/watch`, `internal/pipeline`, tests.
 - Depends on: R-M3-03. Findings: S-12.
 - Model: opus, permissions.

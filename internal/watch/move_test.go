@@ -255,6 +255,33 @@ func TestMoveFileCopySymlinkSourceRefused(t *testing.T) {
 	}
 }
 
+// Quelle ist ein FIFO, Umbenennen nicht möglich (Kopie): Fehler, kein
+// Blockieren, keine Kopie. Fängt: Öffnen der Quelle ohne O_NONBLOCK (hängt).
+func TestMoveFileCopyFIFOSourceRefused(t *testing.T) {
+	m := Mover{Rename: noRename}
+	root := t.TempDir()
+	src, dir := filepath.Join(root, "pipe.txt"), filepath.Join(root, "ziel")
+	if err := unix.Mkfifo(src, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { _, err := m.Move(src, dir); done <- err }()
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "keine reguläre Datei") {
+			t.Fatalf("err = %v, want Fehler keine reguläre Datei", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Move blockiert am FIFO")
+	}
+	if left := remaining(t, dir); len(left) != 0 {
+		t.Fatalf("Ziel %v, want leer", left)
+	}
+	if fi, err := os.Lstat(src); err != nil || fi.Mode()&os.ModeNamedPipe == 0 {
+		t.Fatalf("Quelle = %v, %v; want FIFO unverändert", fi, err)
+	}
+}
+
 // Fehler des Umbenennens: nur EXDEV und ENOTSUP führen zur Kopie.
 // Fängt: ENOTSUP nicht als Kopierfall (Fehler statt Fallback); EINVAL als
 // Kopierfall (kopiert statt Fehler); Kopierschleife beginnt nach EEXIST
