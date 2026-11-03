@@ -668,6 +668,7 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 - Reviews: CR, SR, QA.
 
 #### R-M3-20 German date with underscore time is misparsed ⚠
+- Status: **done 2026-11-03.** `dateFromName` in `internal/transcript`: if the leftmost ISO match starts inside the leftmost German date match, the German date is used (helper `isoInsideDE`). `DD.MM.YYYY_HH-MM` (and `-`/`_HH.MM`) → 2026-01-07 08:45; `DD.MM.YYYY.HH.MM` → date only (`reDateDE` does not allow `.` before the time, not widened). Other name patterns unchanged (37 table rows). Golden unchanged; test file `transcript_date_test.go`. Code review approved. Accepted limit (coordinator): only the leftmost ISO and German matches are compared.
 ⚠ Output change for affected file names only. Decided by Mark at the M3 gate (2026-11-02): fix it.
 - Problem: in a name like `Weekly 07.01.2026_08-45.txt`, `reDateISO` matches `2026_08-45` as year 2026 / month 08 / day 45; `dateFromName` returns ok=false and never tries `reDateDE`, so the meeting date falls back to an estimate (pre-existing since v1.0.0). Found by QA in R-M2-02.
 - Acceptance:
