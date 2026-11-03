@@ -12,6 +12,7 @@
 | `RunAtLoad` | `true` | Start at login |
 | `KeepAlive` | `true` | Restart after a crash or exit |
 | `ProcessType` | `Background` | Low priority |
+| `ThrottleInterval` | `60` | Minimum seconds between two starts; limits a fast crash loop (default 10). After a config error, the restart can take up to 60 s |
 | `StandardOutPath`, `StandardErrorPath` | `~/Library/Logs/meetingsync.log` | Where the log goes (stdout and stderr in the same file) |
 
 ## Why use it?
@@ -45,6 +46,12 @@ Commands as in the README (section "6. Running all the time", the service sectio
 | Follow the log | `tail -f ~/Library/Logs/meetingsync.log` |
 
 Note: `launchctl load` / `unload` are the older way to write this. This repo uses `bootstrap` / `bootout`.
+
+### Changing the plist after installation
+
+- A change to the repo template (e.g. `ThrottleInterval`) does **not** affect an installed plist.
+- To use it: copy the file again to `~/Library/LaunchAgents/`, then run `launchctl bootout gui/$(id -u)/de.borukhov.meetingsync` and `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/de.borukhov.meetingsync.plist`.
+- `launchctl kickstart -k gui/$(id -u)/de.borukhov.meetingsync` restarts the service at once, but does not reload the plist.
 
 ## Alternative: by hand in the terminal
 

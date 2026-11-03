@@ -561,6 +561,7 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 - Reviews: CR, SR, QA.
 
 #### R-M3-10 plist ThrottleInterval
+- Status: **done 2026-11-03.** `ThrottleInterval` 60 in the template; `plutil -lint` OK; `docs/launchd.md` row and note on installed plists; installed plist untouched. Security review approved. Optional follow-up 26 in `docs/progress.md`.
 - Goal: no fast restart loop.
 - Acceptance: `ThrottleInterval` of 60 seconds in `de.borukhov.meetingsync.plist` (OD-13, decided: 60 s); `plutil -lint de.borukhov.meetingsync.plist` ok; table in `docs/launchd.md` extended; the installed plist untouched.
 - Scope: plist, `docs/launchd.md`.

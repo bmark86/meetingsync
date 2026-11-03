@@ -24,6 +24,8 @@
   <true/>
   <key>ProcessType</key>
   <string>Background</string>
+  <key>ThrottleInterval</key>
+  <integer>60</integer>
 
   <key>StandardOutPath</key>
   <string>/Users/DEINNAME/Library/Logs/meetingsync.log</string>
