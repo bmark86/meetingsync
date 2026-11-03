@@ -71,7 +71,7 @@ func (l *Ledger) put(e Entry) Entry {
 // false, schreibt Add nichts auf die Platte.
 func Load(path string, persist bool) (*Ledger, error) {
 	l := &Ledger{path: path, persist: persist, byHash: map[string]Entry{}}
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // G304: Pfad des Protokolls unter archive_dir aus der eigenen Konfiguration
 	if errors.Is(err, os.ErrNotExist) {
 		return l, nil
 	}
@@ -168,7 +168,7 @@ func (l *Ledger) Add(e Entry) error {
 }
 
 func syncDir(dir string) error {
-	d, err := os.Open(dir)
+	d, err := os.Open(dir) //nolint:gosec // G304: Ordner des Protokolls aus der eigenen Konfiguration, nur für fsync geöffnet
 	if err != nil {
 		return err
 	}

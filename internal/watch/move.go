@@ -142,7 +142,12 @@ func (m Mover) Move(src, dir string) (string, error) {
 // Liefert die Identität von Quelle und Kopie. Schlägt das Kopieren fehl,
 // löscht copyExcl die eigene Teilkopie (von Mark erlaubt, 2026-11-02).
 func (m Mover) copyExcl(src, dst string) (srcInfo, dstInfo os.FileInfo, err error) {
-	in, err := os.Open(src) //nolint:gosec // G304: Pfad aus dem Exportordner
+	// O_NOFOLLOW: ein Symlink wird nicht geöffnet (ELOOP); O_NONBLOCK: ein FIFO
+	// blockiert nicht, die Prüfung unten weist ihn ab.
+	in, err := os.OpenFile(src, os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0) //nolint:gosec // G304: Pfad aus dem Exportordner, O_NOFOLLOW und Prüfung auf reguläre Datei unten
+	if errors.Is(err, unix.ELOOP) {
+		return nil, nil, fmt.Errorf("Quelle %s ist keine reguläre Datei oder wurde ersetzt, nicht kopiert", src)
+	}
 	if err != nil {
 		return nil, nil, err
 	}
@@ -200,7 +205,7 @@ func removeOwn(path string, own os.FileInfo) error {
 }
 
 func syncDir(dir string) error {
-	d, err := os.Open(dir)
+	d, err := os.Open(dir) //nolint:gosec // G304: Zielordner aus der eigenen Konfiguration, nur für fsync geöffnet
 	if err != nil {
 		return err
 	}

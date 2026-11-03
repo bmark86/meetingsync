@@ -77,7 +77,7 @@ func (l Lister) List(now time.Time) ([]*Entry, error) {
 		e := &Entry{Path: path, Name: name, ModTime: info.ModTime(), Size: info.Size()}
 		e.Stable = now.Sub(e.ModTime) >= l.Stable && e.Size > 0
 		if e.Stable {
-			if e.Size > 20<<20 {
+			if e.Size > maxDateiBytes {
 				l.WarnOnce(path, "Ignoriere %s (größer als 20 MB)", name)
 				continue
 			}
