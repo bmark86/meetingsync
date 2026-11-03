@@ -45,6 +45,7 @@
 | R-M3-09 | Config values out of error messages (S-17): `orphan_summary_action muss note, archive oder keep sein`, `create_tasks_for muss me, all oder none sein`, `unbekannte Zeitzone in timezone (IANA-Name erwartet, z. B. Europe/Berlin)` (no wrapping of the `time.LoadLocation` error, it contains the name). Tests assert value absence; golden unchanged; code and security review approved. Remaining messages echo only the `-config` path and unknown key names (outside S-17). Follow-up #1 done | done | 2026-11-02 |
 | R-M3-19 | Open export files with O_NOFOLLOW: merged into R-M3-03 (coordinator decision, 2026-11-02); done with R-M3-03 | done | 2026-11-03 |
 | R-M3-10 | plist `ThrottleInterval` 60 s in the repo template (S-21, OD-13); `plutil -lint` ok; `docs/launchd.md` row and note; installed plist untouched. Security review approved | done | 2026-11-03 |
+| R-M3-08 | IDs in Notion URL paths escaped with `url.PathEscape` (S-16): databases, data_sources, data_sources query, blocks children; `/v1/pages` has no ID; valid UUIDs unchanged, golden byte-identical; tests `TestIDsAreEscapedInPath`, `TestValidUUIDPathUnchanged`. Review approved. Accepted residual risk (OD-12, no change): `.` and `..` are not escaped, a config value `..` could be normalized by a server or proxy | done | 2026-11-03 |
 
 ## M1 summary (complete 2026-11-02: R-M1-01 to R-M1-07 + R-M1-EXIT)
 
