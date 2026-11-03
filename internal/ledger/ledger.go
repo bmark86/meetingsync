@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 )
 
@@ -133,14 +134,25 @@ func (l *Ledger) Add(e Entry) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(l.path), 0o755); err != nil {
+	if err := mkdirPrivate(filepath.Dir(l.path)); err != nil {
 		return err
 	}
-	_, statErr := os.Lstat(l.path)
-	created := errors.Is(statErr, os.ErrNotExist)
-	f, err := os.OpenFile(l.path, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0o644)
+	// Neue Datei 0600 (S-12), eine vorhandene behält ihre Rechte (OD-10).
+	created := true
+	f, err := os.OpenFile(l.path, os.O_CREATE|os.O_EXCL|os.O_APPEND|os.O_RDWR, 0o600)
+	if errors.Is(err, os.ErrExist) {
+		created = false
+		f, err = os.OpenFile(l.path, os.O_APPEND|os.O_RDWR, 0)
+	}
 	if err != nil {
 		return err
+	}
+	if created {
+		// Rechte unabhängig von der umask
+		if err := f.Chmod(0o600); err != nil {
+			_ = f.Close() //nolint:errcheck // Chmod-Fehler zählt, Close-Fehler ohne Folgen
+			return err
+		}
 	}
 	line := append(b, '\n')
 	// Abgerissene letzte Zeile (Absturz beim Schreiben): erst '\n', sonst
@@ -165,6 +177,50 @@ func (l *Ledger) Add(e Entry) error {
 		err = syncDir(filepath.Dir(l.path)) // neuer Ordnereintrag soll den Absturz überstehen
 	}
 	return err
+}
+
+// mkdirPrivate legt dir samt fehlender Elternordner an wie os.MkdirAll.
+// Nur die hier neu angelegten Ordner bekommen 0700, unabhängig von der umask
+// (S-12); vorhandene behalten ihre Rechte (OD-10).
+func mkdirPrivate(dir string) error {
+	var missing []string
+	for d := filepath.Clean(dir); ; d = filepath.Dir(d) {
+		fi, err := os.Stat(d)
+		if err == nil {
+			if !fi.IsDir() {
+				return &os.PathError{Op: "mkdir", Path: d, Err: syscall.ENOTDIR}
+			}
+			break
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		missing = append(missing, d)
+		if filepath.Dir(d) == d {
+			break
+		}
+	}
+	for i := len(missing) - 1; i >= 0; i-- {
+		err := os.Mkdir(missing[i], 0o700)
+		if errors.Is(err, os.ErrExist) {
+			continue // inzwischen von anderer Seite angelegt: Rechte nicht anfassen
+		}
+		if err != nil {
+			return err
+		}
+		if err := os.Chmod(missing[i], 0o700); err != nil { //nolint:gosec // G302: Ordner, 0700 nötig zum Betreten; nur der eben angelegte
+			return err
+		}
+	}
+	// wie os.MkdirAll: der Pfad muss am Ende ein Ordner sein (folgt Symlinks)
+	fi, err := os.Stat(dir)
+	if err != nil {
+		return err
+	}
+	if !fi.IsDir() {
+		return &os.PathError{Op: "mkdir", Path: dir, Err: syscall.ENOTDIR}
+	}
+	return nil
 }
 
 func syncDir(dir string) error {

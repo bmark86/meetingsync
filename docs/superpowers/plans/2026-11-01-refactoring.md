@@ -509,6 +509,7 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 - Merged with R-M3-19 (coordinator decision, 2026-11-02): also open files in `internal/watch/fs.go` (`OS.ReadFile`) with `O_NOFOLLOW` + `fstat` `IsRegular`; test with a swap between listing and reading.
 
 #### R-M3-04 File permissions
+- Status: **done 2026-11-03**. New ledger, `.fehler.txt` and copy-fallback files 0600; new archive root, `_fehler` and month folders 0700, set explicitly after creation (independent of umask); existing items keep their mode (OD-10, new ones only). gosec G301/G302/G306 exclusions now only for `_test.go`.
 - Goal: new ledger and `.fehler.txt` files 0600; newly created archive, error and month folders 0700; the copy path creates 0600.
 - Acceptance: tests check the mode (independent of umask, by `Chmod` after creation); existing files/folders are left as they are (OD-10, decided: proposal: new ones only); golden unchanged (permissions are not part of `tree.txt`); gosec G301/G302/G306 exclusions removed (prod files, including `internal/ledger/ledger.go`). The line-wide `//nolint:gosec` on `writeFehlerTxt` (now `watch.WriteFehlerTxt` in `internal/watch/move.go`) also suppresses G302 (`.fehler.txt` is 0644); it must be resolved when the exclusions are removed (follow-up of R-M2-08). Likewise the `nolint:gosec` on the `out` `OpenFile` in `copyExcl` (`internal/watch/move.go`, added in R-M3-03) hides G302 (mode for copies); resolve it here.
 - Scope: `internal/ledger`, `internal/watch`, `internal/pipeline`, tests.
