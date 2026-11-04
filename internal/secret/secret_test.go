@@ -1,12 +1,14 @@
 package secret
 
-// Tests der Token-Suche (R-M2-07): jeder Zweig der Reihenfolge NOTION_TOKEN →
-// Schlüsselbund → Config-Datei mit Fake-Runner, nie das echte security.
+// Tests der Token-Suche (R-M2-07, R-M3-15): jeder Zweig der Reihenfolge
+// NOTION_TOKEN bzw. LLM_API_KEY → Schlüsselbund → Config-Datei mit Fake-Runner,
+// nie das echte security.
 
 import (
 	"errors"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -25,8 +27,15 @@ func (f *fakeRun) run(path string, env []string, args ...string) ([]byte, error)
 	return f.out, f.err
 }
 
-func source(service, file string, f *fakeRun) *notionToken {
-	return &notionToken{keychainService: service, fileToken: file, run: f.run}
+// withRun tauscht den Runner einer TokenSource aus NewNotion/NewLLM gegen den Fake.
+func withRun(ts TokenSource, f *fakeRun) *source {
+	s := ts.(*source)
+	s.run = f.run
+	return s
+}
+
+func notionSource(service, file string, f *fakeRun) *source {
+	return withRun(NewNotion(service, file), f)
 }
 
 const wantFehlt = "kein Notion-Token: NOTION_TOKEN setzen oder token_keychain_service bzw. token in der Config angeben"
@@ -69,7 +78,7 @@ func TestNotionTokenOrder(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("NOTION_TOKEN", tc.env)
 			f := tc.fake
-			got, err := source(tc.service, tc.file, &f).Token()
+			got, err := notionSource(tc.service, tc.file, &f).Token()
 			if tc.wantErr != "" {
 				if err == nil || err.Error() != tc.wantErr || got != "" {
 					t.Fatalf("err = %v (Token leer: %v), want %q", err, got == "", tc.wantErr)
@@ -89,7 +98,7 @@ func TestNotionTokenOrder(t *testing.T) {
 
 // Fängt: NewNotion ohne echten Runner oder mit vertauschten Feldern.
 func TestNewNotion(t *testing.T) {
-	src, ok := NewNotion("svc", "file-tok").(*notionToken)
+	src, ok := NewNotion("svc", "file-tok").(*source)
 	if !ok {
 		t.Fatalf("NewNotion liefert %T", src)
 	}
@@ -112,7 +121,7 @@ func TestKeychainMinimalEnv(t *testing.T) {
 	t.Setenv("PATH", "/tmp/boese:/usr/bin")
 	t.Setenv("LLM_API_KEY", "geheim")
 	f := &fakeRun{out: []byte("kc-tok")}
-	if _, err := source("svc", "", f).Token(); err != nil {
+	if _, err := notionSource("svc", "", f).Token(); err != nil {
 		t.Fatal(err)
 	}
 	want := [][]string{{"HOME=/Users/test", "USER=test", "LANG=de_DE.UTF-8", "PATH=/usr/bin:/bin"}}
@@ -134,7 +143,7 @@ func TestKeychainMinimalEnvOnlySetVars(t *testing.T) {
 		t.Fatal(err)
 	}
 	f := &fakeRun{out: []byte("kc-tok")}
-	if _, err := source("svc", "", f).Token(); err != nil {
+	if _, err := notionSource("svc", "", f).Token(); err != nil {
 		t.Fatal(err)
 	}
 	want := [][]string{{"HOME=/Users/test", "PATH=/usr/bin:/bin"}}
@@ -154,5 +163,97 @@ func TestRunOutput(t *testing.T) {
 	out, err = runOutput("/usr/bin/env", []string{"A=1", "PATH=/usr/bin:/bin"})
 	if err != nil || string(out) != "A=1\nPATH=/usr/bin:/bin\n" {
 		t.Fatalf("runOutput(env) = %q, %v", out, err)
+	}
+}
+
+// Fängt (R-M3-15): falsche Reihenfolge LLM_API_KEY → Schlüsselbund → Config,
+// Rückfall auf die Datei nach Schlüsselbund-Fehler, Fehler statt leerem Key
+// ohne Angabe, NOTION_TOKEN statt LLM_API_KEY, Key im Fehlertext.
+func TestLLMKeyOrder(t *testing.T) {
+	const secretKey = "sk-geheim-123"
+	kcErr := errors.New("exit status 44")
+	call := [][]string{{"/usr/bin/security", "find-generic-password", "-s", "meetingsync-llm", "-w"}}
+	tests := []struct {
+		name      string
+		env       string
+		service   string
+		file      string
+		fake      fakeRun
+		want      string
+		wantErr   string
+		wantCalls [][]string
+	}{
+		{name: "Umgebung gewinnt vor allem", env: " env-key\n", service: "meetingsync-llm", file: "file-key", want: "env-key"},
+		{name: "Umgebung nur Leerzeichen zählt nicht", env: "  ", file: "file-key", want: "file-key"},
+		{
+			name: "Schlüsselbund bei gesetztem Dienst, Ausgabe getrimmt, Config ungenutzt", service: " meetingsync-llm ", file: "file-key",
+			fake: fakeRun{out: []byte("  kc-key\n")}, want: "kc-key", wantCalls: call,
+		},
+		{
+			name: "Schlüsselbund-Fehler bricht ab, kein Rückfall auf die Config", service: "meetingsync-llm", file: secretKey,
+			fake:    fakeRun{out: []byte(secretKey), err: kcErr},
+			wantErr: "LLM-API-Key aus dem Schlüsselbund (meetingsync-llm) nicht lesbar: exit status 44", wantCalls: call,
+		},
+		{name: "kein Dienst: Key aus der Config, getrimmt", file: " file-key\n", want: "file-key"},
+		{name: "Dienst nur Leerzeichen: Key aus der Config", service: "  ", file: "file-key", want: "file-key"},
+		{name: "nichts gesetzt: kein Key, kein Fehler"},
+		{name: "Config-Key nur Leerzeichen: kein Key", file: "  "},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("LLM_API_KEY", tc.env)
+			t.Setenv("NOTION_TOKEN", "ntn-falsch")
+			f := tc.fake
+			got, err := withRun(NewLLM(tc.service, tc.file), &f).Token()
+			if tc.wantErr != "" {
+				if err == nil || err.Error() != tc.wantErr || got != "" {
+					t.Fatalf("err = %v (Key leer: %v), want %q", err, got == "", tc.wantErr)
+				}
+				if !errors.Is(err, kcErr) {
+					t.Fatalf("Ursache nicht eingepackt: %v", err)
+				}
+				if strings.Contains(err.Error(), secretKey) {
+					t.Fatal("Key im Fehlertext")
+				}
+			} else if err != nil || got != tc.want {
+				t.Fatalf("err = %v, Key richtig: %v", err, got == tc.want)
+			}
+			if !reflect.DeepEqual(f.calls, tc.wantCalls) {
+				t.Fatalf("Aufrufe = %q, want %q", f.calls, tc.wantCalls)
+			}
+		})
+	}
+}
+
+// Fängt: NewLLM ohne echten Runner, mit vertauschten Feldern oder Notion-Namen.
+func TestNewLLM(t *testing.T) {
+	src, ok := NewLLM("svc", "file-key").(*source)
+	if !ok {
+		t.Fatalf("NewLLM liefert %T", src)
+	}
+	if src.keychainService != "svc" || src.fileToken != "file-key" || src.envName != "LLM_API_KEY" || src.label != "LLM-API-Key" || src.missing != nil {
+		t.Fatalf("Felder falsch gesetzt: env=%q label=%q missing=%v", src.envName, src.label, src.missing)
+	}
+	if reflect.ValueOf(src.run).Pointer() != reflect.ValueOf(runOutput).Pointer() {
+		t.Fatal("Runner ist nicht runOutput")
+	}
+}
+
+// Fängt: security bekommt für den LLM-Key nicht die minimale Umgebung
+// (LLM_API_KEY oder NOTION_TOKEN gingen mit).
+func TestLLMKeychainMinimalEnv(t *testing.T) {
+	t.Setenv("LLM_API_KEY", " ")
+	t.Setenv("NOTION_TOKEN", "ntn_geheim")
+	t.Setenv("HOME", "/Users/test")
+	t.Setenv("USER", "test")
+	t.Setenv("LANG", "de_DE.UTF-8")
+	t.Setenv("PATH", "/tmp/boese:/usr/bin")
+	f := &fakeRun{out: []byte("kc-key")}
+	if _, err := withRun(NewLLM("svc", ""), f).Token(); err != nil {
+		t.Fatal(err)
+	}
+	want := [][]string{{"HOME=/Users/test", "USER=test", "LANG=de_DE.UTF-8", "PATH=/usr/bin:/bin"}}
+	if !reflect.DeepEqual(f.envs, want) {
+		t.Fatalf("Umgebung = %q, want %q", f.envs, want)
 	}
 }

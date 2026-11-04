@@ -16,6 +16,7 @@
   "llm": {
     "base_url": "http://localhost:1234/v1",
     "model": "gemma-4-31b",
+    "api_key_keychain_service": "",
     "temperature": 0.2,
     "max_chunk_chars": 60000,
     "structured_output": true

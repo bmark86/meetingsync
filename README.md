@@ -57,6 +57,12 @@ Store the token safely in the keychain (you will be asked for the token):
 security add-generic-password -a "$USER" -s meetingsync-notion -w
 ```
 
+Optional, only if LM Studio needs an API key: store it the same way (you will be asked for the key), then set `llm.api_key_keychain_service: meetingsync-llm` in the config (step 4).
+
+```bash
+security add-generic-password -a "$USER" -s meetingsync-llm -w
+```
+
 ### 4. Configuration
 
 ```bash
@@ -181,6 +187,8 @@ The full, commented reference of all options is in [config.example.yaml](config.
 | `stable_seconds` | `20` | A file must stay unchanged for this long |
 | `max_attempts` | `10` | Failed attempts (all errors count, also temporary ones, except the block cap, which goes to `_fehler` at once). After that, the file moves to `_fehler` (with `.fehler.txt`) |
 | `llm.model` | – | Model identifier from LM Studio |
+| `llm.api_key` | empty | API key for LM Studio, usually not needed. Read only if `llm.api_key_keychain_service` is not set. Do not put a real key in the repo |
+| `llm.api_key_keychain_service` | empty | Keychain entry for the LLM key, e.g. `meetingsync-llm` (see step 3). The key is looked up in this order: env `LLM_API_KEY` → keychain (an error there aborts the start) → `llm.api_key` |
 | `llm.max_chunk_chars` | `60000` | Longer transcripts are first condensed in parts |
 | `notion.create_tasks_for` | `me` | `me` = only your to-dos, `all` = all, `none` = none |
 
