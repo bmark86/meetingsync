@@ -110,7 +110,7 @@ meetingsync -dry-run -file ~/Meetings/MacWhisper/any-transcript.srt
 
 You see the JSON that the model returns. If it looks right, the same command without `-dry-run` creates a real note.
 
-> **Warning, `-file` without `-dry-run`:** A real note is created, but there is no ledger entry and the file is not moved. If the file is in `watch_dir`, a later run processes it again (second note). Remove the file from `watch_dir` afterwards.
+> **Warning, `-file` without `-dry-run`:** A real note is created and a ledger entry is written, as in a normal run. The file is not moved. If the file is in `watch_dir`, the running service later archives it as already processed (no second note). `-file` waits while a service pass is running, because both lock the export folder.
 
 ### 6. Running all the time
 
@@ -163,7 +163,7 @@ By default, the MacWhisper summary is **not** used. The model works directly wit
 
 **Date and time** come from the file name if they are in it (MacWhisper format `2026-10-30 14_30_49`, also `24.08.2026`). Without a date, the export time minus the length of the transcript is used. If the name has only a date and no time, that date is used without a time. If it is the export day, the time is estimated from the export time minus the duration.
 
-**Ledger:** Processed files are listed in `<archive_dir>/.meetingsync-ledger.jsonl`. It works with a content hash. So the same file is never processed twice (except with `-file`, see above), even under a different name.
+**Ledger:** Processed files are listed in `<archive_dir>/.meetingsync-ledger.jsonl`. It works with a content hash. So the same file is never processed twice, even under a different name.
 
 ---
 

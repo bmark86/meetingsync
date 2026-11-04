@@ -611,6 +611,7 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 - Depends on: M2, R-M1-02, R-M3-04. Findings: A-14.
 - Model: opus, ledger atomicity and file handling.
 - Reviews: CR, SR, QA. ADR 0013.
+- Status: done 2026-11-04 (code review approved, fix round 1 done). ADR 0013. `-file` does not move the file (Mark, 2026-11-04). Mutual exclusion by `flock` on the export folder, `Ledger.Refresh` in the service; golden G09b added. Follow-ups: progress #30, #31.
 
 #### R-M3-15 `llm.api_key` from the Keychain ⚠
 ⚠ Behavior change, decided by Mark on 2026-11-01 (D9, OD-20: yes). Replaces R-OPT-04.

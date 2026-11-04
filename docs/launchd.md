@@ -72,7 +72,13 @@ Start `meetingsync` directly. It runs until you close the terminal or restart th
 | --- | --- |
 | no options | One run right away, then every 10 s. Processes **everything** in the watch folder (now 52 meetings, about 5-8 hours of LLM time, 52 notes). Finished files move to `_archiv/JJJJ-MM` (archive folder by year and month), the hash goes into the ledger. |
 | `-once` | Exactly one run, then exit. Also processes everything that is there (archive and ledger as above), just without running continuously. Unstable files (younger than `stable_seconds`) and files waiting for a retry are skipped and not tried again. |
-| `-file <file>` | Creates one note. The file **stays in place** and does **not** go into the ledger. |
+| `-file <file>` | Creates one note and writes the ledger entries like a normal run. The file **stays in place** (not moved). Always processes the given file, even if its hash is known. |
 | `-dry-run` | Nothing is written or moved. The result is only printed. |
 
-Result of `-file`: the file must be taken out of the watch folder afterwards. Otherwise a later run or the service creates a second note (see `docs/progress.md`, follow-up 6). Delete or move actions on Mark's files only with his consent.
+Result of `-file`:
+- A file in the watch folder is archived by the service on its next pass as already processed (`↺ … schon verarbeitet → Archiv`). No second note. A file outside the watch folder stays where it is.
+- While the service runs a pass, `-file` waits (log `Dienst verarbeitet gerade den Exportordner – warte, bis der Durchlauf fertig ist …`). If the service archived the file meanwhile, `-file` fails with not found.
+- While `-file` runs, service passes are skipped (log `Anderer Lauf aktiv …`).
+- After installing a new binary, restart the service. An old service has no folder lock and could create a second page (follow-up 30).
+- Without `watch_dir`, `-file` runs without the lock.
+- Delete or move actions on Mark's files only with his consent.

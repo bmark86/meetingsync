@@ -1,11 +1,13 @@
 // Package ledger führt das Protokoll gegen Doppelverarbeitung (ADR 0004):
 // JSON-Lines-Datei, pro Hash gilt die letzte Zeile, Anhängen mit fsync.
+// Dazu die Sperre gegen gleichzeitige Läufe (Dienst und -file, lock.go).
 package ledger
 
 import (
 	"bufio"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -57,6 +59,9 @@ type Ledger struct {
 	path    string
 	persist bool
 	byHash  map[string]Entry
+	// off: bis hier ist die Datei gelesen (Ende der letzten vollständigen
+	// Zeile). Refresh liest ab off die Zeilen anderer Prozesse nach (-file).
+	off int64
 }
 
 // put übernimmt e als letzten Stand für e.Hash.
@@ -80,9 +85,55 @@ func Load(path string, persist bool) (*Ledger, error) {
 		return nil, err
 	}
 	defer func() { _ = f.Close() }() //nolint:errcheck // nur gelesen, Close-Fehler ohne Folgen
+	return l, l.read(f)
+}
+
+// Refresh liest die Zeilen nach, die seit dem letzten Lesen angehängt wurden,
+// z. B. von einem -file-Lauf in einem anderen Prozess. Eigene Zeilen aus Add
+// liest es nicht noch einmal. Ist die Datei kürzer als bisher gelesen (von
+// Hand gekürzt), liest es sie neu von vorn.
+func (l *Ledger) Refresh() error {
+	f, err := os.Open(l.path) //nolint:gosec // G304: Pfad des Protokolls unter archive_dir aus der eigenen Konfiguration
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }() //nolint:errcheck // nur gelesen, Close-Fehler ohne Folgen
+	info, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	if info.Size() < l.off {
+		l.byHash, l.off = map[string]Entry{}, 0
+	}
+	return l.read(f)
+}
+
+// read übernimmt die Zeilen von f ab l.off und rückt l.off vor.
+func (l *Ledger) read(f *os.File) error {
+	if _, err := f.Seek(l.off, io.SeekStart); err != nil {
+		return err
+	}
+	// complete: die zuletzt gelieferte Zeile endet mit '\n'. Eine abgerissene
+	// letzte Zeile zählt wie bisher, off bleibt aber vor ihr: nach dem '\n'
+	// aus Add wird sie mit den neuen Zeilen noch einmal gelesen.
+	var adv int
+	complete := false
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 64*1024), 1<<20)
+	sc.Split(func(data []byte, atEOF bool) (int, []byte, error) {
+		n, tok, err := bufio.ScanLines(data, atEOF)
+		if tok != nil {
+			adv, complete = n, n > 0 && data[n-1] == '\n'
+		}
+		return n, tok, err
+	})
 	for sc.Scan() {
+		if complete {
+			l.off += int64(adv)
+		}
 		var ln ledgerLine
 		if json.Unmarshal(sc.Bytes(), &ln) != nil {
 			continue
@@ -96,7 +147,7 @@ func Load(path string, persist bool) (*Ledger, error) {
 		}
 		l.put(Entry{Hash: hash, Status: ln.Status, File: ln.File, ModTime: ln.ModTime, URL: ln.URL, At: ln.At})
 	}
-	return l, sc.Err()
+	return sc.Err()
 }
 
 // Has meldet, ob der letzte Eintrag zu hash fertig ist.
@@ -166,6 +217,11 @@ func (l *Ledger) Add(e Entry) error {
 	}
 	if err == nil {
 		_, err = f.Write(line)
+		// Alles davor gelesen (unter der Sperre schreibt kein anderer):
+		// die eigene Zeile muss Refresh nicht noch einmal lesen.
+		if err == nil && info.Size() == l.off {
+			l.off += int64(len(line))
+		}
 	}
 	if err == nil {
 		err = f.Sync()

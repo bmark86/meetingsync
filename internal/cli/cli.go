@@ -217,10 +217,30 @@ func Run(ctx context.Context, e Env, p *pipeline.Pipeline) {
 	}
 }
 
+// lockPoll: so oft prüft -file, ob der laufende Durchlauf die Sperre freigibt.
+var lockPoll = time.Second
+
 // ProcessSingleFile verarbeitet eine Datei direkt (zum Testen). Die Datei
-// bleibt liegen und wird nicht ins Protokoll eingetragen.
+// bleibt liegen. Außer im Dry-Run trägt es sie ins Protokoll ein (R-M3-14) und
+// hält dafür die Sperre auf den Exportordner, schon vor dem Lesen der Datei;
+// ein laufender Durchlauf des Dienstes wird abgewartet. Liegt die Datei im Exportordner, archiviert sie
+// der Dienst danach als schon verarbeitet.
 func ProcessSingleFile(ctx context.Context, e Env, p *pipeline.Pipeline, path string) error {
 	path = config.ExpandHome(path)
+	if !e.Dry {
+		lk, err := ledger.WaitLock(ctx, e.Cfg.WatchDir, lockPoll, func() {
+			e.Log.Printf("Dienst verarbeitet gerade den Exportordner – warte, bis der Durchlauf fertig ist …")
+		})
+		switch {
+		case err == nil:
+			defer func() { _ = lk.Unlock() }() //nolint:errcheck // Schließen gibt den flock frei, Fehler ohne Folgen
+		case !errors.Is(err, os.ErrNotExist):
+			return err
+		}
+		// ohne Exportordner läuft kein Durchlauf, die Sperre ist nicht nötig.
+		// Erst danach lesen: hat der Dienst die Datei inzwischen archiviert,
+		// fehlt sie hier, statt sie ein zweites Mal anzulegen.
+	}
 	info, err := os.Stat(path)
 	if err != nil {
 		return err

@@ -1,0 +1,868 @@
+[
+  {
+    "server": "notion",
+    "method": "GET",
+    "path": "/v1/data_sources/notes-ds",
+    "headers": {
+      "Accept-Encoding": "gzip",
+      "Authorization": "Bearer <token>",
+      "Notion-Version": "2025-09-03",
+      "User-Agent": "Go-http-client/1.1"
+    }
+  },
+  {
+    "server": "notion",
+    "method": "GET",
+    "path": "/v1/data_sources/tasks-ds",
+    "headers": {
+      "Accept-Encoding": "gzip",
+      "Authorization": "Bearer <token>",
+      "Notion-Version": "2025-09-03",
+      "User-Agent": "Go-http-client/1.1"
+    }
+  },
+  {
+    "server": "notion",
+    "method": "GET",
+    "path": "/v1/data_sources/projects-ds",
+    "headers": {
+      "Accept-Encoding": "gzip",
+      "Authorization": "Bearer <token>",
+      "Notion-Version": "2025-09-03",
+      "User-Agent": "Go-http-client/1.1"
+    }
+  },
+  {
+    "server": "notion",
+    "method": "POST",
+    "path": "/v1/data_sources/projects-ds/query",
+    "headers": {
+      "Accept-Encoding": "gzip",
+      "Authorization": "Bearer <token>",
+      "Content-Length": "144",
+      "Content-Type": "application/json",
+      "Notion-Version": "2025-09-03",
+      "User-Agent": "Go-http-client/1.1"
+    },
+    "body": {
+      "filter": {
+        "and": [
+          {
+            "property": "status",
+            "status": {
+              "does_not_equal": "Done"
+            }
+          },
+          {
+            "checkbox": {
+              "equals": false
+            },
+            "property": "Archive"
+          }
+        ]
+      },
+      "page_size": 100
+    }
+  },
+  {
+    "server": "llm",
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "headers": {
+      "Accept-Encoding": "gzip",
+      "Content-Length": "4242",
+      "Content-Type": "application/json",
+      "User-Agent": "Go-http-client/1.1"
+    },
+    "body": {
+      "messages": [
+        {
+          "role": "system",
+          "content": "Du bist ein sorgfältiger Protokollant für Mark, Head of Engineering. Du bekommst das Material eines Meetings (automatisch transkribiert, kann Hörfehler enthalten) und erstellst daraus strukturierte Meeting-Notizen.\n\nRegeln:\n- Schreibe auf Deutsch, knapp und konkret. Fachbegriffe dürfen Englisch bleiben.\n- Erfinde nichts. Was nicht im Material steht, bleibt leer (\"\" bzw. []).\n- Sprecher: Das Transkript nutzt Labels wie \"Speaker 1\". Eines der Labels ist Mark selbst (eigene Mikrofonspur); erkenne es am Kontext. Ordne andere Labels nur dann echten Namen zu, wenn es eindeutig aus dem Gespräch hervorgeht (Anrede, Vorstellung, \"Danke, Sascha\"). Bei Unsicherheit schreibe z. B. \"Speaker 2 (vermutlich Sascha?)\", setze pruefen=true und nenne den Grund.\n- titel: kurz und aussagekräftig, ohne Datum, höchstens 8 Wörter.\n- typ: \"1:1\" (zwei Personen), \"Team\", \"Extern\" (Kunden, Partner, Dienstleister), \"Lenkungskreis\" oder \"Sonstiges\".\n- teilnehmer: Namen bzw. Labels aller Sprechenden, Mark eingeschlossen.\n- kontext_ziel: 1-3 Sätze, warum das Meeting stattfand und was am Ende klar sein sollte.\n- themen: die wichtigsten 2-8 Themen, je 1-6 Stichpunkte mit konkreten Fakten, Zahlen und Argumenten.\n- entscheidungen: nur ausdrücklich getroffene Entscheidungen, keine Meinungen.\n- next_actions: nur konkrete Aufgaben oder Zusagen. owner = Name der verantwortlichen Person. fuer_mich=true, wenn Mark die Aufgabe übernimmt oder zugesagt hat. deadline nur, wenn genannt, im Format YYYY-MM-DD; relative Angaben (\"bis Freitag\", \"nächste Woche\") rechnest du ab dem Meetingdatum um. Sonst \"\".\n- offene_fragen: ungeklärte oder vertagte Punkte.\n- naechstes_meeting: nur, wenn ein Folgetermin oder Folgethemen erwähnt wurden.\n- projekt: wähle aus der vorgegebenen Liste nur, wenn das Meeting eindeutig zu genau einem Projekt gehört, sonst \"\".\n- pruef_gruende/pruefen: pruefen=true, wenn Sprecherzuordnung, Aufgaben oder Inhalt unsicher sind (z. B. schlechte Transkriptqualität); in pruef_gruende stehen kurze Gründe.\nAntworte ausschließlich mit einem JSON-Objekt nach dem vorgegebenen Schema, ohne Erklärtext."
+        },
+        {
+          "role": "user",
+          "content": "Meetingdatum: Donnerstag, 01.10.2026 (2026-10-01), Beginn ca. 00:00\n\nMögliche Projekte:\n- AI-First\n- Plattform\n\nTranskript:\n\u003c\u003c\u003c\n[00:00:01] Speaker 1: Hallo zusammen, kurzer Stand zur Build-Pipeline.\n[00:00:06] Speaker 2: Der Build dauert gerade 12 Minuten, der Cache fehlt.\n[00:12:00] Speaker 1: Dann führen wir den Cache ein. Ich kläre das Budget für die Runner bis Freitag.\n[00:46:50] Speaker 2: Danke Mark, ich baue den Cache. Bis Freitag.\n\u003e\u003e\u003e"
+        }
+      ],
+      "model": "gemma-test",
+      "response_format": {
+        "json_schema": {
+          "name": "meeting_note",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "titel": {
+                "type": "string"
+              },
+              "typ": {
+                "type": "string",
+                "enum": [
+                  "1:1",
+                  "Team",
+                  "Extern",
+                  "Lenkungskreis",
+                  "Sonstiges"
+                ]
+              },
+              "teilnehmer": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "kontext_ziel": {
+                "type": "string"
+              },
+              "themen": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "titel": {
+                      "type": "string"
+                    },
+                    "punkte": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "titel",
+                    "punkte"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "entscheidungen": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "next_actions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "aufgabe": {
+                      "type": "string"
+                    },
+                    "owner": {
+                      "type": "string"
+                    },
+                    "deadline": {
+                      "type": "string"
+                    },
+                    "fuer_mich": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "aufgabe",
+                    "owner",
+                    "deadline",
+                    "fuer_mich"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "offene_fragen": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "naechstes_meeting": {
+                "type": "object",
+                "properties": {
+                  "datum": {
+                    "type": "string"
+                  },
+                  "themen": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "datum",
+                  "themen"
+                ],
+                "additionalProperties": false
+              },
+              "projekt": {
+                "type": "string",
+                "enum": [
+                  "",
+                  "AI-First",
+                  "Plattform"
+                ]
+              },
+              "pruef_gruende": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "pruefen": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "titel",
+              "typ",
+              "teilnehmer",
+              "kontext_ziel",
+              "themen",
+              "entscheidungen",
+              "next_actions",
+              "offene_fragen",
+              "naechstes_meeting",
+              "projekt",
+              "pruef_gruende",
+              "pruefen"
+            ],
+            "additionalProperties": false
+          },
+          "strict": true
+        },
+        "type": "json_schema"
+      },
+      "stream": false,
+      "temperature": 0.2
+    }
+  },
+  {
+    "server": "notion",
+    "method": "POST",
+    "path": "/v1/pages",
+    "headers": {
+      "Accept-Encoding": "gzip",
+      "Authorization": "Bearer <token>",
+      "Content-Length": "4683",
+      "Content-Type": "application/json",
+      "Notion-Version": "2025-09-03",
+      "User-Agent": "Go-http-client/1.1"
+    },
+    "body": {
+      "children": [
+        {
+          "callout": {
+            "color": "yellow_background",
+            "icon": {
+              "emoji": "⚠️",
+              "type": "emoji"
+            },
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Bitte prüfen: Enthält To-dos für dich – bitte Zuordnung und Fälligkeit prüfen"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "callout"
+        },
+        {
+          "heading_2": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "📅 Meeting-Info"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_2"
+        },
+        {
+          "object": "block",
+          "table": {
+            "children": [
+              {
+                "object": "block",
+                "table_row": {
+                  "cells": [
+                    [
+                      {
+                        "annotations": {
+                          "bold": true
+                        },
+                        "text": {
+                          "content": "Datum"
+                        },
+                        "type": "text"
+                      }
+                    ],
+                    [
+                      {
+                        "text": {
+                          "content": "01.10.2026 (Do)"
+                        },
+                        "type": "text"
+                      }
+                    ]
+                  ]
+                },
+                "type": "table_row"
+              },
+              {
+                "object": "block",
+                "table_row": {
+                  "cells": [
+                    [
+                      {
+                        "annotations": {
+                          "bold": true
+                        },
+                        "text": {
+                          "content": "Uhrzeit"
+                        },
+                        "type": "text"
+                      }
+                    ],
+                    [
+                      {
+                        "text": {
+                          "content": "00:00–00:47 (47 min), geschätzt"
+                        },
+                        "type": "text"
+                      }
+                    ]
+                  ]
+                },
+                "type": "table_row"
+              },
+              {
+                "object": "block",
+                "table_row": {
+                  "cells": [
+                    [
+                      {
+                        "annotations": {
+                          "bold": true
+                        },
+                        "text": {
+                          "content": "Ort / Link"
+                        },
+                        "type": "text"
+                      }
+                    ],
+                    [
+                      {
+                        "text": {
+                          "content": "–"
+                        },
+                        "type": "text"
+                      }
+                    ]
+                  ]
+                },
+                "type": "table_row"
+              },
+              {
+                "object": "block",
+                "table_row": {
+                  "cells": [
+                    [
+                      {
+                        "annotations": {
+                          "bold": true
+                        },
+                        "text": {
+                          "content": "Typ"
+                        },
+                        "type": "text"
+                      }
+                    ],
+                    [
+                      {
+                        "text": {
+                          "content": "Team"
+                        },
+                        "type": "text"
+                      }
+                    ]
+                  ]
+                },
+                "type": "table_row"
+              },
+              {
+                "object": "block",
+                "table_row": {
+                  "cells": [
+                    [
+                      {
+                        "annotations": {
+                          "bold": true
+                        },
+                        "text": {
+                          "content": "Quelle"
+                        },
+                        "type": "text"
+                      }
+                    ],
+                    [
+                      {
+                        "text": {
+                          "content": "Sirius Sync.srt"
+                        },
+                        "type": "text"
+                      }
+                    ]
+                  ]
+                },
+                "type": "table_row"
+              }
+            ],
+            "has_column_header": false,
+            "has_row_header": true,
+            "table_width": 2
+          },
+          "type": "table"
+        },
+        {
+          "divider": {},
+          "object": "block",
+          "type": "divider"
+        },
+        {
+          "heading_2": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "👥 Teilnehmer"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_2"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Mark"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "divider": {},
+          "object": "block",
+          "type": "divider"
+        },
+        {
+          "heading_2": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "🎯 Kontext & Ziel des Meetings"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_2"
+        },
+        {
+          "object": "block",
+          "paragraph": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Stand der Build-Pipeline klären."
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "type": "paragraph"
+        },
+        {
+          "divider": {},
+          "object": "block",
+          "type": "divider"
+        },
+        {
+          "heading_2": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "📝 Besprochene Themen"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_2"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Pipeline"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Build dauert 12 Minuten"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "divider": {},
+          "object": "block",
+          "type": "divider"
+        },
+        {
+          "heading_2": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "✅ Entscheidungen"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_2"
+        },
+        {
+          "object": "block",
+          "to_do": {
+            "checked": false,
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Cache wird eingeführt"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "type": "to_do"
+        },
+        {
+          "divider": {},
+          "object": "block",
+          "type": "divider"
+        },
+        {
+          "heading_2": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "🚀 Next Actions"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_2"
+        },
+        {
+          "object": "block",
+          "table": {
+            "children": [
+              {
+                "object": "block",
+                "table_row": {
+                  "cells": [
+                    [
+                      {
+                        "text": {
+                          "content": "Aufgabe"
+                        },
+                        "type": "text"
+                      }
+                    ],
+                    [
+                      {
+                        "text": {
+                          "content": "Owner"
+                        },
+                        "type": "text"
+                      }
+                    ],
+                    [
+                      {
+                        "text": {
+                          "content": "Deadline"
+                        },
+                        "type": "text"
+                      }
+                    ]
+                  ]
+                },
+                "type": "table_row"
+              },
+              {
+                "object": "block",
+                "table_row": {
+                  "cells": [
+                    [
+                      {
+                        "text": {
+                          "content": "Budget für Runner klären"
+                        },
+                        "type": "text"
+                      }
+                    ],
+                    [
+                      {
+                        "text": {
+                          "content": "Mark ⭐"
+                        },
+                        "type": "text"
+                      }
+                    ],
+                    [
+                      {
+                        "text": {
+                          "content": "02.10.2026"
+                        },
+                        "type": "text"
+                      }
+                    ]
+                  ]
+                },
+                "type": "table_row"
+              }
+            ],
+            "has_column_header": true,
+            "has_row_header": false,
+            "table_width": 3
+          },
+          "type": "table"
+        },
+        {
+          "divider": {},
+          "object": "block",
+          "type": "divider"
+        },
+        {
+          "heading_2": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "❓ Offene Fragen / Parked"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_2"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "–"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "divider": {},
+          "object": "block",
+          "type": "divider"
+        },
+        {
+          "heading_2": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "📅 Nächstes Meeting"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_2"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "annotations": {
+                  "bold": true
+                },
+                "text": {
+                  "content": "Datum: "
+                },
+                "type": "text"
+              },
+              {
+                "text": {
+                  "content": "–"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "annotations": {
+                  "bold": true
+                },
+                "text": {
+                  "content": "Themen: "
+                },
+                "type": "text"
+              },
+              {
+                "text": {
+                  "content": "–"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        }
+      ],
+      "parent": {
+        "data_source_id": "notes-ds",
+        "type": "data_source_id"
+      },
+      "properties": {
+        "Name": {
+          "title": [
+            {
+              "text": {
+                "content": "2026-10-01 – Sirius Sync"
+              },
+              "type": "text"
+            }
+          ]
+        },
+        "Projects": {
+          "relation": [
+            {
+              "id": "proj-1"
+            }
+          ]
+        },
+        "Prüfen": {
+          "checkbox": true
+        },
+        "Status": {
+          "status": {
+            "name": "Inbox"
+          }
+        }
+      }
+    }
+  },
+  {
+    "server": "notion",
+    "method": "POST",
+    "path": "/v1/pages",
+    "headers": {
+      "Accept-Encoding": "gzip",
+      "Authorization": "Bearer <token>",
+      "Content-Length": "439",
+      "Content-Type": "application/json",
+      "Notion-Version": "2025-09-03",
+      "User-Agent": "Go-http-client/1.1"
+    },
+    "body": {
+      "parent": {
+        "data_source_id": "tasks-ds",
+        "type": "data_source_id"
+      },
+      "properties": {
+        "Completed": {
+          "checkbox": false
+        },
+        "Description": {
+          "rich_text": [
+            {
+              "text": {
+                "content": "Aus Meeting: 2026-10-01 – Sirius Sync · Owner: Mark"
+              },
+              "type": "text"
+            }
+          ]
+        },
+        "Due Date": {
+          "date": {
+            "start": "2026-10-02"
+          }
+        },
+        "Name": {
+          "title": [
+            {
+              "text": {
+                "content": "Budget für Runner klären"
+              },
+              "type": "text"
+            }
+          ]
+        },
+        "Notes": {
+          "relation": [
+            {
+              "id": "page-1"
+            }
+          ]
+        },
+        "Projects": {
+          "relation": [
+            {
+              "id": "proj-1"
+            }
+          ]
+        }
+      }
+    }
+  }
+]

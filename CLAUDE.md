@@ -27,7 +27,7 @@ Retry: temporary errors (LM Studio or Notion not reachable (including timeout), 
 - `make check` (vet + lint + test + vuln, Definition of Done)
 - `go build -o ~/bin/meetingsync .`
 - `meetingsync -check` (checks folder, Notion/LM Studio; exits 1 if any check shows ✗, otherwise 0), `-dry-run -file <file>` (writes nothing), `-once`, `-config <path>`
-- `-file` without `-dry-run` creates a real note, but without a ledger entry and without moving the file.
+- `-file` without `-dry-run` creates a real note and writes a ledger entry, but does not move the file. It waits while a service pass runs (both lock the export folder).
 
 ## Definition of Done
 

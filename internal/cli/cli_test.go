@@ -18,6 +18,7 @@ import (
 
 	"meetingsync/internal/config"
 	"meetingsync/internal/domain"
+	"meetingsync/internal/ledger"
 	"meetingsync/internal/llm"
 	"meetingsync/internal/notion"
 )
@@ -309,7 +310,8 @@ func TestProcessSingleFileErrors(t *testing.T) {
 const testSRT = "1\n00:00:01,000 --> 00:00:04,000\nSpeaker 1: Hallo zusammen.\n\n2\n00:00:05,000 --> 00:00:09,000\nSpeaker 2: Build dauert zwölf Minuten.\n"
 
 // Fängt: -file gibt im Dry-Run eine URL aus / druckt keine Dry-Run-Ausgabe /
-// gibt außerhalb des Dry-Runs die URL der Notiz nicht aus.
+// gibt außerhalb des Dry-Runs die URL der Notiz nicht aus / schreibt das
+// Protokoll im Dry-Run bzw. außerhalb nicht (R-M3-14).
 func TestProcessSingleFileOutput(t *testing.T) {
 	note := &domain.MeetingNote{Titel: "Sirius Sync", Teilnehmer: []string{"Mark"}}
 	for _, dry := range []bool{true, false} {
@@ -340,9 +342,130 @@ func TestProcessSingleFileOutput(t *testing.T) {
 		if _, err := os.Stat(f); err != nil {
 			t.Fatalf("dry=%v: Quelldatei verschwunden: %v", dry, err)
 		}
-		if _, err := os.Stat(filepath.Join(e.Cfg.ArchiveDir, ".meetingsync-ledger.jsonl")); !errors.Is(err, os.ErrNotExist) {
-			t.Fatalf("dry=%v: Ledger-Datei geschrieben: %v", dry, err)
+		if _, err := os.Stat(filepath.Join(e.Cfg.ArchiveDir, ".meetingsync-ledger.jsonl")); errors.Is(err, os.ErrNotExist) != dry {
+			t.Fatalf("dry=%v: Ledger-Datei: %v", dry, err)
 		}
+	}
+}
+
+// chanWriter gibt jede Logzeile an einen Kanal (race-frei lesbar).
+type chanWriter chan string
+
+func (c chanWriter) Write(p []byte) (int, error) { c <- string(p); return len(p), nil }
+
+// Fängt: -file wartet nicht auf einen laufenden Durchlauf (Sperre) / meldet
+// das Warten nicht / läuft nach der Freigabe nicht weiter.
+func TestProcessSingleFileWaitsForLock(t *testing.T) {
+	old := lockPoll
+	lockPoll = 5 * time.Millisecond
+	defer func() { lockPoll = old }()
+	n := goodNotion()
+	n.pages = true
+	e, _ := testEnv(t, n)
+	e.Dry = false
+	e.Cfg.Notion.CreateTasksFor = "none"
+	e.LLM = fakeLLM{note: &domain.MeetingNote{Titel: "Sirius Sync"}}
+	lines := make(chanWriter, 100)
+	e.Log = log.New(lines, "", 0)
+	if err := os.MkdirAll(e.Cfg.WatchDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Init(context.Background(), e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := NewPipeline(e, s)
+	f := filepath.Join(e.Cfg.WatchDir, "Sirius Sync.srt")
+	if err := os.WriteFile(f, []byte(testSRT), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	held, err := ledger.TryLock(e.Cfg.WatchDir) // laufender Durchlauf des Dienstes
+	if err != nil {
+		t.Fatal(err)
+	}
+	ledgerFile := filepath.Join(e.Cfg.ArchiveDir, ".meetingsync-ledger.jsonl")
+	captureStdout(t, func() {
+		done := make(chan error, 1)
+		go func() { done <- ProcessSingleFile(context.Background(), e, p, f) }()
+		for waiting := false; !waiting; {
+			select {
+			case l := <-lines:
+				waiting = strings.Contains(l, "Dienst verarbeitet gerade den Exportordner – warte, bis der Durchlauf fertig ist …")
+			case err := <-done:
+				t.Fatalf("-file lief trotz Sperre durch: %v", err)
+			case <-time.After(5 * time.Second):
+				t.Fatal("keine Wartemeldung")
+			}
+		}
+		time.Sleep(30 * time.Millisecond)
+		if _, err := os.Stat(ledgerFile); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("Protokoll schon während der Sperre geschrieben: %v", err)
+		}
+		if err := held.Unlock(); err != nil {
+			t.Fatal(err)
+		}
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	})
+	if _, err := os.Stat(ledgerFile); err != nil {
+		t.Fatalf("Protokoll fehlt: %v", err)
+	}
+}
+
+// Fängt: -file liest die Datei vor der Sperre und legt nach dem Warten eine
+// zweite Seite aus der alten Kopie an, obwohl der Dienst sie inzwischen
+// verarbeitet und archiviert hat.
+func TestProcessSingleFileReadsAfterLock(t *testing.T) {
+	old := lockPoll
+	lockPoll = 5 * time.Millisecond
+	defer func() { lockPoll = old }()
+	e, _ := testEnv(t, goodNotion()) // pages=false: jedes CreatePage wäre ein Fehler
+	e.Dry = false
+	e.Cfg.Notion.CreateTasksFor = "none"
+	e.LLM = fakeLLM{note: &domain.MeetingNote{Titel: "Sirius Sync"}}
+	lines := make(chanWriter, 100)
+	e.Log = log.New(lines, "", 0)
+	if err := os.MkdirAll(e.Cfg.WatchDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Init(context.Background(), e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := NewPipeline(e, s)
+	f := filepath.Join(e.Cfg.WatchDir, "Sirius Sync.srt")
+	if err := os.WriteFile(f, []byte(testSRT), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	held, err := ledger.TryLock(e.Cfg.WatchDir) // laufender Durchlauf des Dienstes
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- ProcessSingleFile(context.Background(), e, p, f) }()
+	for waiting := false; !waiting; {
+		select {
+		case l := <-lines:
+			waiting = strings.Contains(l, "warte, bis der Durchlauf fertig ist")
+		case err := <-done:
+			t.Fatalf("-file lief trotz Sperre durch: %v", err)
+		case <-time.After(5 * time.Second):
+			t.Fatal("keine Wartemeldung")
+		}
+	}
+	// der Dienst archiviert die Datei, dann gibt er die Sperre frei
+	if err := os.Rename(f, filepath.Join(t.TempDir(), "Sirius Sync.srt")); err != nil {
+		t.Fatal(err)
+	}
+	if err := held.Unlock(); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("erwartet: Datei fehlt, bekommen: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(e.Cfg.ArchiveDir, ".meetingsync-ledger.jsonl")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("Protokoll geschrieben: %v", err)
 	}
 }
 
