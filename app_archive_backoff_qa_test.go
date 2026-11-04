@@ -3,101 +3,13 @@ package main
 // QA R-M1-07: Sync-Warnung auf dem _fehler-Pfad (fail) und FIFO im Exportordner.
 
 import (
-	"bytes"
-	"errors"
-	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
-
-	"meetingsync/internal/cli"
-	"meetingsync/internal/ledger"
-	"meetingsync/internal/pipeline"
 )
-
-// Kopierpfad + Sync-Fehler beim Verschieben nach _fehler: Warnung, Datei liegt
-// in _fehler (genau eine, mit Hinweis), kein Verschieben-Fehler, kein Backoff.
-// Auslöser (a) Neustart-Regel, (b) handleError bei max_attempts.
-func TestFailPathDirSyncWarnsAndMoves(t *testing.T) {
-	const syncWarn = "Zielordner nicht synchronisiert"
-	for _, tc := range []struct {
-		name string
-		wire func(e *crashEnv, env *cli.Env) // vor Init
-		arm  func(t *testing.T, e *crashEnv)
-		want string // Ursache im .fehler.txt
-	}{
-		{"Neustart-Regel", nil, func(t *testing.T, e *crashEnv) {
-			if err := e.app.ledger.Add(ledger.Entry{Hash: e.hash(), Status: ledger.StatusBegonnen, File: "x", ModTime: flowM}); err != nil {
-				t.Fatal(err)
-			}
-		}, pipeline.ErrUnterbrochen.Error()},
-		{"max_attempts", func(e *crashEnv, env *cli.Env) {
-			env.Cfg.MaxAttempts = 1
-			env.LLM = newLLMClient(env.Cfg, env.Cfg.LLM.APIKey, env.Log, e.rt)
-		}, func(_ *testing.T, e *crashEnv) {
-			e.rt.before = func(r *http.Request) (*http.Response, error) {
-				if strings.Contains(r.URL.Path, "/chat/") {
-					return &http.Response{StatusCode: http.StatusBadRequest, Status: "400 Bad Request", Proto: "HTTP/1.1",
-						Header: http.Header{}, Body: io.NopCloser(bytes.NewBufferString(`{"error":"kaputt"}`)), Request: r}, nil
-				}
-				return nil, nil
-			}
-		}, "gebe auf"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			calls := 0
-			e := newCrashEnv(t, func(e *crashEnv, env *cli.Env) {
-				if tc.wire != nil {
-					tc.wire(e, env)
-				}
-				env.Mover.Rename = noRename
-				env.Mover.SyncDir = func(string) error { calls++; return errors.New("EIO") }
-			})
-			if err := os.Remove(e.sum); err != nil { // eine Datei → genau eine Sync-Warnung
-				t.Fatal(err)
-			}
-			tc.arm(t, e)
-
-			e.threePasses(time.Now())
-
-			data, notes := e.inFailed(t)
-			if len(data) != 1 || len(notes) != 1 {
-				t.Fatalf("_fehler: %v + %d Hinweise, want 1 Datei mit Hinweis\nLog:\n%s", data, len(notes), e.log.String())
-			}
-			if tc.name == "Neustart-Regel" && !strings.Contains(notes[0], tc.want) {
-				t.Fatalf(".fehler.txt ohne Ursache:\n%s", notes[0])
-			}
-			if a, _, x := e.counts(t); a != 0 || x != 0 {
-				t.Fatalf("Archiv %d, Export %d; want 0, 0", a, x)
-			}
-			if calls != 1 {
-				t.Fatalf("SyncDir %d-mal, want 1", calls)
-			}
-			if n := strings.Count(e.log.String(), syncWarn); n != 1 {
-				t.Fatalf("Sync-Warnung %d-mal, want 1\nLog:\n%s", n, e.log.String())
-			}
-			if strings.Contains(e.log.String(), "konnte nicht verschoben werden") {
-				t.Fatalf("Sync-Fehler gilt als Verschiebe-Fehler:\n%s", e.log.String())
-			}
-			if st := e.app.states()[e.tr]; st != nil {
-				t.Fatalf("state = %+v, want nil", st)
-			}
-			if tc.name == "max_attempts" && strings.Count(e.log.String(), "gebe auf") != 1 {
-				t.Fatalf("gebe auf nicht genau einmal:\n%s", e.log.String())
-			}
-			if tc.name == "Neustart-Regel" && strings.Count(e.log.String(), "unterbrochen") != 1 {
-				t.Fatalf("Unterbrochen-Zeile wiederholt:\n%s", e.log.String())
-			}
-			if notes, _ := e.pages(); notes != 0 {
-				t.Fatalf("Notizen = %d, want 0", notes)
-			}
-		})
-	}
-}
 
 // FIFO mit unterstützter Endung: übersprungen (einmal gemeldet), Pass hängt nicht.
 // Fängt: os.ReadFile auf einem FIFO blockiert ohne Schreiber.

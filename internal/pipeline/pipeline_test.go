@@ -81,8 +81,8 @@ func TestPassPairLedgerOrderAndArchive(t *testing.T) {
 	if len(e.notifier.calls) != 1 || e.notifier.calls[0] != [2]string{"Neue Meeting-Notiz", "Sync · 1 To-do(s) für dich · bitte prüfen"} {
 		t.Fatalf("Mitteilungen = %v", e.notifier.calls)
 	}
-	if len(e.p.States()) != 0 {
-		t.Fatalf("Zustand nach Erfolg: %v", e.p.States())
+	if len(e.p.states) != 0 {
+		t.Fatalf("Zustand nach Erfolg: %v", e.p.states)
 	}
 
 	// Zweiter Durchlauf mit identischer Kopie: schon verarbeitet → Archiv, kein LLM.
@@ -110,7 +110,7 @@ func TestPassInterruptedToFailed(t *testing.T) {
 		t.Fatal("Neustart-Regel darf weder LLM noch Notion fragen")
 	}
 	for _, n := range []string{"A.srt", "A.md", "B.srt"} {
-		if got := mustRead(t, filepath.Join(e.o.FailedDir, n+".fehler.txt")); !strings.Contains(got, ErrUnterbrochen.Error()) {
+		if got := mustRead(t, filepath.Join(e.o.FailedDir, n+".fehler.txt")); !strings.Contains(got, errUnterbrochen.Error()) {
 			t.Fatalf("%s.fehler.txt = %q", n, got)
 		}
 	}
@@ -131,7 +131,7 @@ func TestInterruptedMoveFailsRetriesLater(t *testing.T) {
 	}
 	tr := e.write(t, "A.srt", testSRT, testM)
 	e.p.Pass(context.Background(), e.clock)
-	st := e.p.States()[tr]
+	st := e.p.states[tr]
 	if st == nil || st.Attempts != 0 || !st.NextTry.Equal(e.clock.Add(2*time.Minute)) || !e.ledger.Started(hash) {
 		t.Fatalf("state = %+v, Started = %v; want NextTry +2 min, begonnen", st, e.ledger.Started(hash))
 	}
@@ -272,7 +272,7 @@ func TestProcessCreatePageErrorsAndGaps(t *testing.T) {
 		if len(lines) != 2 || lines[1]["status"] != ledger.StatusVerworfen || !exists(p) {
 			t.Fatalf("Ledger = %v, Datei bleibt = %v", lines, exists(p))
 		}
-		if st := e.p.States()[p]; st == nil || st.Attempts != 1 || !st.NextTry.Equal(e.clock.Add(2*time.Minute)) {
+		if st := e.p.states[p]; st == nil || st.Attempts != 1 || !st.NextTry.Equal(e.clock.Add(2*time.Minute)) {
 			t.Fatalf("state = %+v", st)
 		}
 	})
@@ -319,7 +319,7 @@ func TestProcessBeginLedgerErrorNoCreatePage(t *testing.T) {
 	if len(e.notion.pages) != 0 || !strings.Contains(e.log.String(), "Protokoll nicht schreibbar, Notion-Seite nicht angelegt") {
 		t.Fatalf("Seiten %d, Log:\n%s", len(e.notion.pages), e.log)
 	}
-	if e.ledger.Started(sha256Hex([]byte(testSRT))) || e.p.States()[p].Attempts != 1 {
+	if e.ledger.Started(sha256Hex([]byte(testSRT))) || e.p.states[p].Attempts != 1 {
 		t.Fatal("Speicher muss verworfen sein, Fehler zählt als Versuch")
 	}
 }
@@ -457,8 +457,8 @@ func TestPassTooManyBlocksToFailed(t *testing.T) {
 	if len(e.notifier.calls) != 1 || e.notifier.calls[0] != want {
 		t.Fatalf("Mitteilungen = %v", e.notifier.calls)
 	}
-	if len(e.p.States()) != 0 {
-		t.Fatalf("Zustand = %v, want keiner (kein Versuch gezählt)", e.p.States())
+	if len(e.p.states) != 0 {
+		t.Fatalf("Zustand = %v, want keiner (kein Versuch gezählt)", e.p.states)
 	}
 	if !strings.Contains(e.log.String(), "✗ zu viele Blöcke (5000, höchstens 1000) – Notion-Seite nicht angelegt") {
 		t.Fatalf("Log:\n%s", e.log)
@@ -523,7 +523,7 @@ func TestPassTooManyBlocksMoveFails(t *testing.T) {
 	e.llm.note = noteWithBlocks(5000)
 	tr := e.write(t, "Sitzung.srt", testSRT, testM)
 	e.p.Pass(context.Background(), e.clock)
-	st := e.p.States()[tr]
+	st := e.p.states[tr]
 	if !exists(tr) || len(e.notifier.calls) != 0 || st == nil || st.Attempts != 0 || !st.NextTry.Equal(e.clock.Add(2*time.Minute)) {
 		t.Fatalf("Datei bleibt %v, Mitteilungen %v, state %+v", exists(tr), e.notifier.calls, st)
 	}
@@ -543,18 +543,18 @@ func TestPassTooManyBlocksPairOrder(t *testing.T) {
 	sum := e.write(t, "Sitzung.md", testSummary, testM.Add(time.Minute))
 
 	e.p.Pass(context.Background(), e.clock)
-	st := e.p.States()[tr]
+	st := e.p.states[tr]
 	if len(fm.tried) != 1 || fm.tried[0] != sum || !exists(tr) || !exists(sum) || len(e.notifier.calls) != 0 {
 		t.Fatalf("Reihenfolge %v, Mitteilungen %v", fm.tried, e.notifier.calls)
 	}
-	if st == nil || st.Attempts != 0 || !st.NextTry.Equal(e.clock.Add(2*time.Minute)) || e.p.States()[sum] != nil {
-		t.Fatalf("states %v", e.p.States())
+	if st == nil || st.Attempts != 0 || !st.NextTry.Equal(e.clock.Add(2*time.Minute)) || e.p.states[sum] != nil {
+		t.Fatalf("states %v", e.p.states)
 	}
 
 	fm.fails = func(string) bool { return false }
 	e.p.Pass(context.Background(), e.clock.Add(2*time.Minute))
-	if exists(tr) || exists(sum) || len(e.notifier.calls) != 1 || len(e.p.States()) != 0 {
-		t.Fatalf("Paar bleibt %v/%v, Mitteilungen %v, states %v", exists(tr), exists(sum), e.notifier.calls, e.p.States())
+	if exists(tr) || exists(sum) || len(e.notifier.calls) != 1 || len(e.p.states) != 0 {
+		t.Fatalf("Paar bleibt %v/%v, Mitteilungen %v, states %v", exists(tr), exists(sum), e.notifier.calls, e.p.states)
 	}
 	for _, n := range []string{"Sitzung.srt", "Sitzung.md"} {
 		if !exists(filepath.Join(e.o.FailedDir, n+".fehler.txt")) {

@@ -177,7 +177,7 @@ func TestLogShowsAttemptCounter(t *testing.T) {
 // Fängt: Wartezeiten oder Zählung der Regel selbst verändert (ohne Pipeline).
 func TestRetryPolicyRecord(t *testing.T) {
 	r := newRetryPolicy(3)
-	var st FileState
+	var st fileState
 	if wait, giveUp := r.record(&st, true, testM); giveUp || wait != time.Minute || !st.NextTry.Equal(testM.Add(time.Minute)) || st.Transient != 1 {
 		t.Fatalf("1. vorübergehend: wait=%s giveUp=%v st=%+v", wait, giveUp, st)
 	}
@@ -225,7 +225,7 @@ func TestPassGiveUpMoveFailsKeepsAttempts(t *testing.T) {
 	// Scheitern, Wartezeit
 	for _, step := range []struct{ at, next time.Duration }{{2, 4}, {3, 4}, {4, 6}, {5, 6}} {
 		e.p.Pass(context.Background(), now.Add(step.at*time.Minute))
-		st := e.p.States()[tr]
+		st := e.p.states[tr]
 		if want := now.Add(step.next * time.Minute); st == nil || st.Attempts != 2 || !st.NextTry.Equal(want) || !exists(tr) {
 			t.Fatalf("+%d min: state %+v, want Attempts 2, NextTry %v, Datei bleibt", step.at, st, want)
 		}
@@ -239,8 +239,8 @@ func TestPassGiveUpMoveFailsKeepsAttempts(t *testing.T) {
 
 	fm.fails = func(string) bool { return false }
 	e.p.Pass(context.Background(), now.Add(6*time.Minute))
-	if exists(tr) || len(e.p.States()) != 0 || len(e.llm.got) != 2 {
-		t.Fatalf("Datei bleibt %v, state %v, LLM %d", exists(tr), e.p.States(), len(e.llm.got))
+	if exists(tr) || len(e.p.states) != 0 || len(e.llm.got) != 2 {
+		t.Fatalf("Datei bleibt %v, state %v, LLM %d", exists(tr), e.p.states, len(e.llm.got))
 	}
 	if got := mustRead(t, filepath.Join(e.o.FailedDir, "Sitzung.srt.fehler.txt")); !strings.Contains(got, "kaputt") {
 		t.Fatalf(".fehler.txt = %q", got)
@@ -261,13 +261,13 @@ func TestPassGiveUpPairSummaryMoveFails(t *testing.T) {
 	if len(fm.tried) != 1 || fm.tried[0] != sum || !exists(tr) || !exists(sum) {
 		t.Fatalf("Verschiebe-Reihenfolge %v, want nur die Zusammenfassung zuerst; beide bleiben", fm.tried)
 	}
-	if st := e.p.States()[tr]; st == nil || st.Attempts != 1 || !st.NextTry.Equal(now.Add(2*time.Minute)) {
+	if st := e.p.states[tr]; st == nil || st.Attempts != 1 || !st.NextTry.Equal(now.Add(2*time.Minute)) {
 		t.Fatalf("state %+v", st)
 	}
 	e.p.Pass(context.Background(), now.Add(time.Minute))
 	e.p.Pass(context.Background(), now.Add(2*time.Minute))
-	if len(e.llm.got) != 1 || len(e.notion.pages) != 0 || e.p.States()[sum] != nil {
-		t.Fatalf("LLM %d, Seiten %d, Waise %v; Log:\n%s", len(e.llm.got), len(e.notion.pages), e.p.States()[sum], e.log)
+	if len(e.llm.got) != 1 || len(e.notion.pages) != 0 || e.p.states[sum] != nil {
+		t.Fatalf("LLM %d, Seiten %d, Waise %v; Log:\n%s", len(e.llm.got), len(e.notion.pages), e.p.states[sum], e.log)
 	}
 
 	fm.fails = func(string) bool { return false }
@@ -277,8 +277,8 @@ func TestPassGiveUpPairSummaryMoveFails(t *testing.T) {
 			t.Fatalf("%s nicht in _fehler", n)
 		}
 	}
-	if len(e.p.States()) != 0 || len(e.llm.got) != 1 {
-		t.Fatalf("state %v, LLM %d", e.p.States(), len(e.llm.got))
+	if len(e.p.states) != 0 || len(e.llm.got) != 1 {
+		t.Fatalf("state %v, LLM %d", e.p.states, len(e.llm.got))
 	}
 }
 
@@ -298,8 +298,8 @@ func TestPassGiveUpTranscriptMoveFails(t *testing.T) {
 	}
 	fm.fails = func(string) bool { return false }
 	e.p.Pass(context.Background(), now.Add(2*time.Minute))
-	if exists(tr) || !exists(filepath.Join(e.o.FailedDir, "Sitzung.srt.fehler.txt")) || len(e.llm.got) != 1 || len(e.p.States()) != 0 {
-		t.Fatalf("Transkript bleibt %v, LLM %d, state %v", exists(tr), len(e.llm.got), e.p.States())
+	if exists(tr) || !exists(filepath.Join(e.o.FailedDir, "Sitzung.srt.fehler.txt")) || len(e.llm.got) != 1 || len(e.p.states) != 0 {
+		t.Fatalf("Transkript bleibt %v, LLM %d, state %v", exists(tr), len(e.llm.got), e.p.states)
 	}
 }
 
@@ -312,7 +312,7 @@ func TestPassGiveUpLedgerDoneArchives(t *testing.T) {
 	tr := e.write(t, "Sitzung.srt", testSRT, testM)
 
 	e.p.Pass(context.Background(), e.clock)
-	if st := e.p.States()[tr]; st == nil || st.giveUp == nil {
+	if st := e.p.states[tr]; st == nil || st.giveUp == nil {
 		t.Fatalf("state %+v, want giveUp", st)
 	}
 	if err := e.ledger.Add(ledger.Entry{Hash: sha256Hex([]byte(testSRT)), File: "Sitzung.srt", ModTime: testM}); err != nil {
@@ -320,8 +320,8 @@ func TestPassGiveUpLedgerDoneArchives(t *testing.T) {
 	}
 	fm.fails = func(string) bool { return false }
 	e.p.Pass(context.Background(), e.clock.Add(2*time.Minute))
-	if !exists(e.archived("Sitzung.srt")) || exists(filepath.Join(e.o.FailedDir, "Sitzung.srt")) || len(e.p.States()) != 0 {
-		t.Fatalf("Archiv %v, _fehler %v, state %v", exists(e.archived("Sitzung.srt")), exists(filepath.Join(e.o.FailedDir, "Sitzung.srt")), e.p.States())
+	if !exists(e.archived("Sitzung.srt")) || exists(filepath.Join(e.o.FailedDir, "Sitzung.srt")) || len(e.p.states) != 0 {
+		t.Fatalf("Archiv %v, _fehler %v, state %v", exists(e.archived("Sitzung.srt")), exists(filepath.Join(e.o.FailedDir, "Sitzung.srt")), e.p.states)
 	}
 }
 
@@ -334,7 +334,7 @@ func TestPassGiveUpChangedContentProcesses(t *testing.T) {
 	tr := e.write(t, "Sitzung.srt", testSRT, testM)
 
 	e.p.Pass(context.Background(), e.clock)
-	if st := e.p.States()[tr]; st == nil || st.giveUp == nil || st.Attempts != 1 {
+	if st := e.p.states[tr]; st == nil || st.giveUp == nil || st.Attempts != 1 {
 		t.Fatalf("state %+v, want giveUp", st)
 	}
 	changed := testSRT + "\n"
@@ -345,7 +345,7 @@ func TestPassGiveUpChangedContentProcesses(t *testing.T) {
 	if len(e.llm.got) != 2 || len(e.notion.pages) == 0 || !e.ledger.Has(sha256Hex([]byte(changed))) {
 		t.Fatalf("LLM %d, Seiten %d; Log:\n%s", len(e.llm.got), len(e.notion.pages), e.log)
 	}
-	if exists(filepath.Join(e.o.FailedDir, "Sitzung.srt")) || !exists(e.archived("Sitzung.srt")) || len(e.p.States()) != 0 {
-		t.Fatalf("_fehler %v, Archiv %v, state %v", exists(filepath.Join(e.o.FailedDir, "Sitzung.srt")), exists(e.archived("Sitzung.srt")), e.p.States())
+	if exists(filepath.Join(e.o.FailedDir, "Sitzung.srt")) || !exists(e.archived("Sitzung.srt")) || len(e.p.states) != 0 {
+		t.Fatalf("_fehler %v, Archiv %v, state %v", exists(filepath.Join(e.o.FailedDir, "Sitzung.srt")), exists(e.archived("Sitzung.srt")), e.p.states)
 	}
 }

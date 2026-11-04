@@ -7,8 +7,8 @@ import (
 	"meetingsync/internal/domain"
 )
 
-// FileState ist der Wiederholungszustand einer Datei im Exportordner.
-type FileState struct {
+// fileState ist der Wiederholungszustand einer Datei im Exportordner.
+type fileState struct {
 	Attempts  int       // Fehlversuche, zählen gegen max_attempts
 	Transient int       // bisherige vorübergehende Fehler, steuern den Backoff
 	NextTry   time.Time // vorher kein neuer Versuch
@@ -54,7 +54,7 @@ func (r retryPolicy) counts(ctx context.Context, err error) bool {
 
 // record verbucht einen gezählten Fehler in st. giveUp: max_attempts ist
 // erreicht; sonst steht in st.NextTry der nächste Versuch (now + wait).
-func (r retryPolicy) record(st *FileState, transient bool, now time.Time) (wait time.Duration, giveUp bool) {
+func (r retryPolicy) record(st *fileState, transient bool, now time.Time) (wait time.Duration, giveUp bool) {
 	st.Attempts++
 	if st.Attempts >= r.maxAttempts {
 		return 0, true
@@ -69,10 +69,10 @@ func (r retryPolicy) record(st *FileState, transient bool, now time.Time) (wait 
 }
 
 // state liefert den Zustand von path und legt ihn bei Bedarf an.
-func (p *Pipeline) state(path string) *FileState {
+func (p *Pipeline) state(path string) *fileState {
 	st := p.states[path]
 	if st == nil {
-		st = &FileState{}
+		st = &fileState{}
 		p.states[path] = st
 	}
 	return st
@@ -84,7 +84,3 @@ func (p *Pipeline) state(path string) *FileState {
 func (p *Pipeline) retryLater(path string, now time.Time) {
 	p.state(path).NextTry = now.Add(retryLaterWait)
 }
-
-// States liefert den Wiederholungszustand je Pfad (die Map selbst, keine
-// Kopie). Nur aus der Goroutine des Durchlaufs benutzen.
-func (p *Pipeline) States() map[string]*FileState { return p.states }

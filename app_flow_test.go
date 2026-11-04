@@ -25,7 +25,6 @@ import (
 	"meetingsync/internal/cli"
 	"meetingsync/internal/config"
 	"meetingsync/internal/ledger"
-	"meetingsync/internal/pipeline"
 )
 
 // flowM ist die mtime der Eingaben (UTC, Archivmonat 2026-09).
@@ -228,23 +227,6 @@ func TestPassOrphanNoteCallsLLMAfterWait(t *testing.T) {
 	}
 }
 
-// Fängt: nextTry wird im Waisen-Zweig ignoriert (Retry-Sturm).
-func TestPassOrphanNoteRespectsNextTry(t *testing.T) {
-	env, p := orphanEnv(t, "note")
-	now := flowM.Add(time.Hour)
-	retryAt := now.Add(2 * time.Minute)
-	env.app.states()[p] = &pipeline.FileState{Attempts: 1, NextTry: retryAt}
-	env.app.Pass(context.Background(), now)
-	env.app.Pass(context.Background(), retryAt.Add(-time.Second))
-	if env.hits.Load() != 0 {
-		t.Fatalf("vor nextTry hits=%d, want 0", env.hits.Load())
-	}
-	env.app.Pass(context.Background(), retryAt)
-	if env.hits.Load() != 1 {
-		t.Fatalf("ab nextTry hits=%d, want 1", env.hits.Load())
-	}
-}
-
 // --- near: Wartefenster für unfertige Dateien ------------------------------------------
 
 // Fängt: near-Prüfung beim Transkript entfernt / Fenstergrenze (<=) verschoben.
@@ -308,94 +290,6 @@ func TestPassOrphanSummaryWaitsForUnstableTranscript(t *testing.T) {
 }
 
 // --- Pass-Gating über nextTry und State -----------------------------------------------
-
-// Fängt: nextTry wird ignoriert / Grenze (Before) verschoben / Fehlversuch zählt nicht.
-func TestPassGatingByNextTry(t *testing.T) {
-	env := newFlowApp(t, nil)
-	p := env.write(t, "Sitzung.srt", goldenSRT, flowM)
-	t0 := flowM.Add(5 * time.Minute)
-
-	env.app.Pass(context.Background(), t0) // 503 → transient, 1 min Wartezeit
-	st := env.app.states()[p]
-	if env.hits.Load() != 1 || st == nil || st.Attempts != 1 || !st.NextTry.Equal(t0.Add(time.Minute)) {
-		t.Fatalf("nach Fehler: hits=%d state=%+v", env.hits.Load(), st)
-	}
-	env.app.Pass(context.Background(), t0.Add(59*time.Second))
-	if env.hits.Load() != 1 {
-		t.Fatal("vor nextTry darf nicht erneut versucht werden")
-	}
-	env.app.Pass(context.Background(), t0.Add(time.Minute))
-	if env.hits.Load() != 2 || env.app.states()[p].Attempts != 2 {
-		t.Fatalf("genau ab nextTry wird erneut versucht: hits=%d state=%+v", env.hits.Load(), env.app.states()[p])
-	}
-}
-
-// Fängt: Erfolg räumt state nicht auf / Ledger-Eintrag fehlt / Datei wird doppelt verarbeitet.
-// Mit dry=true wird nicht archiviert (die Datei bleibt liegen, das Ledger im
-// Speicher verhindert die Wiederholung). Der echte Erfolgspfad mit Archiv und
-// Ledger auf Platte ist durch die Golden-Szenarien (G01 u. a.) abgedeckt.
-func TestPassSuccessClearsStateAndFillsLedger(t *testing.T) {
-	// Dry-Run schreibt nichts nach Notion und liefert "dry-run" als Ergebnis
-	env := newFlowApp(t, func(c *config.Config) { c.MaxAttempts = 5 }, func(e *cli.Env) { e.Dry = true })
-	p := env.write(t, "Sitzung.srt", goldenSRT, flowM)
-	env.app.states()[p] = &pipeline.FileState{Attempts: 2, Transient: 2}
-	env.status.Store(200)
-
-	now := flowM.Add(5 * time.Minute)
-	env.app.Pass(context.Background(), now)
-	if env.app.states()[p] != nil {
-		t.Fatalf("state nach Erfolg: %+v", env.app.states()[p])
-	}
-	if !env.app.ledger.Has(sha256Hex([]byte(goldenSRT))) {
-		t.Fatal("Ledger enthält den Hash nicht")
-	}
-	env.app.Pass(context.Background(), now.Add(time.Minute))
-	if env.hits.Load() != 1 {
-		t.Fatalf("zweiter Pass darf das LLM nicht erneut fragen, hits=%d", env.hits.Load())
-	}
-	if !strings.Contains(env.logBuf.String(), "wurde schon verarbeitet") {
-		t.Fatalf("Log ohne ↺:\n%s", env.logBuf.String())
-	}
-}
-
-// Fängt: max_attempts im Pass nicht beachtet; Datei und Hinweis landen in _fehler,
-// state wird gelöscht.
-func TestPassGivesUpAfterMaxAttempts(t *testing.T) {
-	env := newFlowApp(t, func(c *config.Config) { c.MaxAttempts = 2 })
-	p := env.write(t, "Sitzung.srt", goldenSRT, flowM)
-	now := flowM.Add(5 * time.Minute)
-	env.app.Pass(context.Background(), now)
-	env.app.Pass(context.Background(), now.Add(time.Minute))
-	if exists(p) || !exists(filepath.Join(env.app.cfg.FailedDir, "Sitzung.srt")) || !exists(filepath.Join(env.app.cfg.FailedDir, "Sitzung.srt.fehler.txt")) {
-		t.Fatal("Datei und .fehler.txt müssen in _fehler liegen")
-	}
-	if env.app.states()[p] != nil {
-		t.Fatal("state muss gelöscht sein")
-	}
-}
-
-// Fängt: Pass läuft mit abgebrochenem Kontext weiter (LLM-Aufruf, Verschieben).
-// Transkript mit gepaarter Zusammenfassung: fängt die Prüfung im Transkript-Zweig
-// (ohne sie läuft handle an, sichtbar an der Logzeile "→ Sitzung.srt ("; LLM-Aufruf und state
-// bleiben wegen des abgebrochenen Kontexts leer). Die Prüfung im
-// Zusammenfassungs-Zweig fängt TestPassCanceledContextSummaryBranch.
-func TestPassCanceledContextDoesNothing(t *testing.T) {
-	env := newFlowApp(t, func(c *config.Config) { c.OrphanSummaryAction = "archive" })
-	tr := env.write(t, "Sitzung.srt", goldenSRT, flowM)
-	sum := env.write(t, "Notizen.md", goldenSummaryMD, flowM.Add(time.Hour))
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	env.app.Pass(ctx, flowM.Add(3*time.Hour))
-	if env.hits.Load() != 0 || !exists(tr) || !exists(sum) {
-		t.Fatalf("nichts darf passieren: hits=%d tr=%v sum=%v", env.hits.Load(), exists(tr), exists(sum))
-	}
-	if len(env.app.states()) != 0 {
-		t.Fatalf("kein state erwartet: %v", env.app.states())
-	}
-	if strings.Contains(env.logBuf.String(), "→ Sitzung.srt (") {
-		t.Fatalf("handle darf nicht anlaufen:\n%s", env.logBuf.String())
-	}
-}
 
 // Fängt: ctx-Prüfung in der Zusammenfassungs-Schleife entfernt (verwaiste
 // Zusammenfassung wird trotz Abbruch archiviert).

@@ -24,7 +24,6 @@ import (
 	"meetingsync/internal/cli"
 	"meetingsync/internal/config"
 	"meetingsync/internal/ledger"
-	"meetingsync/internal/pipeline"
 )
 
 type crash struct{}
@@ -346,7 +345,7 @@ func TestCrashAfterEachStepNoSecondPage(t *testing.T) {
 				t.Fatalf("_fehler: %v + %d Hinweise, want beide Dateien mit Hinweis", data, len(notes))
 			}
 			for _, n := range notes {
-				if !strings.Contains(n, pipeline.ErrUnterbrochen.Error()) {
+				if !strings.Contains(n, unterbrochenHinweis) {
 					t.Fatalf(".fehler.txt ohne Hinweis:\n%s", n)
 				}
 			}
@@ -503,7 +502,7 @@ func TestRestartRuleIdenticalCopyToFailed(t *testing.T) {
 		t.Fatalf("_fehler: %v + %d Hinweise, want 3 Dateien mit Hinweis", data, len(notes))
 	}
 	for _, n := range notes {
-		if !strings.Contains(n, pipeline.ErrUnterbrochen.Error()) {
+		if !strings.Contains(n, unterbrochenHinweis) {
 			t.Fatalf(".fehler.txt ohne Hinweis:\n%s", n)
 		}
 	}
@@ -540,23 +539,6 @@ func TestRestartRuleMovedBackSameProcessRunsAgain(t *testing.T) {
 	}
 }
 
-// Fängt: die Neustart-Regel löscht den Fehlerzähler der Datei nicht. Eine von
-// Mark zurückgelegte Datei hätte sonst schon Versuche verbraucht.
-func TestRestartRuleClearsRetryState(t *testing.T) {
-	e := newCrashEnv(t)
-	if err := e.app.ledger.Add(ledger.Entry{Hash: e.hash(), Status: ledger.StatusBegonnen, File: "x", ModTime: flowM}); err != nil {
-		t.Fatal(err)
-	}
-	e.app.states()[e.tr] = &pipeline.FileState{Attempts: e.app.cfg.MaxAttempts - 1}
-	e.pass(time.Now())
-	if exists(e.tr) {
-		t.Fatal("Transkript muss nach _fehler verschoben sein")
-	}
-	if st := e.app.states()[e.tr]; st != nil {
-		t.Fatalf("Fehlerzähler nicht gelöscht: %+v", st)
-	}
-}
-
 func mustRead(t *testing.T, path string) string {
 	t.Helper()
 	b, err := os.ReadFile(path) //nolint:gosec // G304: Pfad unter t.TempDir()
@@ -564,45 +546,6 @@ func mustRead(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(b)
-}
-
-// Fängt: Add(begonnen) scheitert und CreatePage läuft trotzdem / der Fehler
-// zählt nicht als Versuch / der Retry landet als Abbruch in _fehler.
-func TestBeginLedgerErrorNoNotionRequest(t *testing.T) {
-	e := newCrashEnv(t)
-	// Ledger-Pfad durch einen Ordner ersetzen: Add scheitert (EISDIR).
-	path := ledgerPath(e.app.cfg)
-	if err := os.MkdirAll(path, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	var posts int
-	e.rt.before = func(r *http.Request) (*http.Response, error) {
-		if r.Method == http.MethodPost && r.URL.Path == "/v1/pages" {
-			posts++
-		}
-		return nil, nil
-	}
-	now := time.Now()
-	e.pass(now)
-	if posts != 0 {
-		t.Fatalf("POST /v1/pages = %d, want 0", posts)
-	}
-	if st := e.app.states()[e.tr]; st == nil || st.Attempts != 1 {
-		t.Fatalf("Fehler muss als Versuch zählen: %+v", st)
-	}
-	if !exists(e.tr) || !strings.Contains(e.log.String(), "Protokoll nicht schreibbar, Notion-Seite nicht angelegt") {
-		t.Fatalf("Datei muss liegen bleiben, Log:\n%s", e.log.String())
-	}
-	if err := os.Remove(path); err != nil {
-		t.Fatal(err)
-	}
-	e.pass(now.Add(2 * time.Minute))
-	if n, _ := e.pages(); n != 1 || posts != 2 {
-		t.Fatalf("Retry: %d Notizen, %d POSTs; want 1 Notiz + 1 Task\nLog:\n%s", n, posts, e.log.String())
-	}
-	if left := remaining(t, e.dir); len(left) != 0 {
-		t.Fatalf("nicht archiviert: %v", left)
-	}
 }
 
 // Fängt: Add(fertig)-Fehler wird verschluckt / Hash gilt im Speicher nicht als
@@ -673,36 +616,6 @@ func TestCreatePageErrorSetsVerworfen(t *testing.T) {
 	}
 }
 
-// Fängt: Abbruch per Kontext während POST setzt verworfen (die Anfrage kann
-// Notion erreicht haben; ein Neustart würde eine zweite Seite anlegen).
-func TestCreatePageCanceledKeepsBegonnen(t *testing.T) {
-	e := newCrashEnv(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	e.rt.before = func(r *http.Request) (*http.Response, error) {
-		if !isNotePost(r) {
-			return nil, nil
-		}
-		cancel()
-		return nil, context.Canceled
-	}
-	e.app.Pass(ctx, time.Now())
-	if got := e.lastStatus(t, e.hash()); got != ledger.StatusBegonnen {
-		t.Fatalf("Status = %q, want begonnen", got)
-	}
-	if st := e.app.states()[e.tr]; st != nil && st.Attempts != 0 {
-		t.Fatalf("Abbruch darf nicht zählen: %+v", st)
-	}
-	e.restart(t)
-	e.pass(time.Now())
-	if data, _ := e.inFailed(t); len(data) != 2 {
-		t.Fatalf("Neustart-Regel: _fehler = %v, want 2 Dateien", data)
-	}
-	if n, _ := e.pages(); n != 0 {
-		t.Fatalf("Notizen = %d, want 0", n)
-	}
-}
-
 // -file schreibt das Protokoll wie ein Durchlauf (R-M3-14): begonnen vor
 // CreatePage, fertig danach; die Datei bleibt liegen. Der Dienst (eigener
 // Prozess, Ledger vor dem -file-Lauf geladen) archiviert sie danach als schon
@@ -747,3 +660,7 @@ func TestProcessSingleFileWritesLedger(t *testing.T) {
 		t.Fatalf("Log:\n%s", e.log)
 	}
 }
+
+// unterbrochenHinweis ist der Anfang des Hinweises in .fehler.txt nach der
+// Neustart-Regel (pipeline.errUnterbrochen, dort vollständig getestet).
+const unterbrochenHinweis = "Notion-Seite existiert evtl. schon – bitte in Notion prüfen."

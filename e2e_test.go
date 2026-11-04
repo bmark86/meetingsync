@@ -18,6 +18,8 @@ import (
 
 	"meetingsync/internal/cli"
 	"meetingsync/internal/config"
+
+	"go.yaml.in/yaml/v3"
 )
 
 // fakeServer simuliert LM Studio und die Notion-API in einem Server.
@@ -178,6 +180,25 @@ func setup(t *testing.T, f *fakeServer, opts ...func(*cli.Env)) (*testApp, strin
 	return setupWith(t, f, nil, opts...)
 }
 
+// loadFromFile schreibt cfg als YAML nach t.TempDir() und lädt sie über
+// config.Load, wie das Binary: Ordner, Endungen und Prüfungen kommen aus Load.
+func loadFromFile(t *testing.T, cfg *config.Config) *config.Config {
+	t.Helper()
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, _, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return loaded
+}
+
 // setupWith ist setup mit eigenem Notion-Transport (nil: Standard).
 func setupWith(t *testing.T, f *fakeServer, rt http.RoundTripper, opts ...func(*cli.Env)) (*testApp, string) {
 	t.Helper()
@@ -199,9 +220,7 @@ func setupWith(t *testing.T, f *fakeServer, rt http.RoundTripper, opts ...func(*
 	cfg.Notion.NotesDataSourceID = "notes-ds"
 	cfg.Notion.TasksDataSourceID = "tasks-ds"
 	cfg.Notion.ProjectsDataSourceID = "projects-ds"
-	if _, err := cfg.Finalize(); err != nil {
-		t.Fatal(err)
-	}
+	cfg = loadFromFile(t, cfg)
 	loc, err := loadLocation(cfg.Timezone)
 	if err != nil {
 		t.Fatal(err)

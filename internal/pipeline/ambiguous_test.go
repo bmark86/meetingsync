@@ -94,7 +94,7 @@ func TestAmbiguousCreateReachesDecisionPoint(t *testing.T) {
 	ambiguousOnce(e, errUnklar)
 	p := e.write(t, "Sitzung.srt", testSRT, testM)
 	e.p.Pass(context.Background(), e.clock)
-	if st := e.p.States()[p]; st == nil || st.ambiguous == nil || st.ambiguous.res == nil || st.Attempts != 1 {
+	if st := e.p.states[p]; st == nil || st.ambiguous == nil || st.ambiguous.res == nil || st.Attempts != 1 {
 		t.Fatalf("state = %+v, want ambiguous mit LLM-Ergebnis nach ErrUnklar", st)
 	}
 	// ohne Herkunftsspalte: keine Suche, zweite Seite wie bisher (mit dem gespeicherten Ergebnis)
@@ -102,8 +102,8 @@ func TestAmbiguousCreateReachesDecisionPoint(t *testing.T) {
 	if e.notion.finds != 0 || e.notion.count("notes-ds") != 2 || len(e.llm.got) != 1 {
 		t.Fatalf("ohne Spalte: Suchen %d, Notizen %d, LLM %d; want 0, 2, 1", e.notion.finds, e.notion.count("notes-ds"), len(e.llm.got))
 	}
-	if len(e.p.States()) != 0 {
-		t.Fatalf("Zustand nach Erfolg: %v", e.p.States())
+	if len(e.p.states) != 0 {
+		t.Fatalf("Zustand nach Erfolg: %v", e.p.states)
 	}
 }
 
@@ -128,7 +128,7 @@ func TestAmbiguousCreateReusesPage(t *testing.T) {
 	if ln := lines[len(lines)-1]; ln["status"] != nil || ln["url"] != "https://notion.so/page-1" {
 		t.Fatalf("Ledger = %v", lines)
 	}
-	if exists(p) || !exists(e.archived("Sitzung.srt")) || len(e.p.States()) != 0 {
+	if exists(p) || !exists(e.archived("Sitzung.srt")) || len(e.p.states) != 0 {
 		t.Fatal("Datei nicht archiviert oder Zustand bleibt")
 	}
 	if !strings.Contains(e.log.String(), "↺ Notiz existiert schon in Notion (Quelle) – wird verwendet") {
@@ -171,7 +171,7 @@ func TestLookupLagWaitsBeforeCreate(t *testing.T) {
 	p := e.write(t, "Sitzung.srt", testSRT, testM)
 	e.p.Pass(context.Background(), e.clock) // unklar, neuer Versuch in 2 min
 	e.advance(2 * time.Minute)
-	st := e.p.States()[p]
+	st := e.p.states[p]
 	if e.notion.finds != 1 || e.notion.count("notes-ds") != 0 || st == nil || st.Attempts != 2 || st.Transient != 1 {
 		t.Fatalf("nach 2 min: Suchen %d, Notizen %d, state %+v", e.notion.finds, e.notion.count("notes-ds"), st)
 	}
@@ -342,8 +342,8 @@ func TestGiveUpDuringLookupLag(t *testing.T) {
 	p := e.write(t, "Sitzung.srt", testSRT, testM)
 	e.p.Pass(context.Background(), e.clock) // Versuch 1: unklar
 	e.advance(2 * time.Minute)              // Versuch 2: nichts gefunden, < 5 min → gebe auf
-	if e.notion.finds != 1 || e.notion.count("notes-ds") != 0 || exists(p) || len(e.p.States()) != 0 {
-		t.Fatalf("Suchen %d, Notizen %d, Datei bleibt %v, Zustand %v", e.notion.finds, e.notion.count("notes-ds"), exists(p), e.p.States())
+	if e.notion.finds != 1 || e.notion.count("notes-ds") != 0 || exists(p) || len(e.p.states) != 0 {
+		t.Fatalf("Suchen %d, Notizen %d, Datei bleibt %v, Zustand %v", e.notion.finds, e.notion.count("notes-ds"), exists(p), e.p.states)
 	}
 	txt := mustRead(t, filepath.Join(e.o.FailedDir, "Sitzung.srt.fehler.txt"))
 	if !strings.Contains(txt, errNochNichtAuffindbar.Error()+" – Seite evtl. angelegt – bitte in Notion prüfen") {
@@ -363,7 +363,7 @@ func TestLookupErrorCountsAndDoesNotCreate(t *testing.T) {
 	e.p.Pass(context.Background(), e.clock)
 	e.notion.findErr = domain.Transient(errors.New("Notion nicht erreichbar: weg"))
 	e.advance(20 * time.Minute)
-	st := e.p.States()[p]
+	st := e.p.states[p]
 	if e.notion.count("notes-ds") != 1 || st == nil || st.Attempts != 2 || st.ambiguous == nil {
 		t.Fatalf("Notizen %d, state %+v", e.notion.count("notes-ds"), st)
 	}
@@ -514,7 +514,7 @@ func TestAmbiguousFailuresGiveOnePage(t *testing.T) {
 			})
 			p := e.write(t, "Sitzung.srt", testSRT, testM)
 			e.p.Pass(context.Background(), e.clock)
-			if st := e.p.States()[p]; st == nil || st.ambiguous == nil || len(f.notes) != 1 {
+			if st := e.p.states[p]; st == nil || st.ambiguous == nil || len(f.notes) != 1 {
 				t.Fatalf("nach 1. Versuch: state %+v, Notizen %d\n%s", st, len(f.notes), e.log)
 			}
 			e.advance(20 * time.Minute)

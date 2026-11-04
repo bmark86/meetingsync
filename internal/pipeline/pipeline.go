@@ -95,7 +95,7 @@ type Pipeline struct {
 	dryRun   func(title string, project *notion.Page, n *domain.MeetingNote, reasons []string, blocks int)
 	retry    retryPolicy
 
-	states map[string]*FileState
+	states map[string]*fileState
 	warned map[string]bool
 	cache  watch.Cache
 
@@ -129,7 +129,7 @@ func New(o Options, d Deps) *Pipeline {
 		o: o, now: d.Now, fs: d.FS, mover: d.Mover, llm: d.LLM, notion: d.Notion,
 		notifier: d.Notifier, ledger: d.Ledger, log: d.Log, dryRun: d.DryRun,
 		retry:  newRetryPolicy(o.MaxAttempts),
-		states: map[string]*FileState{},
+		states: map[string]*fileState{},
 		warned: map[string]bool{},
 		cache:  watch.Cache{},
 	}
@@ -315,9 +315,9 @@ func (p *Pipeline) ambiguous(path, hash string) *ambiguousCreate {
 	return amb
 }
 
-// ErrUnterbrochen steht in .fehler.txt, wenn ein früherer Lauf nach
+// errUnterbrochen steht in .fehler.txt, wenn ein früherer Lauf nach
 // "begonnen" abgebrochen ist (ADR 0004).
-var ErrUnterbrochen = errors.New("Notion-Seite existiert evtl. schon – bitte in Notion prüfen. " +
+var errUnterbrochen = errors.New("Notion-Seite existiert evtl. schon – bitte in Notion prüfen. " +
 	"Die Verarbeitung wurde beim Anlegen der Seite unterbrochen (Absturz oder Abbruch). " +
 	"Fehlt die Seite in Notion, die Datei(en) zurück in den Exportordner legen; sie werden dann neu verarbeitet.")
 
@@ -328,7 +328,7 @@ func (p *Pipeline) interrupted(j job, hash string, now time.Time) {
 	pr := j.primary
 	p.log.Printf("✗ %s: letzter Lauf wurde beim Anlegen in Notion unterbrochen → %s (bitte in Notion prüfen)", pr.Name, p.o.FailedDir)
 	// bleibt etwas liegen, dann das Transkript mit "begonnen" (failJob)
-	if !p.failJob(j, ErrUnterbrochen) {
+	if !p.failJob(j, errUnterbrochen) {
 		p.retryLater(pr.Path, now) // bleibt "begonnen"
 		return
 	}
@@ -400,7 +400,7 @@ func (p *Pipeline) handleError(ctx context.Context, j job, err error, now time.T
 // dann ohne LLM-Lauf direkt nach _fehler (handle, R-M3-18).
 // Ist nach dem letzten Fehler unklar, ob die Notiz angelegt ist, steht das in
 // .fehler.txt (nur dort, R-M3-17).
-func (p *Pipeline) giveUp(j job, st *FileState, cause error, now time.Time) {
+func (p *Pipeline) giveUp(j job, st *fileState, cause error, now time.Time) {
 	txt := cause
 	if (errors.Is(cause, notion.ErrUnklar) || errors.Is(cause, errNochNichtAuffindbar)) && !strings.Contains(cause.Error(), "Seite evtl. angelegt") {
 		txt = fmt.Errorf("%w – Seite evtl. angelegt – bitte in Notion prüfen", cause)
@@ -444,7 +444,7 @@ func (p *Pipeline) ProcessFile(ctx context.Context, e *watch.Entry) (string, err
 }
 
 // noteResult ist das aufbereitete LLM-Ergebnis einer Notiz. Nach einem
-// unklaren Fehler beim Anlegen bleibt es im FileState, damit der nächste
+// unklaren Fehler beim Anlegen bleibt es im fileState, damit der nächste
 // Versuch dieselbe Notiz ohne neuen LLM-Lauf schreibt (R-M3-17).
 type noteResult struct {
 	note    *domain.MeetingNote
