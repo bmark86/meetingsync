@@ -33,6 +33,8 @@ type NoteInput struct {
 	Timing      domain.Timing
 	Projects    []string
 	MyName      string
+	MyRole      string // optional, leer: ohne Rollenangabe
+	ExampleName string // Beispielname in den Prompt-Beispielen
 	MyLabel     string
 }
 
@@ -312,12 +314,16 @@ func systemPrompt(in NoteInput) string {
 	if in.MyLabel != "" {
 		labelRule = fmt.Sprintf("Das Label %q ist %s.", in.MyLabel, me)
 	}
-	return fmt.Sprintf(`Du bist ein sorgfältiger Protokollant für %[1]s, Head of Engineering. Du bekommst das Material eines Meetings (automatisch transkribiert, kann Hörfehler enthalten) und erstellst daraus strukturierte Meeting-Notizen.
+	role := ""
+	if in.MyRole != "" {
+		role = ", " + in.MyRole
+	}
+	return fmt.Sprintf(`Du bist ein sorgfältiger Protokollant für %[1]s%[4]s. Du bekommst das Material eines Meetings (automatisch transkribiert, kann Hörfehler enthalten) und erstellst daraus strukturierte Meeting-Notizen.
 
 Regeln:
 - Schreibe auf Deutsch, knapp und konkret. Fachbegriffe dürfen Englisch bleiben.
 - Erfinde nichts. Was nicht im Material steht, bleibt leer ("" bzw. []).
-- Sprecher: Das Transkript nutzt Labels wie "Speaker 1". %[2]s Ordne andere Labels nur dann echten Namen zu, wenn es eindeutig aus dem Gespräch hervorgeht (Anrede, Vorstellung, "Danke, Sascha"). Bei Unsicherheit schreibe z. B. "Speaker 2 (vermutlich Sascha?)", setze pruefen=true und nenne den Grund.
+- Sprecher: Das Transkript nutzt Labels wie "Speaker 1". %[2]s Ordne andere Labels nur dann echten Namen zu, wenn es eindeutig aus dem Gespräch hervorgeht (Anrede, Vorstellung, "Danke, %[3]s"). Bei Unsicherheit schreibe z. B. "Speaker 2 (vermutlich %[3]s?)", setze pruefen=true und nenne den Grund.
 - titel: kurz und aussagekräftig, ohne Datum, höchstens 8 Wörter.
 - typ: "1:1" (zwei Personen), "Team", "Extern" (Kunden, Partner, Dienstleister), "Lenkungskreis" oder "Sonstiges".
 - teilnehmer: Namen bzw. Labels aller Sprechenden, %[1]s eingeschlossen.
@@ -329,7 +335,7 @@ Regeln:
 - naechstes_meeting: nur, wenn ein Folgetermin oder Folgethemen erwähnt wurden.
 - projekt: wähle aus der vorgegebenen Liste nur, wenn das Meeting eindeutig zu genau einem Projekt gehört, sonst "".
 - pruef_gruende/pruefen: pruefen=true, wenn Sprecherzuordnung, Aufgaben oder Inhalt unsicher sind (z. B. schlechte Transkriptqualität); in pruef_gruende stehen kurze Gründe.
-Antworte ausschließlich mit einem JSON-Objekt nach dem vorgegebenen Schema, ohne Erklärtext.`, me, labelRule)
+Antworte ausschließlich mit einem JSON-Objekt nach dem vorgegebenen Schema, ohne Erklärtext.`, me, labelRule, in.ExampleName, role)
 }
 
 func chunkSystemPrompt(in NoteInput) string {

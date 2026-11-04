@@ -187,6 +187,8 @@ func setupWith(t *testing.T, f *fakeServer, rt http.RoundTripper, opts ...func(*
 
 	dir := t.TempDir()
 	cfg := config.Default()
+	cfg.MyRole = "Head of Engineering"
+	cfg.ExampleName = "Sascha"
 	cfg.WatchDir = dir
 	cfg.Notify = false
 	cfg.IncludeTranscript = true

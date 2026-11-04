@@ -59,6 +59,12 @@ summary_extensions: []
 # Dein Name, damit deine To-dos erkannt werden und das Modell dich zuordnen kann.
 # Standard: Mark
 my_name: Mark
+# Deine Rolle für den Prompt ("Protokollant für <Name>, <Rolle>"). Standard: leer
+# (dann steht nur der Name im Prompt).
+my_role: "Teamlead"
+# Beispielname in den Prompt-Beispielen (Anrede, "vermutlich <Name>?"). Er sollte
+# nicht zu den echten Teilnehmenden gehören. Standard: Alex
+example_name: Alex
 # Sprecher-Label deiner Mikrofonspur, z. B. "Microphone" (eigene Spur im kombinierten
 # MacWhisper-SRT). Standard: leer (Modell rät aus dem Kontext).
 my_speaker_label: ""

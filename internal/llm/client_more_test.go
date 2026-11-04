@@ -124,6 +124,33 @@ func TestSystemPromptLabel(t *testing.T) {
 	}
 }
 
+// Fängt: Rolle/Beispielname ändern mehr als nur ihre Stellen im Prompt, oder
+// bei leerer Rolle bleibt ein ", " im Text.
+func TestSystemPromptRoleAndExampleName(t *testing.T) {
+	base := NoteInput{MyName: "Mark", MyLabel: "Speaker 1"}
+	old := base
+	old.MyRole, old.ExampleName = "Head of Engineering", "Sascha"
+	oldP := systemPrompt(old)
+	if !strings.Contains(oldP, "Protokollant für Mark, Head of Engineering. Du bekommst") ||
+		!strings.Contains(oldP, `"Danke, Sascha"`) || !strings.Contains(oldP, `(vermutlich Sascha?)`) {
+		t.Fatalf("Rolle/Beispielname fehlen: %q", oldP)
+	}
+
+	other := base
+	other.MyRole, other.ExampleName = "Teamlead", "Alex"
+	want := strings.NewReplacer("Head of Engineering", "Teamlead", "Sascha", "Alex").Replace(oldP)
+	if got := systemPrompt(other); got != want {
+		t.Errorf("mehr als Rolle und Name geändert:\ngot  %q\nwant %q", got, want)
+	}
+
+	noRole := base
+	noRole.ExampleName = "Sascha"
+	wantNoRole := strings.Replace(oldP, ", Head of Engineering", "", 1)
+	if got := systemPrompt(noRole); got != wantNoRole || !strings.Contains(got, "für Mark. Du bekommst") {
+		t.Errorf("leere Rolle: %q", got)
+	}
+}
+
 func TestNormalizeAndCleanList(t *testing.T) {
 	n := &domain.MeetingNote{
 		Titel: "  Ein   Titel  ", Typ: "Unbekannt",

@@ -579,6 +579,7 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 - Depends on: R-M3-09 (same package). Findings: S-20, A-20.
 - Model: sonnet, config + prompt, golden protects it.
 - Reviews: CR, SR, QA. ADR 0009.
+- Status: **done 2026-11-04.** Keys `my_role` (default empty: ", <role>" left out of "für <my_name>. Du bekommst …") and `example_name` (default `Alex`; empty or whitespace reset in `Finalize`) in `internal/config`; used in `internal/llm/client.go`; passed through `internal/cli` and `internal/pipeline` `Options` into `llm.NoteInput` (pass-through edits outside the planned scope, accepted by the coordinator). Golden configs set `Head of Engineering` and `Sascha`, golden byte-identical. `my_role` is not trimmed. Examples in `config.example.yaml`/`.json` use `Teamlead` and `Alex`. CR and SR approved. User action: progress.md follow-up 27 (Mark's config needs both values before the rebuild). ADR 0009.
 
 #### R-M3-12 `Prüfen` flag for to-dos for Mark ⚠
 ⚠ Behavior change, decided by Mark on 2026-11-01 (D5).

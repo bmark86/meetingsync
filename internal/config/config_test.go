@@ -46,6 +46,37 @@ func TestExampleConfigsIdentical(t *testing.T) {
 	}
 }
 
+// Fängt: neutrale Defaults fehlen oder ein leerer example_name erreicht den Prompt.
+func TestRoleAndExampleNameDefaults(t *testing.T) {
+	d := Default()
+	if d.MyRole != "" || d.ExampleName != "Alex" {
+		t.Fatalf("Defaults: role=%q name=%q", d.MyRole, d.ExampleName)
+	}
+	dir := t.TempDir()
+	write := func(body string) *Config {
+		t.Helper()
+		body += "llm:\n  model: m\nnotion:\n  notes_data_source_id: n\n"
+		p := filepath.Join(dir, "c.yaml")
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		cfg, _, err := Load(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return cfg
+	}
+	if c := write("watch_dir: /x\nmy_role: Teamlead\nexample_name: Kim\n"); c.MyRole != "Teamlead" || c.ExampleName != "Kim" {
+		t.Errorf("gesetzte Werte: %q %q", c.MyRole, c.ExampleName)
+	}
+	if c := write("watch_dir: /x\nexample_name: \"\"\n"); c.ExampleName != "Alex" {
+		t.Errorf("leerer example_name: %q", c.ExampleName)
+	}
+	if c := write("watch_dir: /x\n"); c.MyRole != "" || c.ExampleName != "Alex" {
+		t.Errorf("ohne Angabe: %q %q", c.MyRole, c.ExampleName)
+	}
+}
+
 func TestConfigPathIn(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte("{}"), 0o600); err != nil {

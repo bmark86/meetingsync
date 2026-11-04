@@ -1,6 +1,8 @@
 {
   "watch_dir": "~/Meetings/MacWhisper",
   "my_name": "Mark",
+  "my_role": "Teamlead",
+  "example_name": "Alex",
   "my_speaker_label": "",
 
   "include_transcript": false,
