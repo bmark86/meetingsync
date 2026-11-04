@@ -19,7 +19,7 @@ MacWhisper ──► export folder ──► meetingsync ──► LM Studio (Ge
 5. Tasks that *you* took on become to-dos in **Tasks** (with a due date, linked to the note and the project).
 6. The transcript and the summary move to `_archiv/JJJJ-MM/`. A ledger makes sure a file is never processed twice.
 
-If the model is unsure (speaker assignment, poor audio quality, no timestamps), a yellow **Bitte prüfen** box ("please check") appears at the top of the page. The checkbox **Prüfen** ("check") is set, and you get a notification on the Mac.
+If the model is unsure (speaker assignment, poor audio quality, no timestamps) or the note contains to-dos for you, a yellow **Bitte prüfen** box ("please check") appears at the top of the page. The checkbox **Prüfen** ("check") is set, and you get a notification on the Mac.
 
 ---
 
@@ -134,7 +134,7 @@ To stop: `launchctl bootout gui/$(id -u)/de.borukhov.meetingsync`
 
 So that the inbox does not turn into an archive:
 
-1. In **Notes**, create a checkbox property **Prüfen** (optional. Without it, you only get the yellow box on the page).
+1. In **Notes**, create a checkbox property **Prüfen** (optional. Without it, you only get the yellow box on the page). It is also checked for notes with to-dos for you.
 2. On the Second Brain start page, add two linked views:
    - **Zu prüfen** ("to check") – Notes, filter: *Prüfen is checked* and *Status = Inbox*
    - **Meine offenen To-dos** ("my open to-dos") – Tasks, filter: *Completed is not checked*, sorted by *Due Date*

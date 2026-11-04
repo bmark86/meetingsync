@@ -288,7 +288,7 @@ func TestEndToEnd(t *testing.T) {
 	if got := mustJSON(np["Projects"]); !strings.Contains(got, "proj-1") {
 		t.Errorf("Projekt nicht verknüpft: %s", got)
 	}
-	if got := mustJSON(np["Prüfen"]); !strings.Contains(got, "false") {
+	if got := mustJSON(np["Prüfen"]); !strings.Contains(got, "true") {
 		t.Errorf("Prüfen: %s", got)
 	}
 	body := strings.ReplaceAll(mustJSON(note["children"]), `\u0026`, "&")

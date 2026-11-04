@@ -243,13 +243,32 @@
     "headers": {
       "Accept-Encoding": "gzip",
       "Authorization": "Bearer <token>",
-      "Content-Length": "5103",
+      "Content-Length": "5355",
       "Content-Type": "application/json",
       "Notion-Version": "2025-09-03",
       "User-Agent": "Go-http-client/1.1"
     },
     "body": {
       "children": [
+        {
+          "callout": {
+            "color": "yellow_background",
+            "icon": {
+              "emoji": "⚠️",
+              "type": "emoji"
+            },
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Bitte prüfen: Enthält To-dos für dich – bitte Zuordnung und Fälligkeit prüfen"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "callout"
+        },
         {
           "heading_2": {
             "rich_text": [
@@ -862,7 +881,7 @@
           ]
         },
         "Prüfen": {
-          "checkbox": false
+          "checkbox": true
         },
         "Status": {
           "status": {

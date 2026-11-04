@@ -243,7 +243,7 @@
     "headers": {
       "Accept-Encoding": "gzip",
       "Authorization": "Bearer <token>",
-      "Content-Length": "5129",
+      "Content-Length": "5202",
       "Content-Type": "application/json",
       "Notion-Version": "2025-09-03",
       "User-Agent": "Go-http-client/1.1"
@@ -260,7 +260,7 @@
             "rich_text": [
               {
                 "text": {
-                  "content": "Bitte prüfen: Speaker 2 nicht sicher zugeordnet"
+                  "content": "Bitte prüfen: Speaker 2 nicht sicher zugeordnet · Enthält To-dos für dich – bitte Zuordnung und Fälligkeit prüfen"
                 },
                 "type": "text"
               }

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -400,6 +401,9 @@ func (p *Pipeline) process(ctx context.Context, j job, hash string) (string, gap
 	if j.summaryOnly {
 		reasons = append(reasons, "Kein Transkript mit Zeitmarken gefunden – Notiz basiert auf einer Datei ohne Sprecher/Zeitstempel")
 	}
+	if hatToDoFuerMich(note) && !slices.Contains(reasons, reasonToDoFuerMich) {
+		reasons = append(reasons, reasonToDoFuerMich)
+	}
 	var project *notion.Page
 	for i := range projects {
 		if strings.EqualFold(projects[i].Name, note.Projekt) {
@@ -526,4 +530,17 @@ func (p *Pipeline) ActiveProjects(ctx context.Context) []notion.Page {
 func sha256Hex(b []byte) string {
 	h := sha256.Sum256(b)
 	return hex.EncodeToString(h[:])
+}
+
+// reasonToDoFuerMich ist der Prüfgrund für Notizen mit To-dos für den Nutzer (D5).
+const reasonToDoFuerMich = "Enthält To-dos für dich – bitte Zuordnung und Fälligkeit prüfen"
+
+// hatToDoFuerMich meldet, ob mindestens eine nächste Aktion fuer_mich=true hat.
+func hatToDoFuerMich(note *domain.MeetingNote) bool {
+	for _, a := range note.NextActions {
+		if a.FuerMich {
+			return true
+		}
+	}
+	return false
 }

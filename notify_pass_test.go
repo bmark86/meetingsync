@@ -44,7 +44,7 @@ func runNotifyPass(t *testing.T, notifyOn bool) [][2]string {
 
 func TestPassNotifyOnOwnTodoSendsOneCall(t *testing.T) {
 	got := runNotifyPass(t, true)
-	want := [][2]string{{"Neue Meeting-Notiz", "Sirius Sync · 1 To-do(s) für dich"}}
+	want := [][2]string{{"Neue Meeting-Notiz", "Sirius Sync · 1 To-do(s) für dich · bitte prüfen"}}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Aufrufe = %q, want %q", got, want)
 	}

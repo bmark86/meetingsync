@@ -78,7 +78,7 @@ func TestPassPairLedgerOrderAndArchive(t *testing.T) {
 	if len(e.llm.got) != 1 || e.llm.got[0].SummaryText != testSummary || len(e.llm.got[0].Projects) != 1 {
 		t.Fatalf("LLM-Eingabe = %+v", e.llm.got)
 	}
-	if len(e.notifier.calls) != 1 || e.notifier.calls[0] != [2]string{"Neue Meeting-Notiz", "Sync · 1 To-do(s) für dich"} {
+	if len(e.notifier.calls) != 1 || e.notifier.calls[0] != [2]string{"Neue Meeting-Notiz", "Sync · 1 To-do(s) für dich · bitte prüfen"} {
 		t.Fatalf("Mitteilungen = %v", e.notifier.calls)
 	}
 	if len(e.p.States()) != 0 {
@@ -403,7 +403,7 @@ func TestNewNilDryRunIsNoop(t *testing.T) {
 }
 
 // noteWithBlocks: testNote mit so vielen Entscheidungen, dass die Notiz total
-// Blöcke hat (ohne Transkript, wie notion.CountBlocks).
+// Blöcke hat (ohne Transkript, mit Prüfhinweis wegen fuer_mich, wie notion.CountBlocks).
 func noteWithBlocks(total int) func() *domain.MeetingNote {
 	build := func(k int) *domain.MeetingNote {
 		n := testNote()
@@ -413,7 +413,7 @@ func noteWithBlocks(total int) func() *domain.MeetingNote {
 		llm.Normalize(n)
 		return n
 	}
-	k := total - notion.CountBlocks(build(1), domain.NoteMeta{}) + 1
+	k := total - notion.CountBlocks(build(1), domain.NoteMeta{ReviewReasons: []string{reasonToDoFuerMich}}) + 1
 	return func() *domain.MeetingNote { return build(k) }
 }
 
@@ -559,5 +559,50 @@ func TestProcessFileTooManyBlocks(t *testing.T) {
 	_, err := e.p.ProcessFile(context.Background(), &watch.Entry{Path: p, Name: "Sitzung.srt", ModTime: testM, Kind: domain.KindTranscript, Content: []byte(testSRT)})
 	if !errors.Is(err, notion.ErrZuVieleBloecke) || len(e.notion.pages) != 0 || !exists(p) || len(e.notifier.calls) != 0 {
 		t.Fatalf("err=%v Seiten %d Datei bleibt %v Mitteilungen %v", err, len(e.notion.pages), exists(p), e.notifier.calls)
+	}
+}
+
+// Fängt: To-do für Mark setzt den Prüfgrund nicht (genau einmal, auch bei create_tasks_for=none).
+func TestReasonToDoFuerMich(t *testing.T) {
+	cases := []struct {
+		name     string
+		tasksFor string
+		note     func() *domain.MeetingNote
+		want     int
+	}{
+		{"fuer_mich", "me", testNote, 1},
+		{"ohne fuer_mich", "me", func() *domain.MeetingNote {
+			n := testNote()
+			n.NextActions = []domain.Action{{Aufgabe: "Fremdes To-do"}}
+			return n
+		}, 0},
+		{"create_tasks_for none", "none", testNote, 1},
+		{"LLM nennt denselben Text", "me", func() *domain.MeetingNote {
+			n := testNote()
+			n.PruefGruende = []string{reasonToDoFuerMich}
+			return n
+		}, 1},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var got []string
+			e := newEnv(t, func(o *Options, d *Deps) {
+				o.Dry = true
+				o.CreateTasksFor = c.tasksFor
+				d.DryRun = func(_ string, _ *notion.Page, _ *domain.MeetingNote, reasons []string, _ int) { got = reasons }
+			})
+			e.llm.note = c.note
+			e.write(t, "Sitzung.srt", testSRT, testM)
+			e.p.Pass(context.Background(), e.clock)
+			n := 0
+			for _, r := range got {
+				if r == reasonToDoFuerMich {
+					n++
+				}
+			}
+			if n != c.want {
+				t.Fatalf("Grund %d-mal, erwartet %d: %q", n, c.want, got)
+			}
+		})
 	}
 }
