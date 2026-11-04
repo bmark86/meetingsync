@@ -101,29 +101,73 @@ func TestCheckNotesAndTasks(t *testing.T) {
 func TestNoteProperties(t *testing.T) {
 	full := Schema{"Name": KindTitle, "Status": KindSelect, "Projects": KindRelation, "Prüfen": KindCheckbox}
 	p := &Page{ID: "proj-1", Name: "AI-First"}
-	got := ptJSON(t, NoteProperties(full, ptNotes, "T", p, true))
+	got := ptJSON(t, NoteProperties(full, ptNotes, "T", p, true, "f · 2026-11-04 08:45:12"))
 	want := `{"Name":{"title":[{"text":{"content":"T"},"type":"text"}]},"Projects":{"relation":[{"id":"proj-1"}]},"Prüfen":{"checkbox":true},"Status":{"select":{"name":"Inbox"}}}`
 	if got != want {
 		t.Errorf("voll:\n%s\nerwartet\n%s", got, want)
 	}
 
 	status := Schema{"Name": KindTitle, "Status": KindStatus, "Projects": KindRichText, "Prüfen": KindCheckbox}
-	got = ptJSON(t, NoteProperties(status, ptNotes, "T", p, false))
+	got = ptJSON(t, NoteProperties(status, ptNotes, "T", p, false, "f · 2026-11-04 08:45:12"))
 	want = `{"Name":{"title":[{"text":{"content":"T"},"type":"text"}]},"Prüfen":{"checkbox":false},"Status":{"status":{"name":"Inbox"}}}`
 	if got != want {
 		t.Errorf("status:\n%s\nerwartet\n%s", got, want)
 	}
 
-	got = ptJSON(t, NoteProperties(full, ptNotes, "", nil, false))
+	got = ptJSON(t, NoteProperties(full, ptNotes, "", nil, false, "f · 2026-11-04 08:45:12"))
 	want = `{"Name":{"title":[]},"Prüfen":{"checkbox":false},"Status":{"select":{"name":"Inbox"}}}`
 	if got != want {
 		t.Errorf("ohne Projekt:\n%s\nerwartet\n%s", got, want)
 	}
 
-	got = ptJSON(t, NoteProperties(Schema{"Status": PropertyKind("people")}, ptNotes, "T", p, true))
+	got = ptJSON(t, NoteProperties(Schema{"Status": PropertyKind("people")}, ptNotes, "T", p, true, "f · 2026-11-04 08:45:12"))
 	want = `{"Name":{"title":[{"text":{"content":"T"},"type":"text"}]}}`
 	if got != want {
 		t.Errorf("minimal:\n%s\nerwartet\n%s", got, want)
+	}
+}
+
+// Fängt: Herkunft ohne konfigurierte Textspalte geschrieben (Notion 400), falsches
+// Format der Herkunft, Herkunft fehlt bei konfigurierter Spalte (R-M3-17).
+func TestNotePropertiesSource(t *testing.T) {
+	berlin, err := time.LoadLocation("Europe/Berlin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := time.Date(2026, 11, 4, 7, 45, 12, 987654321, time.UTC) // Nanosekunden fallen weg
+	if got := SourceMarker("Weekly 07.01.2026_08-45.srt", m, berlin); got != "Weekly 07.01.2026_08-45.srt · 2026-11-04 08:45:12" {
+		t.Errorf("SourceMarker = %q", got)
+	}
+	if got := SourceMarker("a.srt", m, time.UTC); got != "a.srt · 2026-11-04 07:45:12" {
+		t.Errorf("SourceMarker UTC = %q", got)
+	}
+	np := NotesProps{Title: "Name", Source: "Quelle"}
+	cases := []struct {
+		s    Schema
+		p    NotesProps
+		want bool
+	}{
+		{Schema{"Name": KindTitle, "Quelle": KindRichText}, np, true},
+		{Schema{"Name": KindTitle, "Quelle": KindRichText}, NotesProps{Title: "Name"}, false}, // nicht konfiguriert
+		{Schema{"Name": KindTitle}, np, false},                                                // Spalte fehlt
+		{Schema{"Name": KindTitle, "Quelle": KindSelect}, np, false},                          // falscher Typ
+	}
+	for i, c := range cases {
+		if got := c.s.HasSource(c.p); got != c.want {
+			t.Errorf("%d: HasSource = %v, erwartet %v", i, got, c.want)
+		}
+		got := ptJSON(t, NoteProperties(c.s, c.p, "T", nil, false, "f · 2026-11-04 08:45:12"))
+		if strings.Contains(got, "Quelle") != c.want {
+			t.Errorf("%d: %s", i, got)
+		}
+	}
+	got := ptJSON(t, NoteProperties(cases[0].s, np, "T", nil, false, "f · 2026-11-04 08:45:12"))
+	want := `{"Name":{"title":[{"text":{"content":"T"},"type":"text"}]},"Quelle":{"rich_text":[{"text":{"content":"f · 2026-11-04 08:45:12"},"type":"text"}]}}`
+	if got != want {
+		t.Errorf("mit Quelle:\n%s\nerwartet\n%s", got, want)
+	}
+	if got := ptJSON(t, NoteProperties(cases[0].s, np, "T", nil, false, "")); strings.Contains(got, "Quelle") {
+		t.Errorf("leere Herkunft geschrieben: %s", got)
 	}
 }
 

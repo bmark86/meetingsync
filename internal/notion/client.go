@@ -39,10 +39,30 @@ const maxAntwortBytes = 10 << 20
 // über dem Limit). Der Text enthält nie Inhalt der Antwort.
 var errAntwort = errors.New("Antwort von Notion unvollständig oder zu groß")
 
-// ErrUnklar heißt: unklar, ob Notion die Seite angelegt hat, weil die
-// Antwort auf das Anlegen nicht vollständig gelesen werden konnte. CreatePage
-// umhüllt den Fehler damit; ein neuer Versuch könnte eine Dublette erzeugen.
+// ErrUnklar heißt: unklar, ob Notion die Seite angelegt hat (Antwort nicht
+// vollständig lesbar oder kein JSON, HTTP 5xx, Netzwerkfehler, Zeitüberschreitung).
+// CreatePage liefert dann einen Fehler mit errors.Is(err, ErrUnklar); ein neuer
+// Versuch könnte eine Dublette erzeugen.
 var ErrUnklar = errors.New("Seite evtl. angelegt")
+
+// unklarError markiert einen Fehler beim Anlegen als unklar (ErrUnklar), ohne
+// seinen Text zu ändern; die Fehlerklasse (vorübergehend) bleibt erhalten.
+type unklarError struct{ err error }
+
+func (e unklarError) Error() string        { return e.err.Error() }
+func (e unklarError) Unwrap() error        { return e.err }
+func (e unklarError) Is(target error) bool { return target == ErrUnklar }
+
+// unklar meldet, ob die Seite trotz err angelegt sein kann: HTTP 5xx,
+// Netzwerkfehler oder Zeitüberschreitung (die Anfrage kann Notion erreicht
+// haben) oder eine 2xx-Antwort, die kein gültiges JSON ist.
+func unklar(err error) bool {
+	var ae *apiError
+	var ue *url.Error
+	var se *json.SyntaxError
+	var te *json.UnmarshalTypeError
+	return (errors.As(err, &ae) && ae.Status >= 500) || errors.As(err, &ue) || errors.As(err, &se) || errors.As(err, &te)
+}
 
 // NewClient baut den Client. transport ist der HTTP-Transport; nil heißt
 // http.DefaultTransport (Produktion), Tests setzen eigene Hooks.
@@ -244,6 +264,36 @@ func (n *Client) ActiveProjects(ctx context.Context, dsID string, p ProjectsProp
 	return res, nil
 }
 
+// PageRef ist eine gefundene Seite mit ID und URL.
+type PageRef struct {
+	ID  string
+	URL string
+}
+
+// FindByText sucht in der Data Source dsID Seiten, deren Textspalte prop genau
+// text ist (equals), die älteste zuerst (höchstens 10).
+func (n *Client) FindByText(ctx context.Context, dsID, prop, text string) ([]PageRef, error) {
+	body := map[string]any{
+		"filter":    KindRichText.filter(prop, map[string]any{"equals": text}),
+		"sorts":     []any{map[string]any{"timestamp": "created_time", "direction": "ascending"}},
+		"page_size": 10,
+	}
+	var out struct {
+		Results []struct {
+			ID  string `json:"id"`
+			URL string `json:"url"`
+		} `json:"results"`
+	}
+	if err := n.do(ctx, http.MethodPost, "/v1/data_sources/"+url.PathEscape(dsID)+"/query", body, &out, true); err != nil {
+		return nil, err
+	}
+	res := make([]PageRef, 0, len(out.Results))
+	for _, r := range out.Results {
+		res = append(res, PageRef{ID: r.ID, URL: r.URL})
+	}
+	return res, nil
+}
+
 func titleText(raw json.RawMessage) string {
 	var p struct {
 		Title []struct {
@@ -285,8 +335,11 @@ func (n *Client) CreatePage(ctx context.Context, dsID string, props map[string]a
 		URL string `json:"url"`
 	}
 	if err := n.do(ctx, http.MethodPost, "/v1/pages", body, &out, false); err != nil {
-		if errors.Is(err, errAntwort) {
+		switch {
+		case errors.Is(err, errAntwort):
 			err = fmt.Errorf("%w: %w", ErrUnklar, err)
+		case unklar(err):
+			err = unklarError{err}
 		}
 		return "", "", err
 	}
@@ -296,6 +349,20 @@ func (n *Client) CreatePage(ctx context.Context, dsID string, props map[string]a
 		}
 	}
 	return out.ID, out.URL, nil
+}
+
+// AppendRest hängt an die Seite pageID die Blöcke an, die CreatePage nicht im
+// ersten Request schickt (alle nach den ersten 100). Für eine Seite, die beim
+// Anlegen schon entstand, deren Antwort aber unklar war. Ein Fehler umhüllt
+// ErrUnvollstaendig.
+func (n *Client) AppendRest(ctx context.Context, pageID string, children []any) error {
+	if len(children) <= 100 {
+		return nil
+	}
+	if err := n.appendChildren(ctx, pageID, children[100:]); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnvollstaendig, err)
+	}
+	return nil
 }
 
 // appendChildren hängt Blöcke an, höchstens 100 pro Request.

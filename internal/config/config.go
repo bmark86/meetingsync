@@ -79,6 +79,7 @@ type NotesProps struct {
 	StatusValue string `json:"status_value" yaml:"status_value"`
 	Projects    string `json:"projects" yaml:"projects"`
 	Review      string `json:"review" yaml:"review"`
+	Source      string `json:"source" yaml:"source"` // optional, Standard leer (aus)
 }
 
 type TasksProps struct {

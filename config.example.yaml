@@ -149,6 +149,8 @@ notion:
   #   status_value: Inbox   # Wert, der neuen Notizen gesetzt wird
   #   projects: Projects    # Relation zu Projects
   #   review: Prüfen        # Checkbox, gesetzt bei Prüfbedarf
+  #   source: Quelle        # Textspalte: Dateiname und Änderungszeit; verhindert eine zweite Seite
+  #                         # nach unklarem Fehler beim Anlegen. Standard: leer (aus)
 
   # Spaltennamen der Tasks-Datenbank. Standard: wie unten.
   # tasks_properties:

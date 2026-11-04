@@ -156,6 +156,16 @@ func (l *Ledger) Has(hash string) bool { return l.byHash[hash].Status == StatusF
 // Started meldet, ob der letzte Eintrag zu hash "begonnen" ist.
 func (l *Ledger) Started(hash string) bool { return l.byHash[hash].Status == StatusBegonnen }
 
+// Discarded meldet, ob der letzte Eintrag zu hash "verworfen" ist, und liefert
+// dann diesen Eintrag (Datei, mtime, Zeit).
+func (l *Ledger) Discarded(hash string) (Entry, bool) {
+	e := l.byHash[hash]
+	if e.Status != StatusVerworfen {
+		return Entry{}, false
+	}
+	return e, true
+}
+
 // HasNear meldet, ob ein fertiger Eintrag eine mtime im Fenster um t hat.
 func (l *Ledger) HasNear(t time.Time, window time.Duration) bool {
 	for _, e := range l.byHash {

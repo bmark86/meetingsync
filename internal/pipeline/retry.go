@@ -17,6 +17,18 @@ type FileState struct {
 	// solange der Inhalt giveUpHash hat
 	giveUp     error
 	giveUpHash string
+	// ambiguous: ein Versuch scheiterte unklar beim Anlegen der Notiz
+	// (notion.ErrUnklar); vor dem nächsten wird nach der Seite gesucht (R-M3-17)
+	ambiguous *ambiguousCreate
+}
+
+// ambiguousCreate ist der unklare Ausgang des Anlegens einer Notiz; gilt nur
+// für den Inhalt hash.
+type ambiguousCreate struct {
+	hash   string
+	marker string      // Herkunft beim unklaren Anlegen (Datei und mtime aus "verworfen")
+	at     time.Time   // Zeit des unklaren Fehlers (nach Neustart: "verworfen" im Protokoll)
+	res    *noteResult // LLM-Ergebnis dieses Versuchs; nil nach Neustart
 }
 
 const (

@@ -85,6 +85,9 @@ func Init(ctx context.Context, e Env) (Setup, error) {
 	if !s.NotesTypes.Is(nc.Notes.Review, notion.KindCheckbox) {
 		e.Log.Printf("Hinweis: Notes hat keine Checkbox %q – Prüf-Hinweise stehen nur als Hinweisbox oben auf der Seite.", nc.Notes.Review)
 	}
+	if nc.Notes.Source != "" && !s.NotesTypes.HasSource(notion.NotesProps(nc.Notes)) {
+		e.Log.Printf("Hinweis: Notes hat keine Textspalte %q (notes_properties.source) – kein Schutz vor einer zweiten Notiz nach unklarem Fehler beim Anlegen.", nc.Notes.Source)
+	}
 
 	if nc.CreateTasksFor != "none" && nc.TasksDataSourceID != "" {
 		if s.TasksDS, s.TasksTypes, err = e.Notion.ResolveDataSource(ctx, nc.TasksDataSourceID); err != nil {

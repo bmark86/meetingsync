@@ -28,6 +28,8 @@ import (
 type Notion interface {
 	notion.PageWriter
 	ActiveProjects(ctx context.Context, dsID string, p notion.ProjectsProps, types notion.Schema) ([]notion.Page, error)
+	FindByText(ctx context.Context, dsID, prop, text string) ([]notion.PageRef, error)
+	AppendRest(ctx context.Context, pageID string, children []any) error
 }
 
 // Notifier zeigt eine Mitteilung (wie notify.Notifier). Eigene Deklaration,
@@ -267,7 +269,7 @@ func (p *Pipeline) handle(ctx context.Context, j job, now time.Time) {
 		delete(p.states, pr.Path)
 	}
 	p.log.Printf("→ %s (%s, %d KB)", pr.Name, map[bool]string{true: "nur Zusammenfassung", false: "Transkript"}[j.summaryOnly], pr.Size/1024)
-	url, g, err := p.process(ctx, j, hash)
+	url, g, res, err := p.process(ctx, j, hash, p.ambiguous(pr.Path, hash))
 	if err == nil {
 		// Auch nach einem Abbruch in createTasks: die Seite existiert, also fertig
 		// (mit den Lücken), sonst schickt der Neustart sie nach _fehler (ADR 0004).
@@ -283,6 +285,34 @@ func (p *Pipeline) handle(ctx context.Context, j job, now time.Time) {
 	}
 
 	p.handleError(ctx, j, err, now)
+	if st := p.states[pr.Path]; st != nil && st.ambiguous != nil && st.ambiguous.hash == hash && st.ambiguous.res == nil && res != nil {
+		st.ambiguous.res = res // nächster Versuch schreibt dieselbe Notiz, ohne LLM-Lauf (auch nach Neustart)
+	}
+}
+
+// ambiguous liefert den unklaren Ausgang des letzten Anlegens für den Inhalt
+// hash am Pfad path, sonst nil. Anderer Inhalt am selben Pfad verwirft ihn.
+// Ohne Zustand (Neustart, umbenannt, zurückgelegt) gilt mit Herkunftsspalte
+// ein "verworfen" im Protokoll als unklar, seit dessen Zeit, mit dessen Datei
+// und mtime als Herkunft, ohne LLM-Ergebnis.
+func (p *Pipeline) ambiguous(path, hash string) *ambiguousCreate {
+	st := p.states[path]
+	if st != nil {
+		if st.ambiguous != nil && st.ambiguous.hash != hash {
+			st.ambiguous = nil
+		}
+		return st.ambiguous
+	}
+	if !p.o.NotesTypes.HasSource(p.o.Notes) {
+		return nil
+	}
+	e, ok := p.ledger.Discarded(hash)
+	if !ok {
+		return nil
+	}
+	amb := &ambiguousCreate{hash: hash, marker: notion.SourceMarker(e.File, e.ModTime, p.o.Loc), at: e.At}
+	p.state(path).ambiguous = amb
+	return amb
 }
 
 // ErrUnterbrochen steht in .fehler.txt, wenn ein früherer Lauf nach
@@ -342,6 +372,16 @@ func (p *Pipeline) handleError(ctx context.Context, j job, err error, now time.T
 	}
 	trans := domain.IsTransient(err)
 	st := p.state(pr.Path)
+	if errors.Is(err, notion.ErrUnklar) {
+		// Seite evtl. angelegt: vor dem nächsten Versuch suchen (LLM-Ergebnis setzt handle).
+		// Herkunft aus dem "verworfen" direkt nach dem Anlegen, sonst aus der Datei.
+		hash := sha256Hex(pr.Content)
+		e, ok := p.ledger.Discarded(hash)
+		if !ok {
+			e = ledger.Entry{File: pr.Name, ModTime: pr.ModTime}
+		}
+		st.ambiguous = &ambiguousCreate{hash: hash, marker: notion.SourceMarker(e.File, e.ModTime, p.o.Loc), at: p.now()}
+	}
 	wait, giveUp := p.retry.record(st, trans, now)
 	if giveUp {
 		p.log.Printf("   ✗ %v – gebe auf, Dateien → %s", err, p.o.FailedDir)
@@ -358,9 +398,16 @@ func (p *Pipeline) handleError(ctx context.Context, j job, err error, now time.T
 // giveUp verschiebt die Dateien nach max_attempts nach _fehler. Scheitert das,
 // bleibt der Zustand mit Versuchszahl und Ursache: neuer Versuch in 2 min,
 // dann ohne LLM-Lauf direkt nach _fehler (handle, R-M3-18).
+// Ist nach dem letzten Fehler unklar, ob die Notiz angelegt ist, steht das in
+// .fehler.txt (nur dort, R-M3-17).
 func (p *Pipeline) giveUp(j job, st *FileState, cause error, now time.Time) {
-	if !p.failJob(j, cause) {
+	txt := cause
+	if (errors.Is(cause, notion.ErrUnklar) || errors.Is(cause, errNochNichtAuffindbar)) && !strings.Contains(cause.Error(), "Seite evtl. angelegt") {
+		txt = fmt.Errorf("%w – Seite evtl. angelegt – bitte in Notion prüfen", cause)
+	}
+	if !p.failJob(j, txt) {
 		st.giveUp, st.giveUpHash = cause, sha256Hex(j.primary.Content)
+		st.ambiguous = nil
 		p.retryLater(j.primary.Path, now)
 		return
 	}
@@ -386,7 +433,7 @@ func (p *Pipeline) ProcessFile(ctx context.Context, e *watch.Entry) (string, err
 			p.warnOnce("ledger-refresh", "Protokoll nicht nachlesbar: %v", err)
 		}
 	}
-	url, g, err := p.process(ctx, job{primary: e, summaryOnly: e.Kind == domain.KindSummary}, hash)
+	url, g, _, err := p.process(ctx, job{primary: e, summaryOnly: e.Kind == domain.KindSummary}, hash, nil)
 	if err != nil || p.o.Dry {
 		return url, err
 	}
@@ -396,10 +443,116 @@ func (p *Pipeline) ProcessFile(ctx context.Context, e *watch.Entry) (string, err
 	return url, nil
 }
 
+// noteResult ist das aufbereitete LLM-Ergebnis einer Notiz. Nach einem
+// unklaren Fehler beim Anlegen bleibt es im FileState, damit der nächste
+// Versuch dieselbe Notiz ohne neuen LLM-Lauf schreibt (R-M3-17).
+type noteResult struct {
+	note    *domain.MeetingNote
+	title   string
+	project *notion.Page // Kopie, kein Zeiger in die Projektliste
+	reasons []string
+	blocks  []any
+}
+
+// ambiguousLag: so lange nach einem unklaren Fehler beim Anlegen findet die
+// Suche in Notion eine angelegte Seite evtl. noch nicht (Verzögerung der Suche).
+const ambiguousLag = 5 * time.Minute
+
+// errNochNichtAuffindbar: die Suche fand nach einem unklaren Fehler beim
+// Anlegen nichts, ambiguousLag ist aber noch nicht vorbei.
+var errNochNichtAuffindbar = errors.New("Notiz in Notion noch nicht auffindbar")
+
 // process: Text aufbereiten → lokales LLM → Notion-Seite + Tasks.
 // Vor CreatePage "begonnen" ins Protokoll (ADR 0004).
 // Ist die Seite angelegt, ist der Fehler nil, auch wenn Teile fehlen (gaps).
-func (p *Pipeline) process(ctx context.Context, j job, hash string) (string, gaps, error) {
+// amb (optional): der letzte Versuch scheiterte unklar beim Anlegen. Sein
+// LLM-Ergebnis wird verwendet, wenn vorhanden; mit Herkunftsspalte wird erst
+// nach der Seite gesucht und eine gefundene verwendet (R-M3-17). res ist das
+// verwendete LLM-Ergebnis (nil, wenn es nicht so weit kam).
+func (p *Pipeline) process(ctx context.Context, j job, hash string, amb *ambiguousCreate) (url string, g gaps, res *noteResult, err error) {
+	pr := j.primary
+	if amb != nil {
+		res = amb.res
+	}
+	if res == nil {
+		if res, err = p.prepare(ctx, j); err != nil {
+			return "", gaps{}, nil, err
+		}
+		if p.o.Dry {
+			p.dryRun(res.title, res.project, res.note, res.reasons, len(res.blocks))
+			return "dry-run", gaps{}, res, nil
+		}
+	}
+	note, title, project, reasons := res.note, res.title, res.project, res.reasons
+
+	le := ledger.Entry{Hash: hash, Status: ledger.StatusBegonnen, File: pr.Name, ModTime: pr.ModTime, At: p.now()}
+	if err := p.ledger.Add(le); err != nil {
+		// Ohne "begonnen" keine Notion-Anfrage. verworfen setzt den Speicher
+		// zurück, damit der nächste Versuch normal läuft.
+		le.Status = ledger.StatusVerworfen
+		_ = p.ledger.Add(le) //nolint:errcheck // gemeldet wird der erste Fehler; bleibt auf Platte "begonnen", greift beim Neustart die Prüfregel (sicher)
+		return "", gaps{}, res, fmt.Errorf("Protokoll nicht schreibbar, Notion-Seite nicht angelegt: %w", err)
+	}
+	marker := notion.SourceMarker(pr.Name, pr.ModTime, p.o.Loc)
+	var pageID string
+	found := false
+	if amb != nil && p.o.NotesTypes.HasSource(p.o.Notes) {
+		// erst die Herkunft des unklaren Anlegens (Datei evtl. umbenannt), dann die aktuelle
+		markers := []string{amb.marker}
+		if marker != amb.marker {
+			markers = append(markers, marker)
+		}
+		for _, m := range markers {
+			if pageID, url, found, err = p.findNote(ctx, m, res.blocks); found || err != nil {
+				break
+			}
+		}
+		if err == nil && !found && p.now().Sub(amb.at) < ambiguousLag {
+			err = domain.Transient(errNochNichtAuffindbar) // Suche evtl. noch nicht aktuell: nicht anlegen
+		}
+	}
+	if !found && err == nil {
+		pageID, url, err = p.notion.CreatePage(ctx, p.o.NotesDS, notion.NoteProperties(p.o.NotesTypes, p.o.Notes, title, project, len(reasons) > 0, marker), res.blocks)
+	}
+	if errors.Is(err, notion.ErrUnvollstaendig) {
+		// Seite existiert: kein Fehler, sonst entsteht beim nächsten Versuch eine Dublette.
+		p.log.Printf("   ⚠️  %v", err)
+		g.blocks, err = 1, nil
+	}
+	if err != nil {
+		// Antwort mit Fehler: neuer Versuch wie bisher (OD-05), also verworfen.
+		// Bei Abbruch per Kontext bleibt "begonnen": die Anfrage kann Notion
+		// erreicht haben, der Neustart schickt die Datei zur Prüfung.
+		if ctx.Err() == nil {
+			le.Status, le.At = ledger.StatusVerworfen, p.now()
+			if lerr := p.ledger.Add(le); lerr != nil {
+				p.log.Printf("   ⚠️  Protokoll nicht geschrieben: %v", lerr)
+			}
+		}
+		return "", gaps{}, res, err
+	}
+	mine, missing := p.createTasks(ctx, note, pageID, project, title)
+	g.tasks = missing
+	p.log.Printf("   ✓ Notion: %s (%d To-dos für dich%s) %s", title, mine, map[bool]string{true: ", ⚠️ prüfen", false: ""}[len(reasons) > 0], url)
+	if g.tasks > 0 || g.blocks > 0 {
+		p.log.Printf("   ⚠️  %s: Notiz unvollständig – %d To-do(s) nicht angelegt, %d Fehler beim Anhängen von Blöcken (nicht nachgeholt)", pr.Name, g.tasks, g.blocks)
+	}
+
+	if p.o.Notify && (len(reasons) > 0 || mine > 0) {
+		msg := note.Titel
+		if mine > 0 {
+			msg += fmt.Sprintf(" · %d To-do(s) für dich", mine)
+		}
+		if len(reasons) > 0 {
+			msg += " · bitte prüfen"
+		}
+		p.notifier.Notify("Neue Meeting-Notiz", msg)
+	}
+	return url, g, res, nil
+}
+
+// prepare: Text aufbereiten → lokales LLM → Titel, Projekt, Prüfgründe, Blöcke.
+func (p *Pipeline) prepare(ctx context.Context, j job) (*noteResult, error) {
 	pr := j.primary
 	var text string
 	var dur time.Duration
@@ -409,7 +562,7 @@ func (p *Pipeline) process(ctx context.Context, j job, hash string) (string, gap
 		text, dur = transcript.Text(pr.Path, pr.Content)
 	}
 	if text == "" {
-		return "", gaps{}, errors.New("Datei ist leer")
+		return nil, errors.New("Datei ist leer")
 	}
 	timing := transcript.MeetingTiming(pr.Name, pr.ModTime, dur, p.o.Loc)
 
@@ -434,7 +587,7 @@ func (p *Pipeline) process(ctx context.Context, j job, hash string) (string, gap
 	p.log.Printf("   LLM läuft (%d Zeichen, Modell %s) …", len(text), p.o.Model)
 	note, err := p.llm.Summarize(ctx, in)
 	if err != nil {
-		return "", gaps{}, err
+		return nil, err
 	}
 	llm.Normalize(note)
 	p.log.Printf("   LLM fertig nach %s: %q", p.now().Sub(start).Round(time.Second), note.Titel)
@@ -449,7 +602,8 @@ func (p *Pipeline) process(ctx context.Context, j job, hash string) (string, gap
 	var project *notion.Page
 	for i := range projects {
 		if strings.EqualFold(projects[i].Name, note.Projekt) {
-			project = &projects[i]
+			pj := projects[i]
+			project = &pj
 			break
 		}
 	}
@@ -464,59 +618,24 @@ func (p *Pipeline) process(ctx context.Context, j job, hash string) (string, gap
 	blocks := notion.NoteBlocks(note, meta)
 	// vor "begonnen" und CreatePage: über der Grenze kein Protokolleintrag (OD-11)
 	if err := notion.CheckBlockCount(note, meta); err != nil {
-		return "", gaps{}, err
+		return nil, err
 	}
+	return &noteResult{note: note, title: title, project: project, reasons: reasons, blocks: blocks}, nil
+}
 
-	if p.o.Dry {
-		p.dryRun(title, project, note, reasons, len(blocks))
-		return "dry-run", gaps{}, nil
+// findNote sucht die Notiz mit der Herkunft marker (exakt). Gefunden: ID und
+// URL der ältesten, die Blöcke nach den ersten 100 werden angehängt (ein
+// Fehler dabei umhüllt notion.ErrUnvollstaendig). Nie wird etwas gelöscht.
+func (p *Pipeline) findNote(ctx context.Context, marker string, blocks []any) (id, url string, found bool, err error) {
+	pages, err := p.notion.FindByText(ctx, p.o.NotesDS, p.o.Notes.Source, marker)
+	if err != nil || len(pages) == 0 {
+		return "", "", false, err
 	}
-
-	le := ledger.Entry{Hash: hash, Status: ledger.StatusBegonnen, File: pr.Name, ModTime: pr.ModTime, At: p.now()}
-	if err := p.ledger.Add(le); err != nil {
-		// Ohne "begonnen" keine Notion-Anfrage. verworfen setzt den Speicher
-		// zurück, damit der nächste Versuch normal läuft.
-		le.Status = ledger.StatusVerworfen
-		_ = p.ledger.Add(le) //nolint:errcheck // gemeldet wird der erste Fehler; bleibt auf Platte "begonnen", greift beim Neustart die Prüfregel (sicher)
-		return "", gaps{}, fmt.Errorf("Protokoll nicht schreibbar, Notion-Seite nicht angelegt: %w", err)
+	if len(pages) > 1 {
+		p.log.Printf("   ⚠️  %d Notizen mit dieser Herkunft in Notion (%s) – nehme die älteste, bitte prüfen", len(pages), p.o.Notes.Source)
 	}
-	var g gaps
-	pageID, url, err := p.notion.CreatePage(ctx, p.o.NotesDS, notion.NoteProperties(p.o.NotesTypes, p.o.Notes, title, project, len(reasons) > 0), blocks)
-	if errors.Is(err, notion.ErrUnvollstaendig) {
-		// Seite existiert: kein Fehler, sonst entsteht beim nächsten Versuch eine Dublette.
-		p.log.Printf("   ⚠️  %v", err)
-		g.blocks, err = 1, nil
-	}
-	if err != nil {
-		// Antwort mit Fehler: neuer Versuch wie bisher (OD-05), also verworfen.
-		// Bei Abbruch per Kontext bleibt "begonnen": die Anfrage kann Notion
-		// erreicht haben, der Neustart schickt die Datei zur Prüfung.
-		if ctx.Err() == nil {
-			le.Status, le.At = ledger.StatusVerworfen, p.now()
-			if lerr := p.ledger.Add(le); lerr != nil {
-				p.log.Printf("   ⚠️  Protokoll nicht geschrieben: %v", lerr)
-			}
-		}
-		return "", gaps{}, err
-	}
-	mine, missing := p.createTasks(ctx, note, pageID, project, title)
-	g.tasks = missing
-	p.log.Printf("   ✓ Notion: %s (%d To-dos für dich%s) %s", title, mine, map[bool]string{true: ", ⚠️ prüfen", false: ""}[len(reasons) > 0], url)
-	if g.tasks > 0 || g.blocks > 0 {
-		p.log.Printf("   ⚠️  %s: Notiz unvollständig – %d To-do(s) nicht angelegt, %d Fehler beim Anhängen von Blöcken (nicht nachgeholt)", pr.Name, g.tasks, g.blocks)
-	}
-
-	if p.o.Notify && (len(reasons) > 0 || mine > 0) {
-		msg := note.Titel
-		if mine > 0 {
-			msg += fmt.Sprintf(" · %d To-do(s) für dich", mine)
-		}
-		if len(reasons) > 0 {
-			msg += " · bitte prüfen"
-		}
-		p.notifier.Notify("Neue Meeting-Notiz", msg)
-	}
-	return url, g, nil
+	p.log.Printf("   ↺ Notiz existiert schon in Notion (%s) – wird verwendet", p.o.Notes.Source)
+	return pages[0].ID, pages[0].URL, true, p.notion.AppendRest(ctx, pages[0].ID, blocks)
 }
 
 // createTasks legt To-dos in der Tasks-Datenbank an und verknüpft sie mit der Notiz.

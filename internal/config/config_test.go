@@ -77,6 +77,31 @@ func TestRoleAndExampleNameDefaults(t *testing.T) {
 	}
 }
 
+// Fängt: notes_properties.source wird nicht gelesen, als unbekannt gemeldet,
+// verdrängt andere Defaults oder ist ohne Angabe gesetzt (R-M3-17).
+func TestNotesSourceProperty(t *testing.T) {
+	if Default().Notion.Notes.Source != "" {
+		t.Fatalf("Standard muss leer sein (aus): %q", Default().Notion.Notes.Source)
+	}
+	dir := t.TempDir()
+	for name, body := range map[string]string{
+		"c.yaml": "watch_dir: /x\nllm:\n  model: m\nnotion:\n  notes_data_source_id: n\n  notes_properties:\n    source: Quelle\n",
+		"c.json": `{"watch_dir":"/x","llm":{"model":"m"},"notion":{"notes_data_source_id":"n","notes_properties":{"source":"Quelle"}}}`,
+	} {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		cfg, warnings, err := Load(p)
+		if err != nil || len(warnings) != 0 {
+			t.Fatalf("%s: %v, Warnungen %v", name, err, warnings)
+		}
+		if cfg.Notion.Notes.Source != "Quelle" || cfg.Notion.Notes.Title != "Name" || cfg.Notion.Notes.Review != "Prüfen" {
+			t.Fatalf("%s: %+v", name, cfg.Notion.Notes)
+		}
+	}
+}
+
 func TestConfigPathIn(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte("{}"), 0o600); err != nil {

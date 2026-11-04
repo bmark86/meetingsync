@@ -3,6 +3,7 @@ package notion
 import (
 	"fmt"
 	"slices"
+	"time"
 
 	"meetingsync/internal/domain"
 )
@@ -52,6 +53,7 @@ type NotesProps struct {
 	StatusValue string
 	Projects    string
 	Review      string
+	Source      string // Textspalte für die Herkunft (SourceMarker); leer: aus
 }
 
 // TasksProps sind die Property-Namen der Tasks-Datenbank.
@@ -93,9 +95,24 @@ func (s Schema) CheckTasks(p TasksProps) error {
 	return nil
 }
 
+// HasSource meldet, ob die Herkunftsspalte konfiguriert ist und die Datenbank
+// sie als Textspalte hat. Nur dann schreibt meetingsync die Herkunft und sucht
+// vor einem neuen Versuch danach.
+func (s Schema) HasSource(p NotesProps) bool {
+	return p.Source != "" && s.Is(p.Source, KindRichText)
+}
+
+// SourceMarker ist die Herkunft einer Notiz: Dateiname der primären Datei und
+// ihre Änderungszeit in loc, sekundengenau (kein Inhalts-Hash in Notion).
+// Geschrieben und gesucht (exakt) wird derselbe Text.
+func SourceMarker(file string, mtime time.Time, loc *time.Location) string {
+	return file + " · " + mtime.In(loc).Format("2006-01-02 15:04:05")
+}
+
 // NoteProperties baut die Properties der Meeting-Notiz. Status, Projekt und
-// Prüfen-Checkbox nur, wenn die Datenbank sie mit passendem Typ hat.
-func NoteProperties(s Schema, p NotesProps, title string, project *Page, review bool) map[string]any {
+// Prüfen-Checkbox nur, wenn die Datenbank sie mit passendem Typ hat; die
+// Herkunft source nur, wenn HasSource gilt.
+func NoteProperties(s Schema, p NotesProps, title string, project *Page, review bool, source string) map[string]any {
 	props := map[string]any{p.Title: KindTitle.value(rt(title))}
 	if s.Is(p.Status, KindStatus, KindSelect) {
 		props[p.Status] = s[p.Status].value(map[string]any{"name": p.StatusValue})
@@ -105,6 +122,9 @@ func NoteProperties(s Schema, p NotesProps, title string, project *Page, review 
 	}
 	if s.Is(p.Review, KindCheckbox) {
 		props[p.Review] = KindCheckbox.value(review)
+	}
+	if source != "" && s.HasSource(p) {
+		props[p.Source] = KindRichText.value(rt(source))
 	}
 	return props
 }

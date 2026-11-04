@@ -480,6 +480,104 @@ func TestNotionTruncatedBody(t *testing.T) {
 	}
 }
 
+// Fängt: unklarer Ausgang beim Anlegen (Seite evtl. angelegt) nicht als ErrUnklar
+// markiert, eindeutige Fehler als unklar, Text oder Fehlerklasse verändert (R-M3-17).
+func TestCreatePageAmbiguousErrors(t *testing.T) {
+	ctx := context.Background()
+	cases := []struct {
+		name      string
+		rep       ncReply
+		netErr    bool
+		unklar    bool
+		transient bool
+		text      string
+	}{
+		{name: "500", rep: ncReply{status: 500, body: `{"code":"internal","message":"boom"}`}, unklar: true, transient: true, text: "Notion HTTP 500 internal: boom"},
+		{name: "503", rep: ncReply{status: 503}, unklar: true, transient: true, text: "Notion HTTP 503"},
+		{name: "Netzwerk", netErr: true, unklar: true, transient: true, text: "Notion nicht erreichbar"},
+		{name: "kein JSON", rep: ncReply{status: 200, body: "<html>ok</html>"}, unklar: true},
+		{name: "falscher Typ", rep: ncReply{status: 200, body: `{"id":1}`}, unklar: true},
+		{name: "429", rep: ncReply{status: 429}, transient: true, text: "HTTP 429"},
+		{name: "400", rep: ncReply{status: 400, body: `{"code":"validation_error","message":"x"}`}, text: "HTTP 400"},
+		{name: "404", rep: ncReply{status: 404}, transient: true, text: "HTTP 404"},
+		{name: "307", rep: ncReply{status: 307}, text: "Weiterleitung"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			n, s := ncNotion(t, c.rep)
+			ncSleeps(n, false)
+			if c.netErr {
+				n.http.Transport = ncRoundTrip(func(*http.Request) (*http.Response, error) { return nil, errors.New("verbindung abgelehnt") })
+			}
+			_, _, err := n.CreatePage(ctx, "ds", map[string]any{}, nil)
+			if err == nil || errors.Is(err, ErrUnklar) != c.unklar || domain.IsTransient(err) != c.transient || !strings.Contains(err.Error(), c.text) {
+				t.Fatalf("err = %v: unklar %v (want %v), transient %v (want %v)", err, errors.Is(err, ErrUnklar), c.unklar, domain.IsTransient(err), c.transient)
+			}
+			if c.unklar && !c.netErr && strings.Contains(err.Error(), ErrUnklar.Error()) {
+				t.Errorf("Text verändert: %v", err)
+			}
+			if !c.netErr && len(s.reqs) != 1 {
+				t.Errorf("Requests = %d, want 1", len(s.reqs))
+			}
+		})
+	}
+}
+
+// Fängt: falscher Filter (Spalte, nicht equals), älteste nicht zuerst, Ergebnis
+// falsch gelesen, ID nicht maskiert (R-M3-17).
+func TestFindByText(t *testing.T) {
+	n, s := ncNotion(t, ncReply{status: 200, body: `{"results":[{"id":"a","url":"https://notion.so/a"},{"id":"b","url":"https://notion.so/b"}]}`})
+	got, err := n.FindByText(context.Background(), "d/s", "Quelle", "a.srt · 2026-11-04 08:45:12")
+	if err != nil || len(got) != 2 || got[0] != (PageRef{ID: "a", URL: "https://notion.so/a"}) || got[1].ID != "b" {
+		t.Fatalf("FindByText = %+v, %v", got, err)
+	}
+	if r := s.reqs[0]; r.Method != http.MethodPost || r.URL.EscapedPath() != "/v1/data_sources/d%2Fs/query" {
+		t.Errorf("Request %s %s", r.Method, r.URL.EscapedPath())
+	}
+	want := `{"filter":{"property":"Quelle","rich_text":{"equals":"a.srt · 2026-11-04 08:45:12"}},"page_size":10,"sorts":[{"direction":"ascending","timestamp":"created_time"}]}`
+	if s.bodies[0] != want {
+		t.Errorf("Body:\n%s\nerwartet\n%s", s.bodies[0], want)
+	}
+	n, _ = ncNotion(t, ncReply{status: 200, body: `{"results":[]}`})
+	if got, err := n.FindByText(context.Background(), "ds", "Quelle", "x"); err != nil || len(got) != 0 {
+		t.Errorf("leer: %+v, %v", got, err)
+	}
+	n, _ = ncNotion(t, ncReply{status: 502})
+	ncSleeps(n, false)
+	if _, err := n.FindByText(context.Background(), "ds", "Quelle", "x"); err == nil || !domain.IsTransient(err) {
+		t.Errorf("502: %v, want vorübergehend", err)
+	}
+}
+
+// Fängt: AppendRest hängt die ersten 100 Blöcke doppelt an, fragt ohne Rest an
+// oder meldet einen Fehler ohne ErrUnvollstaendig (R-M3-17).
+func TestAppendRest(t *testing.T) {
+	blocks := make([]any, 150)
+	for i := range blocks {
+		blocks[i] = map[string]any{"type": "divider", "i": i}
+	}
+	n, s := ncNotion(t, ncReply{status: 200, body: `{}`})
+	if err := n.AppendRest(context.Background(), "p1", blocks[:100]); err != nil || len(s.reqs) != 0 {
+		t.Fatalf("ohne Rest: %v, Requests %d", err, len(s.reqs))
+	}
+	if err := n.AppendRest(context.Background(), "p1", blocks); err != nil || len(s.reqs) != 1 {
+		t.Fatalf("Rest: %v, Requests %d", err, len(s.reqs))
+	}
+	var body struct {
+		Children []map[string]any `json:"children"`
+	}
+	if err := json.Unmarshal([]byte(s.bodies[0]), &body); err != nil || len(body.Children) != 50 || body.Children[0]["i"] != 100.0 {
+		t.Errorf("PATCH %s: %d Blöcke, erster %v", s.reqs[0].URL.Path, len(body.Children), body.Children[0]["i"])
+	}
+	if s.reqs[0].Method != http.MethodPatch || s.reqs[0].URL.Path != "/v1/blocks/p1/children" {
+		t.Errorf("Request %s %s", s.reqs[0].Method, s.reqs[0].URL.Path)
+	}
+	n, _ = ncNotion(t, ncReply{status: 400, body: `{"code":"validation_error","message":"x"}`})
+	if err := n.AppendRest(context.Background(), "p1", blocks); !errors.Is(err, ErrUnvollstaendig) {
+		t.Errorf("Fehler: %v, want ErrUnvollstaendig", err)
+	}
+}
+
 // Fängt: ID mit ../, ?, # oder / landet unmaskiert im Pfad und trifft einen anderen Endpunkt (S-16).
 func TestIDsAreEscapedInPath(t *testing.T) {
 	const bad = "a/../b?x=1#f%41"

@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -328,6 +329,36 @@ func TestLedgerStatusLastLineWins(t *testing.T) {
 	}
 	if got := l.byHash["h"].Status; got != StatusBegonnen {
 		t.Fatalf("Status = %q, want begonnen", got)
+	}
+}
+
+// Fängt: Discarded meldet einen anderen Status als die letzte Zeile, falsche
+// Zeit oder verliert sie beim Neuladen (R-M3-17).
+func TestLedgerDiscarded(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "l.jsonl")
+	l, _ := Load(path, true)
+	if _, ok := l.Discarded("h"); ok {
+		t.Fatal("unbekannter Hash gilt als verworfen")
+	}
+	at := flowM.Add(time.Minute).UTC()
+	mt := flowM.UTC()
+	for i, s := range []struct {
+		status string
+		want   bool
+	}{{StatusBegonnen, false}, {StatusVerworfen, true}, {StatusFertig, false}, {StatusVerworfen, true}} {
+		file := fmt.Sprintf("f%d.srt", i)
+		if err := l.Add(Entry{Hash: "h", Status: s.status, File: file, ModTime: mt, At: at}); err != nil {
+			t.Fatal(err)
+		}
+		re, err := Load(path, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, x := range []*Ledger{l, re} {
+			if got, ok := x.Discarded("h"); ok != s.want || (ok && (!got.At.Equal(at) || got.File != file || !got.ModTime.Equal(mt))) {
+				t.Fatalf("Schritt %d (%q): Discarded = %+v, %v", i, s.status, got, ok)
+			}
+		}
 	}
 }
 
