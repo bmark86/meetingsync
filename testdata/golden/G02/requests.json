@@ -243,7 +243,7 @@
     "headers": {
       "Accept-Encoding": "gzip",
       "Authorization": "Bearer <token>",
-      "Content-Length": "4916",
+      "Content-Length": "4989",
       "Content-Type": "application/json",
       "Notion-Version": "2025-09-03",
       "User-Agent": "Go-http-client/1.1"
@@ -260,7 +260,7 @@
             "rich_text": [
               {
                 "text": {
-                  "content": "Bitte prüfen: Kein Transkript mit Zeitmarken gefunden – Notiz basiert auf einer Datei ohne Sprecher/Zeitstempel"
+                  "content": "Bitte prüfen: Kein Transkript mit Zeitmarken gefunden – Notiz basiert auf einer Datei ohne Sprecher/Zeitstempel · Enthält To-dos für dich – bitte Zuordnung und Fälligkeit prüfen"
                 },
                 "type": "text"
               }

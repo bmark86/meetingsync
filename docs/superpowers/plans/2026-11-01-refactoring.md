@@ -589,6 +589,7 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 - Depends on: M2. Findings: S-06.
 - Model: sonnet, small logic, effect visible through golden.
 - Reviews: CR, SR, QA. ADR 0010.
+- Status: **done 2026-11-04.** Reason appended once after LLM and summary-only reasons; always, also with `create_tasks_for=none`. Golden changed on purpose in 21 scenarios: G01, G02, G05a, G05b, G06, G06b, G07, G08, G09 (stdout), G12c, G13a, G13b, G14a (bullet moves across the 100-block chunk boundary), G14b, G15a-d, G16a-c. Unchanged: G03, G04, G10*, G11, G12a/b. Notice box counts toward the 1000-block cap. Code review approved.
 
 #### R-M3-13 `-check` exit code on ✗ ⚠
 ⚠ Behavior change, decided by Mark on 2026-11-01 (D7, OD-17: yes). Replaces R-OPT-02.

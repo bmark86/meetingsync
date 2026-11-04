@@ -4,5 +4,5 @@ Neu: Lang.txt → Transkript
    LLM: verdichte Abschnitt 1/2 …
    LLM: verdichte Abschnitt 2/2 …
    LLM fertig nach <dur>: "Planung Q4"
-   ✓ Notion: 2026-10-01 – Planung Q4 (1 To-dos für dich) https://www.notion.so/page-1
+   ✓ Notion: 2026-10-01 – Planung Q4 (1 To-dos für dich, ⚠️ prüfen) https://www.notion.so/page-1
    📦 Lang.txt → <tmp>/watch/_archiv/2026-10/Lang.txt

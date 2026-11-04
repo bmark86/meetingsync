@@ -243,13 +243,32 @@
     "headers": {
       "Accept-Encoding": "gzip",
       "Authorization": "Bearer <token>",
-      "Content-Length": "19128",
+      "Content-Length": "19248",
       "Content-Type": "application/json",
       "Notion-Version": "2025-09-03",
       "User-Agent": "Go-http-client/1.1"
     },
     "body": {
       "children": [
+        {
+          "callout": {
+            "color": "yellow_background",
+            "icon": {
+              "emoji": "⚠️",
+              "type": "emoji"
+            },
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Bitte prüfen: Enthält To-dos für dich – bitte Zuordnung und Fälligkeit prüfen"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "callout"
+        },
         {
           "heading_2": {
             "rich_text": [
@@ -1752,20 +1771,6 @@
           },
           "object": "block",
           "type": "heading_3"
-        },
-        {
-          "bulleted_list_item": {
-            "rich_text": [
-              {
-                "text": {
-                  "content": "Punkt 30 a"
-                },
-                "type": "text"
-              }
-            ]
-          },
-          "object": "block",
-          "type": "bulleted_list_item"
         }
       ],
       "parent": {
@@ -1784,7 +1789,7 @@
           ]
         },
         "Prüfen": {
-          "checkbox": false
+          "checkbox": true
         },
         "Status": {
           "status": {
@@ -1808,6 +1813,20 @@
     },
     "body": {
       "children": [
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 30 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
         {
           "bulleted_list_item": {
             "rich_text": [
@@ -3193,7 +3212,24 @@
           },
           "object": "block",
           "type": "bulleted_list_item"
-        },
+        }
+      ]
+    }
+  },
+  {
+    "server": "notion",
+    "method": "PATCH",
+    "path": "/v1/blocks/page-1/children",
+    "headers": {
+      "Accept-Encoding": "gzip",
+      "Authorization": "Bearer <token>",
+      "Content-Length": "10590",
+      "Content-Type": "application/json",
+      "Notion-Version": "2025-09-03",
+      "User-Agent": "Go-http-client/1.1"
+    },
+    "body": {
+      "children": [
         {
           "bulleted_list_item": {
             "rich_text": [
@@ -3207,24 +3243,7 @@
           },
           "object": "block",
           "type": "bulleted_list_item"
-        }
-      ]
-    }
-  },
-  {
-    "server": "notion",
-    "method": "PATCH",
-    "path": "/v1/blocks/page-1/children",
-    "headers": {
-      "Accept-Encoding": "gzip",
-      "Authorization": "Bearer <token>",
-      "Content-Length": "10458",
-      "Content-Type": "application/json",
-      "Notion-Version": "2025-09-03",
-      "User-Agent": "Go-http-client/1.1"
-    },
-    "body": {
-      "children": [
+        },
         {
           "heading_3": {
             "rich_text": [

@@ -243,13 +243,32 @@
     "headers": {
       "Accept-Encoding": "gzip",
       "Authorization": "Bearer <token>",
-      "Content-Length": "4652",
+      "Content-Length": "4904",
       "Content-Type": "application/json",
       "Notion-Version": "2025-09-03",
       "User-Agent": "Go-http-client/1.1"
     },
     "body": {
       "children": [
+        {
+          "callout": {
+            "color": "yellow_background",
+            "icon": {
+              "emoji": "⚠️",
+              "type": "emoji"
+            },
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Bitte prüfen: Enthält To-dos für dich – bitte Zuordnung und Fälligkeit prüfen"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "callout"
+        },
         {
           "heading_2": {
             "rich_text": [
@@ -794,7 +813,7 @@
           ]
         },
         "Prüfen": {
-          "checkbox": false
+          "checkbox": true
         },
         "Status": {
           "status": {
@@ -1039,7 +1058,7 @@
     "headers": {
       "Accept-Encoding": "gzip",
       "Authorization": "Bearer <token>",
-      "Content-Length": "4926",
+      "Content-Length": "4999",
       "Content-Type": "application/json",
       "Notion-Version": "2025-09-03",
       "User-Agent": "Go-http-client/1.1"
@@ -1056,7 +1075,7 @@
             "rich_text": [
               {
                 "text": {
-                  "content": "Bitte prüfen: Kein Transkript mit Zeitmarken gefunden – Notiz basiert auf einer Datei ohne Sprecher/Zeitstempel"
+                  "content": "Bitte prüfen: Kein Transkript mit Zeitmarken gefunden – Notiz basiert auf einer Datei ohne Sprecher/Zeitstempel · Enthält To-dos für dich – bitte Zuordnung und Fälligkeit prüfen"
                 },
                 "type": "text"
               }

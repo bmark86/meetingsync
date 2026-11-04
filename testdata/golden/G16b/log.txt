@@ -2,5 +2,5 @@ Neu: Planung Q4.srt → Transkript
 → Planung Q4.srt (Transkript, 0 KB)
    LLM läuft (317 Zeichen, Modell gemma-test) …
    LLM fertig nach <dur>: "Planung Q4"
-   ✓ Notion: 2026-10-01 – Planung Q4 (4 To-dos für dich) https://www.notion.so/page-1
+   ✓ Notion: 2026-10-01 – Planung Q4 (4 To-dos für dich, ⚠️ prüfen) https://www.notion.so/page-1
    📦 Planung Q4.srt → <tmp>/watch/_archiv/2026-10/Planung Q4.srt

@@ -5,8 +5,8 @@ Sirius Sync.srt erkannt als: Transkript
 ────────── DRY-RUN ──────────
 Titel:    2026-10-01 – Sirius Sync
 Projekt:  AI-First
-Prüfen:   false 
-Blöcke:   25
+Prüfen:   true Enthält To-dos für dich – bitte Zuordnung und Fälligkeit prüfen
+Blöcke:   26
 {
   "titel": "Sirius Sync",
   "typ": "Team",
