@@ -480,8 +480,9 @@ func (p *Pipeline) process(ctx context.Context, j job, hash string) (string, gap
 }
 
 // createTasks legt To-dos in der Tasks-Datenbank an und verknüpft sie mit der Notiz.
-// Liefert die Zahl der angelegten und der fehlenden To-dos (Fehler oder Abbruch).
-func (p *Pipeline) createTasks(ctx context.Context, n *domain.MeetingNote, noteID string, project *notion.Page, title string) (created, missing int) {
+// Liefert die Zahl der angelegten To-dos für den Nutzer (fuer_mich=true) und der
+// fehlenden To-dos (Fehler oder Abbruch).
+func (p *Pipeline) createTasks(ctx context.Context, n *domain.MeetingNote, noteID string, project *notion.Page, title string) (mine, missing int) {
 	mode := p.o.CreateTasksFor
 	if p.o.TasksDS == "" || mode == "none" {
 		return 0, 0
@@ -500,9 +501,11 @@ func (p *Pipeline) createTasks(ctx context.Context, n *domain.MeetingNote, noteI
 			missing++
 			continue
 		}
-		created++
+		if act.FuerMich {
+			mine++
+		}
 	}
-	return created, missing
+	return mine, missing
 }
 
 // projectsTTL: so lange gilt die Projektliste, dann wird sie neu geladen.
