@@ -125,7 +125,7 @@ Incidents:
 - R-M2-05: the first report claimed an arch rule that did not exist; caught in verification, rule added in fix round 1.
 - R-M2-09a: a reviewer ran `git stash` and popped it at once; working tree verified intact, harmless.
 
-Next: M3 (gate passed 2026-11-02).
+Next: M3 (gate passed 2026-11-02; complete 2026-11-04, see M3 summary).
 
 ## M3 gate decisions (2026-11-02)
 
@@ -144,6 +144,105 @@ Next: M3 (gate passed 2026-11-02).
 | Mark | Reason text for tasks without a clear owner: "Enthält To-dos für dich – bitte Zuordnung und Fälligkeit prüfen" | R-M3-12 |
 | Mark | `-file` does not move the file; a file left in the export folder is later archived by the service as a duplicate (agreed) | R-M3-14 |
 | Mark | The Notes column "Quelle" (text) exists | R-M3-17 |
+
+## M3 summary (complete 2026-11-04: R-M3-01 to R-M3-20; R-M3-19 merged into R-M3-03)
+
+Branch `refactor/architektur`, HEAD 1c8eb44. Exit open: live test of R-M3-17 against real Notion needs Mark's approval (follow-up 33).
+
+| Finding | Closed by |
+| --- | --- |
+| S-02 | R-M3-01 |
+| S-03 | R-M3-02 |
+| S-04 | R-M3-03 (with R-M3-19) |
+| S-06 | R-M3-12 |
+| S-08 | R-M3-05 |
+| S-09 | R-M3-06 |
+| S-10 | R-M3-07 |
+| S-12 (permissions) | R-M3-04 |
+| S-16 | R-M3-08 |
+| S-17 | R-M3-09 |
+| S-18 | R-M3-15 |
+| S-20 | R-M3-11 |
+| S-21 | R-M3-10 |
+| A-14 | R-M3-13, R-M3-14 |
+
+Tasks without a finding ID: R-M3-16 (to-do count), R-M3-17 (OD-05 residual risk), R-M3-18 (follow-up 19), R-M3-20 (follow-up 22).
+
+ADRs written in M3:
+
+| ADR | Topic | Task |
+| --- | --- | --- |
+| 0007 | `llm.base_url` loopback only | R-M3-01 |
+| 0008 | Notion HTTPS only | R-M3-02 |
+| 0009 | Prompt personalization | R-M3-11 |
+| 0010 | `Prüfen` flag for to-dos | R-M3-12 |
+| 0012 | `-check` exit code | R-M3-13 |
+| 0013 | `-file` ledger entry and folder lock | R-M3-14 |
+| 0014 | `llm.api_key` from the Keychain | R-M3-15 |
+| 0004 (updated) | Ambiguous `CreatePage` failure, residual risks | R-M3-17 |
+
+Number 0011 is not used in `docs/adr`.
+
+Golden changes made on purpose (all other golden files byte-identical):
+
+| Task | Change |
+| --- | --- |
+| R-M3-12 | 21 scenarios changed (`fuer_mich` to-dos set `Prüfen`); G14a bullet crosses the chunk boundary |
+| R-M3-13 | `exit.txt` of G10b and G10c 0 -> 1 |
+| R-M3-14 | New scenario G09b |
+| R-M3-16 | G16b count line `4` -> `2` |
+| R-M3-02 | G10b: one line, LM Studio address without path (approved earlier by Mark) |
+
+Decisions taken in M3 (gate decisions and 2026-11-04 decisions are in the two tables above):
+
+| By | Decision | Task |
+| --- | --- | --- |
+| Mark | Neutral code defaults for `my_role` / `example_name`, values in his config before the rebuild (OD-14) | R-M3-11 |
+| Mark | iCloud "Desktop & Documents" sync not active, dataless files not a concern (2026-11-03) | R-M3-03 |
+| Mark | Cap of 1000 blocks per note (OD-11, 2026-11-03) | R-M3-06 |
+| Mark | `-check` exits 1 on ✗ (D7, OD-17) | R-M3-13 |
+| Mark | Marker without content hash in Notion: `<file name> · <mtime>` (privacy, 2026-11-04) | R-M3-17 |
+| Mark | Keychain error aborts start, also in dry-run | R-M3-15 |
+| Coordinator | R-M3-19 merged into R-M3-03 | R-M3-03 |
+| Coordinator | `-file` still follows a user-given symlink, no 20 MB limit; hard links not refused | R-M3-03 |
+| Coordinator | `llm.base_url` and `notion.base_url` also reject `?` and `#` | R-M3-02 |
+| Coordinator | `minimalEnv` and `mkdirPrivate` duplicated per package (import rules) | R-M3-04, R-M3-07 |
+| Coordinator | LLM body read timeout stays non-transient | R-M3-05 |
+| Coordinator | `-file` always processes the given file; advisory `flock` on the export folder plus `Ledger.Refresh` | R-M3-14 |
+| Coordinator | Keychain error stops `-check` before any ✓/✗ line (fail closed) | R-M3-15 |
+| Coordinator | No ADR for R-M3-16 | R-M3-16 |
+| Coordinator | Hash binding for the kept retry state; pair move order partner first, transcript last | R-M3-18 |
+
+Accepted residual risks:
+
+| Risk | Task |
+| --- | --- |
+| `/etc/hosts` can redirect `localhost` for the LLM URL | R-M3-01 |
+| Request path in the local log | R-M3-02 |
+| Hard links into the watch folder not refused; `-file` follows symlinks | R-M3-03 |
+| `Chmod` follows symlinks between `Mkdir` and `Chmod`; existing folders and ledger keep old modes | R-M3-04 |
+| `.` and `..` not escaped in Notion URL IDs (OD-12) | R-M3-08 |
+| Block-cap path re-runs the LLM every 2 min while the move to `_fehler` keeps failing (follow-up 29) | R-M3-06, R-M3-18 |
+| Almost every note gets `Prüfen=true`; the box counts toward the 1000-block cap | R-M3-12 |
+| Residual risks of the folder lock and of the marker lookup: see ADR 0013 and ADR 0004 | R-M3-14, R-M3-17 |
+| `-file` on a summary while its transcript is still in the folder (follow-up 31) | R-M3-14 |
+
+Actions for Mark around the next rebuild of `~/bin` (`go build -o ~/bin/meetingsync .`):
+
+| When | Action | Follow-up |
+| --- | --- | --- |
+| Before | Add `my_role: Head of Engineering` and `example_name: Sascha` to `~/.config/meetingsync/config.yaml`; otherwise the prompt has no role and the example name is "Alex" | 27 |
+| Before | Add under `notion:` the lines `notes_properties:` and `  source: Quelle`; without them the duplicate-page protection is off | 32 |
+| After | Run `meetingsync -check`; no hint about the "Quelle" column should appear | 32 |
+| After | `-check` now exits 1 on any ✗ (matters for scripts) | 5 |
+| After | Restart the service; an old running service has no folder lock and no ledger refresh | 30 |
+| Optional | LLM key in the Keychain: `security add-generic-password -a "$USER" -s meetingsync-llm -w`, then `llm.api_key_keychain_service: meetingsync-llm` | R-M3-15 |
+| Earlier, still open | Existing `begonnen` lines in the ledger and `_fehler` note after a crash | 14 |
+| Earlier, still open | Check umlauts in notifications and the Keychain token under launchd | 24 |
+| Earlier, still open | Optional `chmod 700` on `_archiv`/`_fehler`, `chmod 600` on the ledger | 25 |
+| Earlier, still open | Optional: copy the plist template with `ThrottleInterval` and reload the agent | 26 |
+| Earlier, still open | Config migration to YAML, one week of manual testing, GitHub settings | 3, 4, 9 |
+| M3 exit | Approve the live test of R-M3-17 against real Notion | 33 |
 
 ## Open follow-ups
 
