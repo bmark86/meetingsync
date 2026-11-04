@@ -52,7 +52,7 @@ Exceptions only with Mark's decision. They are marked in the task as **⚠ behav
 | R-M3-13 | `-check` exits with a code other than 0 when a check shows ✗ (G10 changes) | D7 (OD-17) | 0012 |
 | R-M3-14 | `-file` without `-dry-run` writes a ledger entry | D8 (OD-18) | 0013 |
 | R-M3-15 | `llm.api_key` can come from the Keychain | D9 (OD-20) | 0014 |
-| R-M3-16 | To-do count in log and notification only for `fuer_mich` (G16b) | Mark, 2026-11-02 (OD-23) | open: no ADR assigned yet |
+| R-M3-16 | To-do count in log and notification only for `fuer_mich` (G16b) | Mark, 2026-11-02 (OD-23) | – |
 | R-M3-17 | Look up an existing page before retrying after an ambiguous `CreatePage` failure | Mark, 2026-11-02 (OD-05 residual risk) | 0004 (update) |
 | R-M4-02 | Git history rewritten, tag `v1.0.0` recreated | D2 | 0011 |
 
@@ -635,7 +635,8 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 - Out of scope: the wording of the message; task creation.
 - Depends on: R-M3-12 (same log and notification code, same golden files); M2 pipeline split preferred.
 - Model: sonnet, small counting change; the golden diff is the proof.
-- Reviews: CR, QA. ADR: none assigned yet (open, see section 9).
+- Reviews: CR, QA. ADR: none (coordinator decision, 2026-11-04).
+- Status: done 2026-11-04. `createTasks` returns the count of created `fuer_mich=true` tasks (failed creation not counted); log and notification use it. G16b `4` → `2`, only file changed. Test `TestToDoCountOnlyFuerMich`. No ADR.
 
 #### R-M3-17 No duplicate page after an ambiguous CreatePage failure ⚠
 ⚠ Behavior change, decided by Mark on 2026-11-02 (OD-05 residual risk, ADR 0004).

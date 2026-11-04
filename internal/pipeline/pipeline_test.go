@@ -606,3 +606,40 @@ func TestReasonToDoFuerMich(t *testing.T) {
 		})
 	}
 }
+
+// Fängt: Zähler "To-dos für dich" zählt alle angelegten To-dos statt nur fuer_mich=true,
+// oder zählt ein fehlgeschlagenes To-do mit.
+func TestToDoCountOnlyFuerMich(t *testing.T) {
+	cases := []struct {
+		name     string
+		tasksFor string
+		failMine bool
+		want     string
+		tasks    int
+	}{
+		{"all", "all", false, "(1 To-dos für dich,", 2},
+		{"me", "me", false, "(1 To-dos für dich,", 1},
+		{"none", "none", false, "(0 To-dos für dich,", 0},
+		{"all, eigenes scheitert", "all", true, "(0 To-dos für dich,", 1},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			e := newEnv(t, func(o *Options, _ *Deps) { o.Notify = true; o.CreateTasksFor = c.tasksFor })
+			if c.failMine {
+				failed := false
+				e.notion.onCreate = func(ds string) error {
+					if ds == "tasks-ds" && !failed {
+						failed = true
+						return errors.New("kaputt")
+					}
+					return nil
+				}
+			}
+			e.write(t, "Sitzung.srt", testSRT, testM)
+			e.p.Pass(context.Background(), e.clock)
+			if !strings.Contains(e.log.String(), c.want) || e.notion.count("tasks-ds") != c.tasks {
+				t.Fatalf("Log:\n%s\nTo-dos %d, want %q / %d", e.log, e.notion.count("tasks-ds"), c.want, c.tasks)
+			}
+		})
+	}
+}
