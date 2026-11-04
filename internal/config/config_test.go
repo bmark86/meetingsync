@@ -351,7 +351,7 @@ func TestLLMBaseURLLoopbackOnly(t *testing.T) {
 			c := Default()
 			c.WatchDir, c.LLM.Model, c.Notion.NotesDataSourceID = "/w", "m", "n"
 			c.LLM.BaseURL = tc.url
-			_, err := c.Finalize()
+			_, err := c.finalize()
 			if tc.ok {
 				if err != nil {
 					t.Fatalf("Fehler = %v, want keiner", err)
@@ -417,7 +417,7 @@ func TestNotionBaseURLHTTPSOnly(t *testing.T) {
 			c := Default()
 			c.WatchDir, c.LLM.Model, c.Notion.NotesDataSourceID = "/w", "m", "n"
 			c.Notion.BaseURL = tc.url
-			_, err := c.Finalize()
+			_, err := c.finalize()
 			if tc.want == "" {
 				if err != nil {
 					t.Fatalf("Fehler = %v, want keiner", err)

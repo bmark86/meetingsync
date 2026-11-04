@@ -730,7 +730,7 @@ Exit: `git grep` and `git log -p --all` without the three real IDs; tag `v1.0.0`
 - Depends on: R-M3-11. Findings: A-20.
 - Model: sonnet, default with an effect on the prompt.
 - Reviews: CR, QA.
-- Status: **done 2026-11-04.** Code default `my_name` "Mark" -> "Max"; example configs and README show "Max". Finding: the golden harness config did not set `my_name` and relied on the old default (the plan assumed it did); it now sets `my_name: Mark` explicitly, as do `e2e_test.go` and `app_flow_test.go`. Golden byte-identical. CR and QA running.
+- Status: **done 2026-11-04.** Code default `my_name` "Mark" -> "Max"; example configs and README show "Max". Finding: the golden harness config did not set `my_name` and relied on the old default (the plan assumed it did); it now sets `my_name: Mark` explicitly, as do `e2e_test.go` and `app_flow_test.go`. Golden byte-identical. Committed (85886b6), reviews passed.
 
 #### R-M4-04 Root integration tests behind package boundaries
 - Goal: stop exporting test-only identifiers from production packages (follow-up of R-M2-10).
@@ -739,6 +739,7 @@ Exit: `git grep` and `git log -p --all` without the three real IDs; tag `v1.0.0`
 - Depends on: M3 (config and pipeline changes settle first). Findings: none (follow-up of R-M2-10).
 - Model: sonnet, test moves.
 - Reviews: CR, QA.
+- Status: **done 2026-11-04.** 12 root tests moved unchanged by name to `internal/pipeline/moved_root_test.go` (pipeline fakes, equivalent assertions). `FileState`, `ErrUnterbrochen`, `config.Finalize` unexported; `States()` removed; e2e and cli tests load a temp YAML via `config.Load`. `lockFile` helper uses `syscall.Chflags` with local `UF_IMMUTABLE` (arch test forbids `os/exec`; `x/sys/unix` only for `RenamexNp`). 581 test runs before and after, golden byte-identical, `make check` exit 0. CR approved. Accepted: HTTP status -> retry class -> backoff is no longer tested end to end in one test; covered separately (`internal/llm` classification, pipeline backoff).
 
 ### M5 Performance and robustness
 

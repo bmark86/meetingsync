@@ -27,7 +27,7 @@ func TestQATransientSequenceOverPasses(t *testing.T) {
 		if len(e.llm.got) != before+1 {
 			t.Fatalf("Durchlauf %d: LLM nicht genau einmal aufgerufen", i+1)
 		}
-		st := e.p.States()[tr]
+		st := e.p.states[tr]
 		if st == nil || st.NextTry.Sub(now) != want*time.Minute || st.Attempts != i+1 {
 			t.Fatalf("Durchlauf %d: state %+v, want delta %s", i+1, st, want*time.Minute)
 		}
@@ -43,7 +43,7 @@ func TestQATransientSequenceOverPasses(t *testing.T) {
 	}
 	e.llm.err = nil
 	e.p.Pass(context.Background(), now)
-	if e.p.States()[tr] != nil || !exists(e.archived("A.srt")) || len(e.notion.pages) == 0 {
+	if e.p.states[tr] != nil || !exists(e.archived("A.srt")) || len(e.notion.pages) == 0 {
 		t.Fatal("Erfolg nach Fehlerserie: Zustand nicht gelöscht oder nicht archiviert")
 	}
 }
@@ -61,7 +61,7 @@ func TestQAMaxAttemptsMovesToFailedViaPass(t *testing.T) {
 	if exists(tr) || !exists(filepath.Join(e.o.FailedDir, "A.srt")) {
 		t.Fatal("Datei nicht nach _fehler")
 	}
-	if e.p.States()[tr] != nil {
+	if e.p.states[tr] != nil {
 		t.Fatal("Zustand nicht gelöscht")
 	}
 }
@@ -69,7 +69,7 @@ func TestQAMaxAttemptsMovesToFailedViaPass(t *testing.T) {
 // AC-A3 über den Konstruktor: Tabelle der Wartezeiten, Limit und Kontext.
 func TestQARetryPolicyTable(t *testing.T) {
 	r := newRetryPolicy(7)
-	st := &FileState{}
+	st := &fileState{}
 	now := testM
 	for i, w := range []time.Duration{1, 2, 4, 8, 16, 16} {
 		wait, give := r.record(st, true, now)
@@ -81,7 +81,7 @@ func TestQARetryPolicyTable(t *testing.T) {
 		t.Fatal("7. Fehler muss aufgeben")
 	}
 	o := newRetryPolicy(10)
-	if w, _ := o.record(&FileState{}, false, now); w != 2*time.Minute {
+	if w, _ := o.record(&fileState{}, false, now); w != 2*time.Minute {
 		t.Fatalf("anderer Fehler wait %s", w)
 	}
 	ctx, cancel := context.WithCancel(context.Background())

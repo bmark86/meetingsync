@@ -86,9 +86,6 @@ func startTestApp(ctx context.Context, env cli.Env) (*testApp, error) {
 // Pass nutzt den vorhandenen Seam: now kommt vom Test.
 func (a *testApp) Pass(ctx context.Context, now time.Time) { a.p.Pass(ctx, now) }
 
-// states ist der Wiederholungszustand der Pipeline.
-func (a *testApp) states() map[string]*pipeline.FileState { return a.p.States() }
-
 func (a *testApp) Run(ctx context.Context) { cli.Run(ctx, a.env, a.p) }
 
 func (a *testApp) ProcessSingleFile(ctx context.Context, path string) error {

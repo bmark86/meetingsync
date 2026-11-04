@@ -201,7 +201,7 @@ func Load(path string) (cfg *Config, warnings []string, err error) {
 			warnings = unknownKeyWarnings(raw, true)
 		}
 	}
-	clamps, err := cfg.Finalize()
+	clamps, err := cfg.finalize()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -259,10 +259,10 @@ func collectUnknown(raw map[string]any, t reflect.Type, prefix string, ci bool, 
 	}
 }
 
-// Finalize ergänzt abgeleitete Werte (Ordner, Endungen), klemmt zu kleine
-// Zahlen und prüft Pflichtfelder. Load ruft es auf; wer eine Config im Code
-// baut, ruft es selbst. Liefert die Hinweise zu geklemmten Werten.
-func (c *Config) Finalize() (warnings []string, err error) {
+// finalize ergänzt abgeleitete Werte (Ordner, Endungen), klemmt zu kleine
+// Zahlen und prüft Pflichtfelder. Nur Load ruft es auf. Liefert die Hinweise
+// zu geklemmten Werten.
+func (c *Config) finalize() (warnings []string, err error) {
 	if strings.TrimSpace(c.WatchDir) == "" {
 		return nil, errors.New("watch_dir fehlt")
 	}

@@ -21,6 +21,8 @@ import (
 	"meetingsync/internal/ledger"
 	"meetingsync/internal/llm"
 	"meetingsync/internal/notion"
+
+	"go.yaml.in/yaml/v3"
 )
 
 // fakeNotion liefert je Data-Source-ID ein Schema oder einen Fehler.
@@ -84,6 +86,25 @@ func goodNotion() *fakeNotion {
 	}}
 }
 
+// loadFromFile schreibt cfg als YAML nach t.TempDir() und lädt sie über
+// config.Load, wie das Binary: Ordner, Endungen und Prüfungen kommen aus Load.
+func loadFromFile(t *testing.T, cfg *config.Config) *config.Config {
+	t.Helper()
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, _, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return loaded
+}
+
 // testEnv baut ein Env mit Ordnern unter t.TempDir() und Log in buf.
 func testEnv(t *testing.T, n *fakeNotion) (Env, *bytes.Buffer) {
 	t.Helper()
@@ -96,9 +117,7 @@ func testEnv(t *testing.T, n *fakeNotion) (Env, *bytes.Buffer) {
 	cfg.Notion.TasksDataSourceID = "tasks"
 	cfg.Notion.ProjectsDataSourceID = "projects"
 	cfg.LLM.Model = "gemma"
-	if _, err := cfg.Finalize(); err != nil {
-		t.Fatal(err)
-	}
+	cfg = loadFromFile(t, cfg)
 	buf := &bytes.Buffer{}
 	e := Env{Cfg: cfg, Loc: time.UTC, Dry: true, Log: log.New(buf, "", 0), LLM: fakeLLM{models: []string{"gemma"}}}
 	if n != nil {
