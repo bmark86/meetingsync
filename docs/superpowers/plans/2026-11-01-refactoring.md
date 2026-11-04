@@ -478,6 +478,7 @@ Logging stays `*log.Logger` with identical texts. Named constants (A-17) and rea
 
 Goal: enforce trust boundaries; close the decided CLI and secrets changes.
 Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, S-18, S-20, S-21, A-14 closed; golden unchanged except R-M3-12 (scenarios with `fuer_mich`), R-M3-13 (`exit.txt` of G10 with ✗), R-M3-14 (new scenario) and R-M3-16 (count line of G16b); R-M3-17, R-M3-18, R-M3-19 and R-M3-20 leave the golden outputs unchanged.
+Status: **complete 2026-11-04** (R-M3-01 to R-M3-20, R-M3-19 merged into R-M3-03). Open for the exit: live test of R-M3-17 against real Notion (needs Mark's approval). Summary in `docs/progress.md`.
 
 #### R-M3-01 llm.base_url loopback only ⚠
 ⚠ Behavior change, decided by Mark on 2026-11-01 (D3).
