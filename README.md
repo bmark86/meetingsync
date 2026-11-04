@@ -170,6 +170,8 @@ The full, commented reference of all options is in [config.example.yaml](config.
 | `watch_dir` | – | Export folder of MacWhisper |
 | `archive_dir` / `failed_dir` | `watch_dir/_archiv`, `watch_dir/_fehler` | Target for processed and failed files |
 | `my_name` | `Mark` | Your name, so that your to-dos are recognized |
+| `my_role` | empty | Your role, shown in the prompt as "`<my_name>, <my_role>`". Empty leaves it out |
+| `example_name` | `Alex` | Name used in the prompt's speaker examples, e.g. "Danke, Alex" |
 | `my_speaker_label` | empty | Speaker name of your microphone track, `"Microphone"` in MacWhisper |
 | `include_transcript` | `false` | Put the full transcript in the Notion page as a collapsible block |
 | `use_summary_as_context` | `false` | Also give the MacWhisper summary to the model |

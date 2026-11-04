@@ -48,6 +48,7 @@ type Options struct {
 	Dry                             bool
 
 	MyName, MyLabel     string
+	MyRole, ExampleName string
 	UseSummaryAsContext bool
 	IncludeTranscript   bool
 	Notify              bool
@@ -359,6 +360,8 @@ func (p *Pipeline) process(ctx context.Context, j job, hash string) (string, gap
 		SummaryOnly: j.summaryOnly,
 		Timing:      timing,
 		MyName:      p.o.MyName,
+		MyRole:      p.o.MyRole,
+		ExampleName: p.o.ExampleName,
 		MyLabel:     p.o.MyLabel,
 	}
 	if j.summary != nil && p.o.UseSummaryAsContext {

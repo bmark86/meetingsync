@@ -120,6 +120,8 @@ func NewPipeline(e Env, s Setup) *pipeline.Pipeline {
 		Loc:                 e.Loc,
 		Dry:                 e.Dry,
 		MyName:              c.MyName,
+		MyRole:              c.MyRole,
+		ExampleName:         c.ExampleName,
 		MyLabel:             c.MySpeakerLabel,
 		UseSummaryAsContext: c.UseSummaryAsContext,
 		IncludeTranscript:   c.IncludeTranscript,

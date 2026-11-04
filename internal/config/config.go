@@ -34,6 +34,8 @@ type Config struct {
 	UseSummaryAsContext  bool     `json:"use_summary_as_context" yaml:"use_summary_as_context"`
 	IncludeTranscript    bool     `json:"include_transcript" yaml:"include_transcript"`
 	MyName               string   `json:"my_name" yaml:"my_name"`
+	MyRole               string   `json:"my_role" yaml:"my_role"`
+	ExampleName          string   `json:"example_name" yaml:"example_name"`
 	MySpeakerLabel       string   `json:"my_speaker_label" yaml:"my_speaker_label"`
 	Timezone             string   `json:"timezone" yaml:"timezone"`
 	TitleFormat          string   `json:"title_format" yaml:"title_format"`
@@ -104,6 +106,7 @@ func Default() *Config {
 		OrphanSummaryAction:  "note",
 		MaxAttempts:          10,
 		MyName:               "Mark",
+		ExampleName:          "Alex",
 		Timezone:             "Europe/Berlin",
 		TitleFormat:          "{date} – {title}",
 		Notify:               true,
@@ -267,6 +270,9 @@ func (c *Config) Finalize() (warnings []string, err error) {
 	}
 	if c.FailedDir == "" {
 		c.FailedDir = filepath.Join(c.WatchDir, "_fehler")
+	}
+	if strings.TrimSpace(c.ExampleName) == "" {
+		c.ExampleName = Default().ExampleName
 	}
 	c.ArchiveDir = ExpandHome(c.ArchiveDir)
 	c.FailedDir = ExpandHome(c.FailedDir)

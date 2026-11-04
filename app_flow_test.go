@@ -71,6 +71,8 @@ func newFlowApp(t *testing.T, mod func(*config.Config), opts ...func(*cli.Env)) 
 
 	root := t.TempDir()
 	cfg := config.Default()
+	cfg.MyRole = "Head of Engineering"
+	cfg.ExampleName = "Sascha"
 	cfg.WatchDir = filepath.Join(root, "watch")
 	cfg.ArchiveDir = filepath.Join(root, "archiv")
 	cfg.FailedDir = filepath.Join(root, "fehler")
