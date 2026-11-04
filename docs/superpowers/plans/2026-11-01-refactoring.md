@@ -699,11 +699,12 @@ Exit: `git grep` and `git log -p --all` without the three real IDs; tag `v1.0.0`
 
 #### R-M4-01 Placeholders
 - Goal: replace real Notion IDs with placeholders.
-- Acceptance: `config.example.yaml:124-128`, `config.example.json:24-26` with placeholders (format in the task, for example `00000000-0000-0000-0000-000000000000` with a comment); README.md:76 says that users enter their own IDs (where to find them in Notion); `config_test.go` adapted; `git grep -n "276258fa\|26e258fa"` is empty; Mark's config untouched.
+- Acceptance: `config.example.yaml` ~135-142, `config.example.json` ~27-29 with placeholders (format in the task, for example `00000000-0000-0000-0000-000000000000` with a comment); README.md:84 says that users enter their own IDs (where to find them in Notion); `config_test.go` adapted; `git grep -n -f <ID-Liste>` is empty (the ID list is kept outside the repo (scratchpad), not in the repo); Mark's config untouched.
 - Scope: `config.example.yaml`, `config.example.json`, `README.md`, `config_test.go`.
 - Depends on: none (pull forward, see section 6). Findings: S-05, A-20.
 - Model: haiku, text replacement.
 - Reviews: CR, SR, QA.
+- Status: **done 2026-11-04.** Real data source IDs in `config.example.yaml` and `config.example.json` replaced by `00000000-0000-0000-0000-000000000000`; comments and README tell users to enter their own IDs (dashes optional) and to leave Tasks/Projects empty if unused. No test change needed. Code review and security review approved. The IDs remain in git history until R-M4-02.
 
 #### R-M4-02 Clean the git history ⚠ destructive
 ⚠ Behavior change, decided by Mark on 2026-11-01 (D2). Its own human approval right before it runs (AskUserQuestion by the coordinator), even if the plan is approved.
@@ -715,7 +716,7 @@ Exit: `git grep` and `git log -p --all` without the three real IDs; tag `v1.0.0`
   4. Approval by Mark (right before step 5).
   5. Rewrite in a fresh clone, tag `v1.0.0` on the matching new commit, `git push --force` for `main` and tags.
   6. Follow-up: check release notes `docs/releases/v1.0.0.md`; re-link the GitHub release; note that old commits may stay reachable through forks/caches.
-- Acceptance: `git log -p --all | grep -c "276258fa\|26e258fa"` = 0; `make check` green on the new `main`; bundle verified; approval documented.
+- Acceptance: `git log -p --all | grep -c -f <ID-Liste>` = 0 (the ID list is kept outside the repo (scratchpad), not in the repo); `make check` green on the new `main`; bundle verified; approval documented.
 - Scope: git history, tags.
 - Out of scope: deleting local archive/error files, Notion.
 - Depends on: R-M4-01; no open branches; answer to OD-15. Findings: S-05.
