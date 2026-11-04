@@ -521,6 +521,36 @@ func TestPassTooManyBlocksMoveFails(t *testing.T) {
 	}
 }
 
+// Fängt: Blockgrenze verschiebt das Transkript vor dem Partner, macht nach dem
+// ersten Fehler weiter oder meldet ohne verschobene Dateien.
+func TestPassTooManyBlocksPairOrder(t *testing.T) {
+	fm := &flakyMover{fails: func(src string) bool { return strings.HasSuffix(src, ".md") }}
+	e := newEnv(t, func(o *Options, d *Deps) { o.Notify = true; d.Mover = fm.mover() })
+	e.llm.note = noteWithBlocks(5000)
+	tr := e.write(t, "Sitzung.srt", testSRT, testM)
+	sum := e.write(t, "Sitzung.md", testSummary, testM.Add(time.Minute))
+
+	e.p.Pass(context.Background(), e.clock)
+	st := e.p.States()[tr]
+	if len(fm.tried) != 1 || fm.tried[0] != sum || !exists(tr) || !exists(sum) || len(e.notifier.calls) != 0 {
+		t.Fatalf("Reihenfolge %v, Mitteilungen %v", fm.tried, e.notifier.calls)
+	}
+	if st == nil || st.Attempts != 0 || !st.NextTry.Equal(e.clock.Add(2*time.Minute)) || e.p.States()[sum] != nil {
+		t.Fatalf("states %v", e.p.States())
+	}
+
+	fm.fails = func(string) bool { return false }
+	e.p.Pass(context.Background(), e.clock.Add(2*time.Minute))
+	if exists(tr) || exists(sum) || len(e.notifier.calls) != 1 || len(e.p.States()) != 0 {
+		t.Fatalf("Paar bleibt %v/%v, Mitteilungen %v, states %v", exists(tr), exists(sum), e.notifier.calls, e.p.States())
+	}
+	for _, n := range []string{"Sitzung.srt", "Sitzung.md"} {
+		if !exists(filepath.Join(e.o.FailedDir, n+".fehler.txt")) {
+			t.Fatalf("%s.fehler.txt fehlt", n)
+		}
+	}
+}
+
 // Fängt: -file über der Grenze legt an, verschiebt oder meldet.
 func TestProcessFileTooManyBlocks(t *testing.T) {
 	e := newEnv(t, func(o *Options, _ *Deps) { o.Notify = true })
