@@ -37,7 +37,7 @@ func TestFailPathDirSyncWarnsAndMoves(t *testing.T) {
 		}, pipeline.ErrUnterbrochen.Error()},
 		{"max_attempts", func(e *crashEnv, env *cli.Env) {
 			env.Cfg.MaxAttempts = 1
-			env.LLM = newLLMClient(env.Cfg, env.Log, e.rt)
+			env.LLM = newLLMClient(env.Cfg, env.Cfg.LLM.APIKey, env.Log, e.rt)
 		}, func(_ *testing.T, e *crashEnv) {
 			e.rt.before = func(r *http.Request) (*http.Response, error) {
 				if strings.Contains(r.URL.Path, "/chat/") {

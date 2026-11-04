@@ -621,6 +621,7 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 - Depends on: R-M3-07, R-M3-11 (same package, sequence). Findings: S-18.
 - Model: opus, secrets.
 - Reviews: CR, SR, QA. ADR 0014.
+- Status: done 2026-11-04. ADR 0014. Order env `LLM_API_KEY` -> Keychain (`llm.api_key_keychain_service`) -> `llm.api_key`; Keychain error aborts start (also dry-run, `-check` before any check line); no key = no header. Security review approved.
 
 #### R-M3-16 Count only Mark's to-dos ⚠
 ⚠ Behavior change, decided by Mark on 2026-11-02 (OD-23). Source: progress follow-up #10.

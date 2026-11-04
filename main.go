@@ -108,13 +108,19 @@ func notionTokens(cfg *config.Config) secret.TokenSource {
 	return secret.NewNotion(cfg.Notion.TokenKeychainService, cfg.Notion.Token)
 }
 
-// newLLMClient baut den LM-Studio-Client aus der Konfiguration. transport nil
+// llmKeys baut die Quelle für den LLM-API-Key aus den LLM-Einstellungen der Config.
+func llmKeys(cfg *config.Config) secret.TokenSource {
+	return secret.NewLLM(cfg.LLM.APIKeyKeychainService, cfg.LLM.APIKey)
+}
+
+// newLLMClient baut den LM-Studio-Client aus der Konfiguration und dem
+// API-Key aus llmKeys (leer: kein Authorization-Header). transport nil
 // heißt eine Kopie von http.DefaultTransport ohne Proxy, ohne Weiterleitungen zu folgen.
-func newLLMClient(cfg *config.Config, logger *log.Logger, transport http.RoundTripper) *llm.Client {
+func newLLMClient(cfg *config.Config, apiKey string, logger *log.Logger, transport http.RoundTripper) *llm.Client {
 	return llm.NewClient(llm.Options{
 		BaseURL:          cfg.LLM.BaseURL,
 		Model:            cfg.LLM.Model,
-		APIKey:           cfg.LLM.APIKey,
+		APIKey:           apiKey,
 		Temperature:      cfg.LLM.Temperature,
 		Timeout:          time.Duration(cfg.LLM.TimeoutMinutes) * time.Minute,
 		MaxChunkChars:    cfg.LLM.MaxChunkChars,
@@ -122,16 +128,21 @@ func newLLMClient(cfg *config.Config, logger *log.Logger, transport http.RoundTr
 	}, logger, transport)
 }
 
-// newEnv verdrahtet die Clients für internal/cli: LM Studio, Mac-Mitteilung,
-// Notion-Token und Notion. Ohne Token läuft nur der Dry-Run (ohne Notion).
+// newEnv verdrahtet die Clients für internal/cli: LLM-API-Key, LM Studio,
+// Mac-Mitteilung, Notion-Token und Notion. Ohne Token läuft nur der Dry-Run
+// (ohne Notion). Ein Fehler beim LLM-API-Key bricht immer ab, auch im Dry-Run.
 // notionTransport nil heißt http.DefaultTransport; Tests setzen eigene Hooks.
 func newEnv(cfg *config.Config, loc *time.Location, logger *log.Logger, dry bool, notionTransport http.RoundTripper) (cli.Env, error) {
+	apiKey, err := llmKeys(cfg).Token()
+	if err != nil {
+		return cli.Env{}, err
+	}
 	e := cli.Env{
 		Cfg:      cfg,
 		Loc:      loc,
 		Dry:      dry,
 		Log:      logger,
-		LLM:      newLLMClient(cfg, logger, nil),
+		LLM:      newLLMClient(cfg, apiKey, logger, nil),
 		Notifier: notify.New(),
 	}
 	token, err := notionTokens(cfg).Token()

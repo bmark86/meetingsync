@@ -46,13 +46,14 @@ type Config struct {
 }
 
 type LLMConfig struct {
-	BaseURL          string  `json:"base_url" yaml:"base_url"`
-	Model            string  `json:"model" yaml:"model"`
-	APIKey           string  `json:"api_key" yaml:"api_key"`
-	Temperature      float64 `json:"temperature" yaml:"temperature"`
-	TimeoutMinutes   int     `json:"timeout_minutes" yaml:"timeout_minutes"`
-	MaxChunkChars    int     `json:"max_chunk_chars" yaml:"max_chunk_chars"`
-	StructuredOutput bool    `json:"structured_output" yaml:"structured_output"`
+	BaseURL               string  `json:"base_url" yaml:"base_url"`
+	Model                 string  `json:"model" yaml:"model"`
+	APIKey                string  `json:"api_key" yaml:"api_key"`
+	APIKeyKeychainService string  `json:"api_key_keychain_service" yaml:"api_key_keychain_service"`
+	Temperature           float64 `json:"temperature" yaml:"temperature"`
+	TimeoutMinutes        int     `json:"timeout_minutes" yaml:"timeout_minutes"`
+	MaxChunkChars         int     `json:"max_chunk_chars" yaml:"max_chunk_chars"`
+	StructuredOutput      bool    `json:"structured_output" yaml:"structured_output"`
 }
 
 type NotionConfig struct {

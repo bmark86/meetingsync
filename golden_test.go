@@ -317,6 +317,7 @@ func goldenEnv(t *testing.T, root string) []string {
 	t.Setenv("HOME", home)
 	t.Setenv("PATH", bin)
 	t.Setenv("NOTION_TOKEN", goldenToken)
+	t.Setenv("LLM_API_KEY", "") // Golden ohne LLM-Key (R-M3-15), auch wenn die Shell einen setzt
 	t.Cleanup(func() {
 		if e, _ := os.ReadDir(calls); len(e) > 0 {
 			var names []string

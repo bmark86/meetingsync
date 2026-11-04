@@ -93,8 +93,13 @@ llm:
   # Modell-Identifier aus LM Studio (siehe `meetingsync -check`). Pflicht, kein Standard.
   model: gemma-4-31b
   # Optionaler API-Key, wird als Bearer-Token gesendet. Standard: leer (kein Header).
-  # Nie echten Wert ins Repo.
+  # Key-Suche in dieser Reihenfolge: Umgebungsvariable LLM_API_KEY -> macOS-Schlüsselbund
+  # (api_key_keychain_service) -> api_key. Ist der Dienst gesetzt, wird api_key nicht gelesen.
+  # Nie echten Wert ins Repo, bevorzugt Schlüsselbund.
   # api_key: ""
+  # Name des Schlüsselbund-Eintrags, z. B. meetingsync-llm. Standard: leer = kein Schlüsselbund.
+  # Anlegen (fragt den Key ab): security add-generic-password -a "$USER" -s <name> -w
+  # api_key_keychain_service: ""
   # Sampling-Temperatur (niedrig = deterministischer). Standard: 0.2
   temperature: 0.2
   # HTTP-Timeout je LLM-Anfrage in Minuten. Standard: 30

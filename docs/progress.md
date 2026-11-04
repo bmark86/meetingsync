@@ -51,6 +51,7 @@
 | R-M3-11 | Prompt personalization (S-20, A-20, D4, OD-14): config keys `my_role` (default empty, then ", <role>" is left out) and `example_name` (default `Alex`, empty/whitespace reset in `Finalize`) replace the hard-coded "Head of Engineering" and "Sascha" in the LLM system prompt; passed `internal/cli` → `internal/pipeline` `Options` → `llm.NoteInput`; `config.example.yaml`/`.json` document both. Golden configs set both values, golden byte-identical. Decisions: Mark (2026-11-01, OD-14): neutral code defaults, values in his config before the rebuild; coordinator: pass-through edits in pipeline/cli accepted (outside planned scope), `my_role` not trimmed (whitespace-only role is self-inflicted). Code and security review approved; ADR 0009 | done | 2026-11-04 |
 | R-M3-18 | Failed move to `_fehler` keeps the attempt count (open item 19): state kept with cause and content hash, retry in 2 min; after `max_attempts` the next try moves the files without an LLM run; changed content counts as new; `failJob` moves partner first, transcript last (interrupted, giveUp, block-cap paths). Golden unchanged; code review approved after fix round 1 (hash binding, 2 tests) | done | 2026-11-04 |
 | R-M3-13 ⚠ | `-check` exit code (D7, OD-17, A-14): exit 1 if any check line shows ✗ (folder, LM Studio, model), 0 if all ✓; output unchanged; `cli.Check` returns `errCheckFailed`, `main.go` unchanged. Golden: `exit.txt` of G10b and G10c 0 → 1, G10a and G10d unchanged. Follow-up 5 done. Decision: Mark (2026-11-01). launchd unaffected (does not run `-check`). Tell Mark before the next rebuild (scripts). code review approved; ADR 0012 | done | 2026-11-04 |
+| R-M3-15 ⚠ | `llm.api_key` from the Keychain (D9, OD-20, S-18): order env `LLM_API_KEY` -> Keychain if `llm.api_key_keychain_service` is set -> `llm.api_key`; no key = no `Authorization` header, golden unchanged; header only to the loopback URL; key never in logs/errors (tested); `internal/secret` shared `source` for `NewNotion` (unchanged) and `NewLLM`. Decisions: Mark (2026-11-04): lookup order as for the Notion token, Keychain error aborts start also in dry-run and `-check`; coordinator: a Keychain error stops `-check` before any ✓/✗ line (fail closed). Security review (opus) approved; ADR 0014. Optional for Mark, setup: `security add-generic-password -a "$USER" -s meetingsync-llm -w`, then `llm.api_key_keychain_service: meetingsync-llm` | done | 2026-11-04 |
 
 ## M1 summary (complete 2026-11-02: R-M1-01 to R-M1-07 + R-M1-EXIT)
 
@@ -132,6 +133,15 @@ Next: M3 (gate passed 2026-11-02).
 | Coordinator | M3 lanes run partly in parallel git worktrees (disjoint packages); results are applied to the branch only after review and a green `make check` | M3 |
 
 Open: Mark must create the text column in the Notes database before R-M3-17 is tested live (the coordinator asks him).
+
+## M3 decisions (2026-11-04)
+
+| By | Decision | Task |
+| --- | --- | --- |
+| Mark | `llm.api_key` lookup order like the Notion token; Keychain service name in `llm.api_key_keychain_service`; Keychain error aborts start | R-M3-15 |
+| Mark | Reason text for tasks without a clear owner: "Enthält To-dos für dich – bitte Zuordnung und Fälligkeit prüfen" | R-M3-12 |
+| Mark | `-file` does not move the file; a file left in the export folder is later archived by the service as a duplicate (agreed) | R-M3-14 |
+| Mark | The Notes column "Quelle" (text) exists | R-M3-17 |
 
 ## Open follow-ups
 

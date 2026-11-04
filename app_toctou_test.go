@@ -34,7 +34,7 @@ func newTOCTOUEnv(t *testing.T, opts ...func(*cli.Env)) *toctouEnv {
 	e := &toctouEnv{f: f, log: &hookLog{}, llmRT: &hookRT{}}
 	opts = append([]func(*cli.Env){func(env *cli.Env) {
 		env.Log = log.New(e.log, "", 0)
-		env.LLM = newLLMClient(env.Cfg, env.Log, e.llmRT)
+		env.LLM = newLLMClient(env.Cfg, env.Cfg.LLM.APIKey, env.Log, e.llmRT)
 	}}, opts...)
 	e.app, e.dir = setup(t, f, opts...)
 	return e
