@@ -230,22 +230,26 @@ func TestCheckWithoutNotion(t *testing.T) {
 // Fängt: Check-Bericht unvollständig; LM-Studio-Fehler wird zum Exit-Code.
 func TestCheckReport(t *testing.T) {
 	cases := []struct {
-		name string
-		llm  fakeLLM
-		want string
+		name    string
+		llm     fakeLLM
+		want    string
+		wantErr bool
 	}{
-		{"Modell da", fakeLLM{models: []string{"x", "gemma"}}, "✓ LM Studio: Modell \"gemma\" verfügbar\n"},
-		{"Modell fehlt", fakeLLM{models: []string{"x"}}, "✗ LM Studio: Modell \"gemma\" nicht gefunden. Verfügbar:\n    x\n"},
-		{"nicht erreichbar", fakeLLM{err: errors.New("refused")}, "✗ LM Studio nicht erreichbar unter "},
+		{"Modell da", fakeLLM{models: []string{"x", "gemma"}}, "✓ LM Studio: Modell \"gemma\" verfügbar\n", false},
+		{"Modell fehlt", fakeLLM{models: []string{"x"}}, "✗ LM Studio: Modell \"gemma\" nicht gefunden. Verfügbar:\n    x\n", true},
+		{"nicht erreichbar", fakeLLM{err: errors.New("refused")}, "✗ LM Studio nicht erreichbar unter ", true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			e, _ := testEnv(t, goodNotion())
 			e.LLM = c.llm
+			if err := os.MkdirAll(e.Cfg.WatchDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
 			var err error
 			out := captureStdout(t, func() { err = Check(context.Background(), e) })
-			if err != nil {
-				t.Fatalf("Fehler = %v, want nil", err)
+			if (err != nil) != c.wantErr {
+				t.Fatalf("Fehler = %v, wantErr %v", err, c.wantErr)
 			}
 			for _, w := range []string{"✓ Notion: Notes erreichbar (notes-ds)\n", "✓ Notion: Tasks erreichbar (tasks-ds)\n", "✓ Notion: 1 aktive Projekte\n", c.want} {
 				if !strings.Contains(out, w) {
@@ -354,5 +358,24 @@ func TestRunCanceled(t *testing.T) {
 	Run(ctx, e, NewPipeline(e, s))
 	if !strings.Contains(buf.String(), "Überwache "+e.Cfg.WatchDir+" (alle 10s). Beenden mit Ctrl+C.") || !strings.Contains(buf.String(), "Beendet.") {
 		t.Fatalf("Log:\n%s", buf)
+	}
+}
+
+// Fängt: ✗ in der Ausgabe ohne Fehler (Exit-Code 0) oder Fehler bei lauter ✓.
+func TestCheckExitDecision(t *testing.T) {
+	e, _ := testEnv(t, goodNotion())
+	e.LLM = fakeLLM{models: []string{"gemma"}}
+	if err := os.MkdirAll(e.Cfg.WatchDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var err error
+	captureStdout(t, func() { err = Check(context.Background(), e) })
+	if err != nil {
+		t.Fatalf("alles ✓: Fehler = %v, want nil", err)
+	}
+	e.Cfg.WatchDir = filepath.Join(t.TempDir(), "fehlt")
+	out := captureStdout(t, func() { err = Check(context.Background(), e) })
+	if !errors.Is(err, errCheckFailed) || !strings.Contains(out, "✗ Ordner nicht gefunden") {
+		t.Fatalf("Ordner ✗: err=%v Ausgabe:\n%s", err, out)
 	}
 }
