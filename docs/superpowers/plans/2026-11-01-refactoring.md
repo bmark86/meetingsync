@@ -730,6 +730,7 @@ Exit: `git grep` and `git log -p --all` without the three real IDs; tag `v1.0.0`
 - Depends on: R-M3-11. Findings: A-20.
 - Model: sonnet, default with an effect on the prompt.
 - Reviews: CR, QA.
+- Status: **done 2026-11-04.** Code default `my_name` "Mark" -> "Max"; example configs and README show "Max". Finding: the golden harness config did not set `my_name` and relied on the old default (the plan assumed it did); it now sets `my_name: Mark` explicitly, as do `e2e_test.go` and `app_flow_test.go`. Golden byte-identical. CR and QA running.
 
 #### R-M4-04 Root integration tests behind package boundaries
 - Goal: stop exporting test-only identifiers from production packages (follow-up of R-M2-10).

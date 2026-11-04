@@ -619,6 +619,7 @@ func goldenNotionDefault() map[string][]fakeReply {
 const goldenBaseConfig = `watch_dir: "{{watch}}"
 notify: false
 timezone: Europe/Berlin
+my_name: Mark
 my_role: Head of Engineering
 example_name: Sascha
 llm:

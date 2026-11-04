@@ -107,7 +107,7 @@ func Default() *Config {
 		OrphanSummaryMinutes: 10,
 		OrphanSummaryAction:  "note",
 		MaxAttempts:          10,
-		MyName:               "Mark",
+		MyName:               "Max",
 		ExampleName:          "Alex",
 		Timezone:             "Europe/Berlin",
 		TitleFormat:          "{date} – {title}",

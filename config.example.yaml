@@ -57,8 +57,8 @@ summary_extensions: []
 # ---------------------------------------------------------------------------
 
 # Dein Name, damit deine To-dos erkannt werden und das Modell dich zuordnen kann.
-# Standard: Mark
-my_name: Mark
+# Standard: Max
+my_name: Max
 # Deine Rolle für den Prompt ("Protokollant für <Name>, <Rolle>"). Standard: leer
 # (dann steht nur der Name im Prompt).
 my_role: "Teamlead"
