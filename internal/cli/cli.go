@@ -151,12 +151,17 @@ func NewPipeline(e Env, s Setup) *pipeline.Pipeline {
 	})
 }
 
+// errCheckFailed meldet, dass mindestens eine Prüfzeile ✗ zeigt (Exit-Code 1).
+var errCheckFailed = errors.New("Prüfung fehlgeschlagen")
+
 // Check prüft Notion und LM Studio und gibt einen kurzen Bericht aus.
 func Check(ctx context.Context, e Env) error {
 	c := e.Cfg
 	fmt.Printf("Ordner:   %s\nArchiv:   %s\nFehler:   %s\n", c.WatchDir, c.ArchiveDir, c.FailedDir)
+	failed := false
 	if _, err := os.Stat(c.WatchDir); err != nil {
 		fmt.Printf("✗ Ordner nicht gefunden: %v\n", err)
+		failed = true
 	}
 	if e.Notion == nil {
 		return errors.New("kein Notion-Token gefunden")
@@ -177,7 +182,7 @@ func Check(ctx context.Context, e Env) error {
 	models, err := e.LLM.Models(ctx)
 	if err != nil {
 		fmt.Printf("✗ LM Studio nicht erreichbar unter %s: %v\n", domain.RedactURL(c.LLM.BaseURL), err)
-		return nil
+		return errCheckFailed
 	}
 	if slices.Contains(models, c.LLM.Model) {
 		fmt.Printf("✓ LM Studio: Modell %q verfügbar\n", c.LLM.Model)
@@ -186,6 +191,10 @@ func Check(ctx context.Context, e Env) error {
 		for _, m := range models {
 			fmt.Printf("    %s\n", m)
 		}
+		failed = true
+	}
+	if failed {
+		return errCheckFailed
 	}
 	return nil
 }

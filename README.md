@@ -85,7 +85,7 @@ In `config.example.yaml`, the IDs of the Notes, Tasks and Projects databases are
 meetingsync -check
 ```
 
-shows whether Notion and LM Studio are reachable and whether the model is found. It exits with code 1 on a config error, a missing token, a keychain error, and errors with the Notes or Tasks database. A ✗ for the folder, LM Studio or the Projects database still ends with exit code 0, so read the output.
+shows whether the export folder, Notion and LM Studio are reachable and whether the model is found. It exits with code 1 if any check shows ✗ (export folder missing, Notes or Tasks database error, LM Studio unreachable, model not found), and also on a config error, a missing token or a keychain error. An unreadable Projects database is only a notice (`Hinweis`) and still exits with code 0.
 
 If `~/bin` is not in your PATH, call `~/bin/meetingsync …` or add `export PATH="$HOME/bin:$PATH"` to `~/.zshrc`.
 

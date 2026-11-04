@@ -599,6 +599,7 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 - Depends on: M2 (R-M2-10). Findings: A-14.
 - Model: sonnet, small change; the golden diff is the proof.
 - Reviews: CR, QA. ADR 0012.
+- Status: **done 2026-11-04.** `cli.Check` returns `errCheckFailed` if any line shows ✗ (folder, LM Studio, model); `main.go` unchanged (exits 1 on error). Output unchanged. Golden: `exit.txt` of G10b and G10c 0 → 1; G10a (0) and G10d (1) unchanged. Progress #5 done. ADR 0012.
 
 #### R-M3-14 `-file` writes a ledger entry ⚠
 ⚠ Behavior change, decided by Mark on 2026-11-01 (D8, OD-18: yes). Replaces R-OPT-03.
