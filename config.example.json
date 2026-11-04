@@ -24,9 +24,9 @@
 
   "notion": {
     "token_keychain_service": "meetingsync-notion",
-    "notes_data_source_id": "276258fa-3c5b-801a-9ed7-000bd17dc7b5",
-    "tasks_data_source_id": "26e258fa-3c5b-8086-b070-000b02927414",
-    "projects_data_source_id": "26e258fa-3c5b-8055-9770-000b66f3bc38",
+    "notes_data_source_id": "00000000-0000-0000-0000-000000000000",
+    "tasks_data_source_id": "00000000-0000-0000-0000-000000000000",
+    "projects_data_source_id": "00000000-0000-0000-0000-000000000000",
     "create_tasks_for": "me"
   }
 }

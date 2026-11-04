@@ -81,7 +81,7 @@ You only need to change three things:
 - `llm.model` – the identifier from LM Studio, for example `google/gemma-4-31b-qat`
 - `my_speaker_label` – the speaker name of your own track, `"Microphone"` in MacWhisper
 
-In `config.example.yaml`, the IDs of the Notes, Tasks and Projects databases are already filled in. All options with comments are listed there.
+In `config.example.yaml`, the IDs of the Notes, Tasks and Projects databases are placeholders (`00000000-0000-0000-0000-000000000000`). Enter your own IDs. Open each database in Notion and copy its link (Share → Copy link). The ID is the 32-character string at the end of the URL, before any `?v=`. Dashes are optional: the 8-4-4-4-12 form of the placeholder and the plain 32-character string are both accepted. Notes is required, Tasks and Projects are optional. If you do not use Tasks or Projects, leave their value empty (`""`) or remove the line; keeping the placeholder makes Notion answer 404, and the file is retried. All options with comments are listed there.
 
 > **macOS note:** If the export folder is under *Documents*, *Desktop* or *Downloads*, macOS blocks background access. Either use a folder like `~/Meetings/MacWhisper`, or allow `~/bin/meetingsync` under *System Settings (Systemeinstellungen) → Privacy & Security (Datenschutz & Sicherheit) → Full Disk Access (Festplattenvollzugriff)*.
 

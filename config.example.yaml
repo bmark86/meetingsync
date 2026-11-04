@@ -130,13 +130,16 @@ notion:
   # api_version: "2025-09-03"
 
   # IDs der Datenbanken; Data-Source-ID oder Datenbank-ID (aus der Notion-URL) werden
-  # akzeptiert.
+  # akzeptiert. Die Platzhalter durch deine eigenen IDs aus Notion ersetzen (siehe README).
   # Notes: hier landen die Meeting-Notizen. Pflicht, kein Standard.
-  notes_data_source_id: 276258fa-3c5b-801a-9ed7-000bd17dc7b5
-  # Tasks: Ziel der To-dos. Standard: leer (keine To-dos).
-  tasks_data_source_id: 26e258fa-3c5b-8086-b070-000b02927414
+  notes_data_source_id: 00000000-0000-0000-0000-000000000000
+  # Tasks: Ziel der To-dos. Standard: leer (keine To-dos). Nicht genutzt? Wert leer lassen
+  # ("") oder Zeile entfernen, sonst antwortet Notion mit 404 und die Datei wird wiederholt.
+  tasks_data_source_id: 00000000-0000-0000-0000-000000000000
   # Projects: Quelle für Projektvorschläge und Verknüpfung. Standard: leer (keine Zuordnung).
-  projects_data_source_id: 26e258fa-3c5b-8055-9770-000b66f3bc38
+  # Nicht genutzt? Wert leer lassen ("") oder Zeile entfernen, sonst antwortet Notion mit 404
+  # und die Datei wird wiederholt.
+  projects_data_source_id: 00000000-0000-0000-0000-000000000000
 
   # Welche To-dos angelegt werden: me = nur deine, all = alle, none = keine. Standard: me
   create_tasks_for: me
