@@ -209,16 +209,28 @@ func TestPassDryRunCallsPrinter(t *testing.T) {
 	}
 }
 
-// Fängt: -file schreibt Protokoll oder erkennt Zusammenfassungen nicht.
-func TestProcessFileNoLedger(t *testing.T) {
+// Fängt: -file schreibt die Protokoll-Einträge begonnen und fertig (R-M3-14),
+// lässt die Datei liegen, verarbeitet einen schon fertigen Hash erneut und lehnt leere Dateien ab.
+func TestProcessFileWritesLedger(t *testing.T) {
 	e := newEnv(t, nil)
 	p := e.write(t, "Notizen.md", testSummary, testM)
-	url, err := e.p.ProcessFile(context.Background(), &watch.Entry{Path: p, Name: "Notizen.md", ModTime: testM, Kind: domain.KindSummary, Content: []byte(testSummary)})
+	entry := &watch.Entry{Path: p, Name: "Notizen.md", ModTime: testM, Kind: domain.KindSummary, Content: []byte(testSummary)}
+	url, err := e.p.ProcessFile(context.Background(), entry)
 	if err != nil || url != "https://notion.so/page-1" {
 		t.Fatalf("url=%q err=%v", url, err)
 	}
-	if !e.llm.got[0].SummaryOnly || exists(filepath.Join(e.o.ArchiveDir, ".meetingsync-ledger.jsonl")) || !exists(p) {
-		t.Fatal("-file: nur Zusammenfassung, kein Protokoll, Datei bleibt")
+	if !e.llm.got[0].SummaryOnly || !exists(p) {
+		t.Fatal("-file: nur Zusammenfassung, Datei bleibt")
+	}
+	hash := sha256Hex([]byte(testSummary))
+	lines := strings.Split(strings.TrimSpace(mustRead(t, filepath.Join(e.o.ArchiveDir, ".meetingsync-ledger.jsonl"))), "\n")
+	if len(lines) != 2 || !strings.HasPrefix(lines[0], `{"sha256":"`+hash+`","status":"begonnen","file":"Notizen.md",`) ||
+		!strings.HasPrefix(lines[1], `{"hash":"`+hash+`","file":"Notizen.md","mtime":"2026-09-30T12:00:00Z","url":"https://notion.so/page-1",`) {
+		t.Fatalf("Protokoll:\n%s", strings.Join(lines, "\n"))
+	}
+	// wie heute: -file verarbeitet immer, auch einen schon fertigen Hash
+	if _, err := e.p.ProcessFile(context.Background(), entry); err != nil || e.notion.count("notes-ds") != 2 {
+		t.Fatalf("zweiter Aufruf: err=%v, Notizen %d", err, e.notion.count("notes-ds"))
 	}
 	if _, err := e.p.ProcessFile(context.Background(), &watch.Entry{Path: p, Name: "leer.md", Kind: domain.KindSummary, Content: []byte(" \n")}); err == nil || err.Error() != "Datei ist leer" {
 		t.Fatalf("leere Datei: err=%v", err)

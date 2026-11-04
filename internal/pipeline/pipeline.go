@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"slices"
 	"sort"
@@ -101,6 +102,10 @@ type Pipeline struct {
 	// Datei auch ohne Neustart des Prozesses wieder normal läuft (ADR 0004).
 	interruptedNow map[string]bool
 
+	// lockBusy: die Sperre hält gerade ein anderer Lauf (-file, zweiter Dienst), die Meldung
+	// steht schon im Log (einmal je Sperrzeit).
+	lockBusy bool
+
 	projects   []notion.Page
 	projectsAt time.Time
 }
@@ -141,8 +146,30 @@ func (j job) files() []*watch.Entry {
 	return []*watch.Entry{j.primary}
 }
 
-// Pass ist ein Durchlauf über den Exportordner.
+// Pass ist ein Durchlauf über den Exportordner. Außer im Dry-Run unter der
+// Sperre auf den Exportordner (R-M3-14); hält sie ein anderer Lauf (-file,
+// zweiter Dienst), fällt der Durchlauf aus. Danach liest er neue Protokollzeilen anderer Prozesse nach.
 func (p *Pipeline) Pass(ctx context.Context, now time.Time) {
+	if !p.o.Dry {
+		lk, err := ledger.TryLock(p.o.WatchDir)
+		switch {
+		case errors.Is(err, ledger.ErrLocked):
+			if !p.lockBusy {
+				p.log.Printf("Anderer Lauf aktiv (-file oder zweiter Dienst) – Durchlauf übersprungen")
+				p.lockBusy = true
+			}
+			return
+		case err == nil:
+			p.lockBusy = false
+			defer func() { _ = lk.Unlock() }() //nolint:errcheck // Schließen gibt den flock frei, Fehler ohne Folgen
+		case !errors.Is(err, fs.ErrNotExist):
+			p.warnOnce("watch-lock", "⚠️  Sperre auf dem Exportordner nicht möglich (%v) – Schutz gegen gleichzeitige Läufe aus", err)
+		}
+		// Ordner fehlt: listEntries meldet es wie bisher
+	}
+	if err := p.ledger.Refresh(); err != nil {
+		p.warnOnce("ledger-refresh", "Protokoll nicht nachlesbar: %v", err)
+	}
 	entries, err := p.listEntries(now)
 	if err != nil {
 		p.log.Printf("Ordner nicht lesbar: %v", err)
@@ -347,15 +374,30 @@ type gaps struct {
 	blocks int // Fehler beim Anhängen der restlichen Blöcke
 }
 
-// ProcessFile verarbeitet e direkt (-file): ohne Protokoll, ohne Verschieben.
-// Liefert die URL der Notiz ("dry-run" im Dry-Run).
+// ProcessFile verarbeitet e direkt (-file), ohne Verschieben. Außer im
+// Dry-Run schreibt es das Protokoll wie ein Durchlauf (begonnen, fertig;
+// R-M3-14), auch wenn der Hash dort schon steht. Liefert die URL der Notiz
+// ("dry-run" im Dry-Run).
 func (p *Pipeline) ProcessFile(ctx context.Context, e *watch.Entry) (string, error) {
-	url, _, err := p.process(ctx, job{primary: e, summaryOnly: e.Kind == domain.KindSummary}, "")
-	return url, err
+	hash := sha256Hex(e.Content)
+	if !p.o.Dry {
+		// Zeilen nachlesen, die ein Durchlauf während des Wartens auf die Sperre schrieb
+		if err := p.ledger.Refresh(); err != nil {
+			p.warnOnce("ledger-refresh", "Protokoll nicht nachlesbar: %v", err)
+		}
+	}
+	url, g, err := p.process(ctx, job{primary: e, summaryOnly: e.Kind == domain.KindSummary}, hash)
+	if err != nil || p.o.Dry {
+		return url, err
+	}
+	if err := p.ledger.Add(ledger.Entry{Hash: hash, File: e.Name, ModTime: e.ModTime, URL: url, At: p.now(), MissingTasks: g.tasks, BlockErrors: g.blocks}); err != nil {
+		p.log.Printf("   ⚠️  Protokoll nicht geschrieben (Notiz existiert: %s): %v", url, err)
+	}
+	return url, nil
 }
 
 // process: Text aufbereiten → lokales LLM → Notion-Seite + Tasks.
-// hash != "": vor CreatePage "begonnen" ins Protokoll (ADR 0004); leer bei -file.
+// Vor CreatePage "begonnen" ins Protokoll (ADR 0004).
 // Ist die Seite angelegt, ist der Fehler nil, auch wenn Teile fehlen (gaps).
 func (p *Pipeline) process(ctx context.Context, j job, hash string) (string, gaps, error) {
 	pr := j.primary
@@ -431,14 +473,12 @@ func (p *Pipeline) process(ctx context.Context, j job, hash string) (string, gap
 	}
 
 	le := ledger.Entry{Hash: hash, Status: ledger.StatusBegonnen, File: pr.Name, ModTime: pr.ModTime, At: p.now()}
-	if hash != "" {
-		if err := p.ledger.Add(le); err != nil {
-			// Ohne "begonnen" keine Notion-Anfrage. verworfen setzt den Speicher
-			// zurück, damit der nächste Versuch normal läuft.
-			le.Status = ledger.StatusVerworfen
-			_ = p.ledger.Add(le) //nolint:errcheck // gemeldet wird der erste Fehler; bleibt auf Platte "begonnen", greift beim Neustart die Prüfregel (sicher)
-			return "", gaps{}, fmt.Errorf("Protokoll nicht schreibbar, Notion-Seite nicht angelegt: %w", err)
-		}
+	if err := p.ledger.Add(le); err != nil {
+		// Ohne "begonnen" keine Notion-Anfrage. verworfen setzt den Speicher
+		// zurück, damit der nächste Versuch normal läuft.
+		le.Status = ledger.StatusVerworfen
+		_ = p.ledger.Add(le) //nolint:errcheck // gemeldet wird der erste Fehler; bleibt auf Platte "begonnen", greift beim Neustart die Prüfregel (sicher)
+		return "", gaps{}, fmt.Errorf("Protokoll nicht schreibbar, Notion-Seite nicht angelegt: %w", err)
 	}
 	var g gaps
 	pageID, url, err := p.notion.CreatePage(ctx, p.o.NotesDS, notion.NoteProperties(p.o.NotesTypes, p.o.Notes, title, project, len(reasons) > 0), blocks)
@@ -451,7 +491,7 @@ func (p *Pipeline) process(ctx context.Context, j job, hash string) (string, gap
 		// Antwort mit Fehler: neuer Versuch wie bisher (OD-05), also verworfen.
 		// Bei Abbruch per Kontext bleibt "begonnen": die Anfrage kann Notion
 		// erreicht haben, der Neustart schickt die Datei zur Prüfung.
-		if hash != "" && ctx.Err() == nil {
+		if ctx.Err() == nil {
 			le.Status, le.At = ledger.StatusVerworfen, p.now()
 			if lerr := p.ledger.Add(le); lerr != nil {
 				p.log.Printf("   ⚠️  Protokoll nicht geschrieben: %v", lerr)

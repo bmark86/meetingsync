@@ -703,13 +703,47 @@ func TestCreatePageCanceledKeepsBegonnen(t *testing.T) {
 	}
 }
 
-// Fängt: -file (ProcessSingleFile) schreibt begonnen ins Protokoll (gehört zu R-M3-14).
-func TestProcessSingleFileWritesNoLedger(t *testing.T) {
+// -file schreibt das Protokoll wie ein Durchlauf (R-M3-14): begonnen vor
+// CreatePage, fertig danach; die Datei bleibt liegen. Der Dienst (eigener
+// Prozess, Ledger vor dem -file-Lauf geladen) archiviert sie danach als schon
+// verarbeitet, ohne zweite Seite.
+// Fängt: -file ohne Protokoll / begonnen nach CreatePage / Dienst liest das
+// Protokoll nicht nach (zweite Seite).
+func TestProcessSingleFileWritesLedger(t *testing.T) {
 	e := newCrashEnv(t)
-	if err := e.app.ProcessSingleFile(context.Background(), e.tr); err != nil {
+	svc := e.app // läuft schon, Ledger ist geladen
+	statusAtPost := ""
+	rt := &hookRT{after: onNotePost(func() { statusAtPost = e.lastStatus(t, e.hash()) })}
+	env, err := newEnv(e.app.cfg, e.app.loc, log.New(io.Discard, "", 0), false, rt)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if exists(ledgerPath(e.app.cfg)) {
-		t.Fatal("-file darf kein Protokoll schreiben")
+	env.Notifier = &fakeNotifier{}
+	fileApp, err := startTestApp(context.Background(), env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fileApp.ProcessSingleFile(context.Background(), e.tr); err != nil {
+		t.Fatal(err)
+	}
+	if statusAtPost != ledger.StatusBegonnen || e.lastStatus(t, e.hash()) != ledger.StatusFertig {
+		t.Fatalf("Status beim POST %q, danach %q; want begonnen, fertig", statusAtPost, e.lastStatus(t, e.hash()))
+	}
+	if !exists(e.tr) || !exists(e.sum) {
+		t.Fatal("-file darf nichts verschieben")
+	}
+	if n, _ := e.pages(); n != 1 {
+		t.Fatalf("Notizen = %d, want 1", n)
+	}
+
+	svc.Pass(context.Background(), time.Now())
+	if n, _ := e.pages(); n != 1 {
+		t.Fatalf("Dienst: Notizen = %d, want 1 (keine zweite Seite)", n)
+	}
+	if exists(e.tr) || exists(e.sum) || !exists(filepath.Join(e.app.cfg.ArchiveDir, e.month, filepath.Base(e.tr))) {
+		t.Fatalf("Dienst: Dateien nicht archiviert, Export: %v", remaining(t, e.dir))
+	}
+	if !strings.Contains(e.log.String(), "↺ "+filepath.Base(e.tr)+" wurde schon verarbeitet → Archiv") {
+		t.Fatalf("Log:\n%s", e.log)
 	}
 }
