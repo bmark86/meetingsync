@@ -106,6 +106,20 @@ func (p *Pipeline) fail(cause error, files ...*watch.Entry) (ok bool) {
 	return ok
 }
 
+// failJob verschiebt die Dateien des Jobs nach _fehler: Partner zuerst, das
+// Transkript zuletzt, Stopp beim ersten Fehler. Bleibt etwas liegen, dann
+// immer die primäre Datei mit ihrem Zustand, nie eine allein liegende
+// Zusammenfassung, die als Waise eine zweite Seite anlegen würde.
+func (p *Pipeline) failJob(j job, cause error) (ok bool) {
+	files := j.files()
+	for i := len(files) - 1; i >= 0; i-- {
+		if !p.fail(cause, files[i]) {
+			return false
+		}
+	}
+	return true
+}
+
 func (p *Pipeline) warnOnce(key, format string, args ...any) {
 	if p.warned[key] {
 		return

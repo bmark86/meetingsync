@@ -229,6 +229,15 @@ func (p *Pipeline) handle(ctx context.Context, j job, now time.Time) {
 		p.interrupted(j, hash, now)
 		return
 	}
+	if st := p.states[pr.Path]; st != nil && st.giveUp != nil {
+		if st.giveUpHash == hash {
+			p.log.Printf("✗ %s: max_attempts erreicht, neuer Versuch, die Dateien nach %s zu verschieben", pr.Name, p.o.FailedDir)
+			p.giveUp(j, st, st.giveUp, now)
+			return
+		}
+		// anderer Inhalt am selben Pfad: neue Datei, Zählung von vorn
+		delete(p.states, pr.Path)
+	}
 	p.log.Printf("→ %s (%s, %d KB)", pr.Name, map[bool]string{true: "nur Zusammenfassung", false: "Transkript"}[j.summaryOnly], pr.Size/1024)
 	url, g, err := p.process(ctx, j, hash)
 	if err == nil {
@@ -260,15 +269,10 @@ var ErrUnterbrochen = errors.New("Notion-Seite existiert evtl. schon – bitte i
 func (p *Pipeline) interrupted(j job, hash string, now time.Time) {
 	pr := j.primary
 	p.log.Printf("✗ %s: letzter Lauf wurde beim Anlegen in Notion unterbrochen → %s (bitte in Notion prüfen)", pr.Name, p.o.FailedDir)
-	// Partner zuerst, das Transkript zuletzt, Stopp beim ersten Fehler: bleibt
-	// etwas liegen, dann immer das Transkript mit "begonnen". So legt nie eine
-	// allein liegende Zusammenfassung eine zweite Seite an.
-	files := j.files()
-	for i := len(files) - 1; i >= 0; i-- {
-		if !p.fail(ErrUnterbrochen, files[i]) {
-			p.retryLater(pr.Path, now) // bleibt "begonnen"
-			return
-		}
+	// bleibt etwas liegen, dann das Transkript mit "begonnen" (failJob)
+	if !p.failJob(j, ErrUnterbrochen) {
+		p.retryLater(pr.Path, now) // bleibt "begonnen"
+		return
 	}
 	delete(p.states, pr.Path)
 	// Kopien mit demselben Hash in diesem Durchlauf gehen ebenfalls nach _fehler.
@@ -295,7 +299,7 @@ func (p *Pipeline) handleError(ctx context.Context, j job, err error, now time.T
 			return
 		}
 		p.log.Printf("   ✗ %v – Notion-Seite nicht angelegt, Dateien → %s", err, p.o.FailedDir)
-		if !p.fail(err, j.files()...) {
+		if !p.failJob(j, err) {
 			p.retryLater(pr.Path, now)
 			return
 		}
@@ -313,8 +317,7 @@ func (p *Pipeline) handleError(ctx context.Context, j job, err error, now time.T
 	wait, giveUp := p.retry.record(st, trans, now)
 	if giveUp {
 		p.log.Printf("   ✗ %v – gebe auf, Dateien → %s", err, p.o.FailedDir)
-		p.fail(err, j.files()...)
-		delete(p.states, pr.Path)
+		p.giveUp(j, st, err, now)
 		return
 	}
 	if trans {
@@ -322,6 +325,18 @@ func (p *Pipeline) handleError(ctx context.Context, j job, err error, now time.T
 		return
 	}
 	p.log.Printf("   ✗ %v (Versuch %d/%d)", err, st.Attempts, p.retry.maxAttempts)
+}
+
+// giveUp verschiebt die Dateien nach max_attempts nach _fehler. Scheitert das,
+// bleibt der Zustand mit Versuchszahl und Ursache: neuer Versuch in 2 min,
+// dann ohne LLM-Lauf direkt nach _fehler (handle, R-M3-18).
+func (p *Pipeline) giveUp(j job, st *FileState, cause error, now time.Time) {
+	if !p.failJob(j, cause) {
+		st.giveUp, st.giveUpHash = cause, sha256Hex(j.primary.Content)
+		p.retryLater(j.primary.Path, now)
+		return
+	}
+	delete(p.states, j.primary.Path)
 }
 
 // gaps zählt, was nach dem Anlegen der Notiz in Notion fehlt (OD-04: nur

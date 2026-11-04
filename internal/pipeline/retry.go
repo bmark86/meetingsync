@@ -12,6 +12,11 @@ type FileState struct {
 	Attempts  int       // Fehlversuche, zählen gegen max_attempts
 	Transient int       // bisherige vorübergehende Fehler, steuern den Backoff
 	NextTry   time.Time // vorher kein neuer Versuch
+	// giveUp: max_attempts erreicht, Verschieben nach _fehler gescheitert;
+	// Ursache für .fehler.txt beim nächsten Versuch (ohne LLM-Lauf), nur
+	// solange der Inhalt giveUpHash hat
+	giveUp     error
+	giveUpHash string
 }
 
 const (

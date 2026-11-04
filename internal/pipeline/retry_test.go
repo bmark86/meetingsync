@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"meetingsync/internal/domain"
+	"meetingsync/internal/ledger"
 	"meetingsync/internal/watch"
 )
 
@@ -190,5 +191,161 @@ func TestRetryPolicyRecord(t *testing.T) {
 	cancel()
 	if r.counts(ctx, errTrans) || !r.counts(ctx, errOther) || !r.counts(context.Background(), errTrans) {
 		t.Fatal("counts: nur vorübergehend + Abbruch zählt nicht")
+	}
+}
+
+// flakyMover: Rename scheitert für Pfade, für die fails true liefert, sonst
+// os.Rename. tried zeichnet die Quellpfade in Reihenfolge auf.
+type flakyMover struct {
+	fails func(src string) bool
+	tried []string
+}
+
+func (f *flakyMover) mover() watch.Mover {
+	return watch.Mover{Rename: func(src, dst string) error {
+		f.tried = append(f.tried, src)
+		if f.fails(src) {
+			return os.ErrPermission
+		}
+		return os.Rename(src, dst)
+	}}
+}
+
+// Fängt: gescheitertes Verschieben nach max_attempts löscht den Zustand
+// (Zählung beginnt von vorn), wartet nicht 2 min oder startet erneut das LLM.
+func TestPassGiveUpMoveFailsKeepsAttempts(t *testing.T) {
+	fm := &flakyMover{fails: func(string) bool { return true }}
+	e := newEnv(t, func(o *Options, d *Deps) { o.MaxAttempts = 2; d.Mover = fm.mover() })
+	e.llm.err = errOther
+	tr := e.write(t, "Sitzung.srt", testSRT, testM)
+	now := e.clock
+
+	e.p.Pass(context.Background(), now) // Versuch 1
+	// Versuch 2: gebe auf, Verschieben scheitert; danach Wartezeit, erneutes
+	// Scheitern, Wartezeit
+	for _, step := range []struct{ at, next time.Duration }{{2, 4}, {3, 4}, {4, 6}, {5, 6}} {
+		e.p.Pass(context.Background(), now.Add(step.at*time.Minute))
+		st := e.p.States()[tr]
+		if want := now.Add(step.next * time.Minute); st == nil || st.Attempts != 2 || !st.NextTry.Equal(want) || !exists(tr) {
+			t.Fatalf("+%d min: state %+v, want Attempts 2, NextTry %v, Datei bleibt", step.at, st, want)
+		}
+	}
+	if len(e.llm.got) != 2 {
+		t.Fatalf("LLM-Aufrufe = %d, want 2 (kein neuer Lauf nach max_attempts)", len(e.llm.got))
+	}
+	if n := strings.Count(e.log.String(), "max_attempts erreicht, neuer Versuch"); n != 1 {
+		t.Fatalf("neue Verschiebe-Versuche = %d, want 1, Log:\n%s", n, e.log)
+	}
+
+	fm.fails = func(string) bool { return false }
+	e.p.Pass(context.Background(), now.Add(6*time.Minute))
+	if exists(tr) || len(e.p.States()) != 0 || len(e.llm.got) != 2 {
+		t.Fatalf("Datei bleibt %v, state %v, LLM %d", exists(tr), e.p.States(), len(e.llm.got))
+	}
+	if got := mustRead(t, filepath.Join(e.o.FailedDir, "Sitzung.srt.fehler.txt")); !strings.Contains(got, "kaputt") {
+		t.Fatalf(".fehler.txt = %q", got)
+	}
+}
+
+// Fängt: Partner nicht zuerst verschoben, kein Stopp beim ersten Fehler oder
+// die liegen gebliebene Zusammenfassung läuft als Waise (zweite Notiz).
+func TestPassGiveUpPairSummaryMoveFails(t *testing.T) {
+	fm := &flakyMover{fails: func(src string) bool { return strings.HasSuffix(src, ".md") }}
+	e := newEnv(t, func(o *Options, d *Deps) { o.MaxAttempts = 1; d.Mover = fm.mover() })
+	e.llm.err = errOther
+	tr := e.write(t, "Sitzung.srt", testSRT, testM)
+	sum := e.write(t, "Sitzung.md", testSummary, testM.Add(time.Minute))
+	now := e.clock
+
+	e.p.Pass(context.Background(), now)
+	if len(fm.tried) != 1 || fm.tried[0] != sum || !exists(tr) || !exists(sum) {
+		t.Fatalf("Verschiebe-Reihenfolge %v, want nur die Zusammenfassung zuerst; beide bleiben", fm.tried)
+	}
+	if st := e.p.States()[tr]; st == nil || st.Attempts != 1 || !st.NextTry.Equal(now.Add(2*time.Minute)) {
+		t.Fatalf("state %+v", st)
+	}
+	e.p.Pass(context.Background(), now.Add(time.Minute))
+	e.p.Pass(context.Background(), now.Add(2*time.Minute))
+	if len(e.llm.got) != 1 || len(e.notion.pages) != 0 || e.p.States()[sum] != nil {
+		t.Fatalf("LLM %d, Seiten %d, Waise %v; Log:\n%s", len(e.llm.got), len(e.notion.pages), e.p.States()[sum], e.log)
+	}
+
+	fm.fails = func(string) bool { return false }
+	e.p.Pass(context.Background(), now.Add(4*time.Minute))
+	for _, n := range []string{"Sitzung.srt", "Sitzung.md"} {
+		if !exists(filepath.Join(e.o.FailedDir, n)) || !exists(filepath.Join(e.o.FailedDir, n+".fehler.txt")) {
+			t.Fatalf("%s nicht in _fehler", n)
+		}
+	}
+	if len(e.p.States()) != 0 || len(e.llm.got) != 1 {
+		t.Fatalf("state %v, LLM %d", e.p.States(), len(e.llm.got))
+	}
+}
+
+// Fängt: nach verschobenem Partner läuft das liegen gebliebene Transkript neu
+// durch das LLM statt direkt nach _fehler.
+func TestPassGiveUpTranscriptMoveFails(t *testing.T) {
+	fm := &flakyMover{fails: func(src string) bool { return strings.HasSuffix(src, ".srt") }}
+	e := newEnv(t, func(o *Options, d *Deps) { o.MaxAttempts = 1; d.Mover = fm.mover() })
+	e.llm.err = errOther
+	tr := e.write(t, "Sitzung.srt", testSRT, testM)
+	e.write(t, "Sitzung.md", testSummary, testM.Add(time.Minute))
+	now := e.clock
+
+	e.p.Pass(context.Background(), now)
+	if !exists(tr) || !exists(filepath.Join(e.o.FailedDir, "Sitzung.md.fehler.txt")) {
+		t.Fatal("want Zusammenfassung in _fehler, Transkript bleibt")
+	}
+	fm.fails = func(string) bool { return false }
+	e.p.Pass(context.Background(), now.Add(2*time.Minute))
+	if exists(tr) || !exists(filepath.Join(e.o.FailedDir, "Sitzung.srt.fehler.txt")) || len(e.llm.got) != 1 || len(e.p.States()) != 0 {
+		t.Fatalf("Transkript bleibt %v, LLM %d, state %v", exists(tr), len(e.llm.got), e.p.States())
+	}
+}
+
+// Fängt: giveUp vor der Ledger-Prüfung, eine schon fertige Datei landet in
+// _fehler statt im Archiv.
+func TestPassGiveUpLedgerDoneArchives(t *testing.T) {
+	fm := &flakyMover{fails: func(string) bool { return true }}
+	e := newEnv(t, func(o *Options, d *Deps) { o.MaxAttempts = 1; d.Mover = fm.mover() })
+	e.llm.err = errOther
+	tr := e.write(t, "Sitzung.srt", testSRT, testM)
+
+	e.p.Pass(context.Background(), e.clock)
+	if st := e.p.States()[tr]; st == nil || st.giveUp == nil {
+		t.Fatalf("state %+v, want giveUp", st)
+	}
+	if err := e.ledger.Add(ledger.Entry{Hash: sha256Hex([]byte(testSRT)), File: "Sitzung.srt", ModTime: testM}); err != nil {
+		t.Fatal(err)
+	}
+	fm.fails = func(string) bool { return false }
+	e.p.Pass(context.Background(), e.clock.Add(2*time.Minute))
+	if !exists(e.archived("Sitzung.srt")) || exists(filepath.Join(e.o.FailedDir, "Sitzung.srt")) || len(e.p.States()) != 0 {
+		t.Fatalf("Archiv %v, _fehler %v, state %v", exists(e.archived("Sitzung.srt")), exists(filepath.Join(e.o.FailedDir, "Sitzung.srt")), e.p.States())
+	}
+}
+
+// Fängt: veralteter giveUp-Zustand schickt eine neue, geänderte Datei am
+// selben Pfad ohne Verarbeitung nach _fehler.
+func TestPassGiveUpChangedContentProcesses(t *testing.T) {
+	fm := &flakyMover{fails: func(string) bool { return true }}
+	e := newEnv(t, func(o *Options, d *Deps) { o.MaxAttempts = 1; d.Mover = fm.mover() })
+	e.llm.err = errOther
+	tr := e.write(t, "Sitzung.srt", testSRT, testM)
+
+	e.p.Pass(context.Background(), e.clock)
+	if st := e.p.States()[tr]; st == nil || st.giveUp == nil || st.Attempts != 1 {
+		t.Fatalf("state %+v, want giveUp", st)
+	}
+	changed := testSRT + "\n"
+	e.write(t, "Sitzung.srt", changed, testM.Add(time.Second))
+	fm.fails = func(string) bool { return false }
+	e.llm.err = nil
+	e.p.Pass(context.Background(), e.clock.Add(2*time.Minute))
+	if len(e.llm.got) != 2 || len(e.notion.pages) == 0 || !e.ledger.Has(sha256Hex([]byte(changed))) {
+		t.Fatalf("LLM %d, Seiten %d; Log:\n%s", len(e.llm.got), len(e.notion.pages), e.log)
+	}
+	if exists(filepath.Join(e.o.FailedDir, "Sitzung.srt")) || !exists(e.archived("Sitzung.srt")) || len(e.p.States()) != 0 {
+		t.Fatalf("_fehler %v, Archiv %v, state %v", exists(filepath.Join(e.o.FailedDir, "Sitzung.srt")), exists(e.archived("Sitzung.srt")), e.p.States())
 	}
 }
