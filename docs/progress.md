@@ -47,6 +47,7 @@
 | R-M3-10 | plist `ThrottleInterval` 60 s in the repo template (S-21, OD-13); `plutil -lint` ok; `docs/launchd.md` row and note; installed plist untouched. Security review approved | done | 2026-11-03 |
 | R-M3-08 | IDs in Notion URL paths escaped with `url.PathEscape` (S-16): databases, data_sources, data_sources query, blocks children; `/v1/pages` has no ID; valid UUIDs unchanged, golden byte-identical; tests `TestIDsAreEscapedInPath`, `TestValidUUIDPathUnchanged`. Review approved. Accepted residual risk (OD-12, no change): `.` and `..` are not escaped, a config value `..` could be normalized by a server or proxy | done | 2026-11-03 |
 | R-M3-20 ⚠ | German date with underscore/dash/dot and time in file name (`07.01.2026_08-45`) no longer read as ISO date; German date used when it starts before the ISO match (follow-up 22). Decisions: Mark (2026-11-02) approved the fix (output change); coordinator: `DD.MM.YYYY.HH.MM` gets date only (`reDateDE` does not allow `.` before the time), pattern not widened; accepted limit: only the leftmost ISO and German matches are compared (`07.01.2026_08-45 und 2026-11-01` uses the German date). Golden unchanged; code review approved | done | 2026-11-03 |
+| R-M3-06 | Total block cap 1000 per note (S-09, OD-11): above it no Notion page, no ledger entry, no retry; files to `_fehler` with `.fehler.txt`, notification if `notify` is on. Golden unchanged; code review approved, fix round 1 done | done | 2026-11-04 |
 
 ## M1 summary (complete 2026-11-02: R-M1-01 to R-M1-07 + R-M1-EXIT)
 

@@ -5,6 +5,7 @@ package notion
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -157,5 +158,46 @@ func TestNoteBlocksSections(t *testing.T) {
 		if !strings.Contains(s, sub) {
 			t.Errorf("%s fehlt in den Blöcken", sub)
 		}
+	}
+}
+
+// decisions: n eindeutige Entscheidungen (je ein to_do-Block).
+func decisions(n int) []string {
+	out := make([]string, n)
+	for i := range out {
+		out[i] = fmt.Sprintf("Entscheidung %d", i)
+	}
+	return out
+}
+
+// Fängt: verschachtelte Blöcke (table_row, Toggle-Absätze) nicht oder das
+// Transkript mitgezählt.
+func TestCountBlocksNestedWithoutTranscript(t *testing.T) {
+	n := &domain.MeetingNote{}
+	// Leere Notiz: 24 Blöcke oben, dazu 5 Zeilen Meeting-Info und 2 Zeilen Next Actions.
+	if got := CountBlocks(n, domain.NoteMeta{}); got != 24+5+2 {
+		t.Fatalf("CountBlocks = %d", got)
+	}
+	if countNested(NoteBlocks(n, domain.NoteMeta{Transcript: truncLines(150)})) <= CountBlocks(n, domain.NoteMeta{Transcript: truncLines(150)}) {
+		t.Fatal("Transkript darf nicht mitzählen")
+	}
+}
+
+// Fängt: Grenze um eins verschoben (1000 erlaubt, 1001 nicht) oder Fehler
+// ohne Anzahl.
+func TestCheckBlockCountCap(t *testing.T) {
+	base := CountBlocks(&domain.MeetingNote{Entscheidungen: decisions(1)}, domain.NoteMeta{})
+	at := &domain.MeetingNote{Entscheidungen: decisions(MaxBloecke - base + 1)}
+	meta := domain.NoteMeta{Transcript: truncLines(150)}
+	if got := CountBlocks(at, meta); got != MaxBloecke {
+		t.Fatalf("CountBlocks = %d, want %d", got, MaxBloecke)
+	}
+	if err := CheckBlockCount(at, meta); err != nil {
+		t.Fatalf("genau an der Grenze: %v", err)
+	}
+	over := &domain.MeetingNote{Entscheidungen: decisions(MaxBloecke - base + 2)}
+	err := CheckBlockCount(over, meta)
+	if !errors.Is(err, ErrZuVieleBloecke) || err.Error() != "zu viele Blöcke (1001, höchstens 1000)" {
+		t.Fatalf("err = %v", err)
 	}
 }

@@ -128,7 +128,6 @@ flowchart TD
 
 | # | Question | Finding |
 | --- | --- | --- |
-| 1 | Value and behavior of the block total cap (plan OD-11). Asked right before R-M3-06 | S-09 |
-| 2 | History rewrite: tool (`git filter-repo` needs installing) and time (plan OD-15). Asked right before R-M4-02 | S-05 |
+| 1 | History rewrite: tool (`git filter-repo` needs installing) and time (plan OD-15). Asked right before R-M4-02 | S-05 |
 
 `%q` in error messages (progress #1, S-17) is a fix with no behavior change and is planned. More detail questions are collected in the plan, section 9.

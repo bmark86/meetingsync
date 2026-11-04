@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 
 	"meetingsync/internal/domain"
 	"meetingsync/internal/ledger"
+	"meetingsync/internal/llm"
 	"meetingsync/internal/notion"
 	"meetingsync/internal/watch"
 )
@@ -397,5 +399,135 @@ func TestNewNilDryRunIsNoop(t *testing.T) {
 
 	if len(e.llm.got) != 1 || e.notion.count("notes-ds") != 0 {
 		t.Fatalf("Dry-Run: LLM-Aufrufe %d, Notizen %d, Log:\n%s", len(e.llm.got), e.notion.count("notes-ds"), e.log.String())
+	}
+}
+
+// noteWithBlocks: testNote mit so vielen Entscheidungen, dass die Notiz total
+// Blöcke hat (ohne Transkript, wie notion.CountBlocks).
+func noteWithBlocks(total int) func() *domain.MeetingNote {
+	build := func(k int) *domain.MeetingNote {
+		n := testNote()
+		for i := range k {
+			n.Entscheidungen = append(n.Entscheidungen, fmt.Sprintf("Entscheidung %d", i))
+		}
+		llm.Normalize(n)
+		return n
+	}
+	k := total - notion.CountBlocks(build(1), domain.NoteMeta{}) + 1
+	return func() *domain.MeetingNote { return build(k) }
+}
+
+// Fängt: Notiz über der Blockgrenze legt eine Seite an, schreibt "begonnen",
+// zählt gegen max_attempts statt sofort nach _fehler oder meldet nichts.
+func TestPassTooManyBlocksToFailed(t *testing.T) {
+	e := newEnv(t, func(o *Options, _ *Deps) { o.Notify = true })
+	e.llm.note = noteWithBlocks(5000)
+	tr := e.write(t, "Sitzung.srt", testSRT, testM)
+	sum := e.write(t, "Sitzung.md", testSummary, testM.Add(time.Minute))
+
+	e.p.Pass(context.Background(), e.clock)
+
+	if len(e.notion.pages) != 0 {
+		t.Fatalf("Seiten = %+v, want keine", e.notion.pages)
+	}
+	if exists(filepath.Join(e.o.ArchiveDir, ".meetingsync-ledger.jsonl")) || e.ledger.Started(sha256Hex([]byte(testSRT))) || e.ledger.Has(sha256Hex([]byte(testSRT))) {
+		t.Fatal("kein Protokolleintrag erwartet")
+	}
+	if exists(tr) || exists(sum) {
+		t.Fatal("Dateien müssen aus dem Exportordner weg sein")
+	}
+	for _, n := range []string{"Sitzung.srt", "Sitzung.md"} {
+		if got := mustRead(t, filepath.Join(e.o.FailedDir, n+".fehler.txt")); !strings.Contains(got, "zu viele Blöcke (5000, höchstens 1000)") {
+			t.Fatalf("%s.fehler.txt = %q", n, got)
+		}
+	}
+	want := [2]string{"Meeting-Notiz nicht angelegt", "Sitzung.srt: zu viele Blöcke (5000, höchstens 1000)"}
+	if len(e.notifier.calls) != 1 || e.notifier.calls[0] != want {
+		t.Fatalf("Mitteilungen = %v", e.notifier.calls)
+	}
+	if len(e.p.States()) != 0 {
+		t.Fatalf("Zustand = %v, want keiner (kein Versuch gezählt)", e.p.States())
+	}
+	if !strings.Contains(e.log.String(), "✗ zu viele Blöcke (5000, höchstens 1000) – Notion-Seite nicht angelegt") {
+		t.Fatalf("Log:\n%s", e.log)
+	}
+	e.p.Pass(context.Background(), e.clock.Add(time.Hour))
+	if len(e.llm.got) != 1 {
+		t.Fatalf("LLM-Aufrufe = %d, want kein neuer Versuch", len(e.llm.got))
+	}
+}
+
+// Fängt: Grenze um eins verschoben oder Transkript mitgezählt.
+func TestPassBlockCapBoundary(t *testing.T) {
+	transcriptOpt := func(o *Options, _ *Deps) { o.IncludeTranscript = true }
+	e := newEnv(t, transcriptOpt)
+	e.llm.note = noteWithBlocks(notion.MaxBloecke)
+	e.write(t, "Sitzung.srt", testSRT, testM)
+	e.p.Pass(context.Background(), e.clock)
+	if e.notion.count("notes-ds") != 1 || failedFiles(e.o.FailedDir) != 0 {
+		t.Fatalf("genau an der Grenze: Notizen %d, Log:\n%s", e.notion.count("notes-ds"), e.log)
+	}
+
+	e = newEnv(t, transcriptOpt)
+	e.llm.note = noteWithBlocks(notion.MaxBloecke + 1)
+	e.write(t, "Sitzung.srt", testSRT, testM)
+	e.p.Pass(context.Background(), e.clock)
+	if len(e.notion.pages) != 0 || !exists(filepath.Join(e.o.FailedDir, "Sitzung.srt.fehler.txt")) {
+		t.Fatalf("eins über der Grenze: Seiten %d, Log:\n%s", len(e.notion.pages), e.log)
+	}
+}
+
+// Fängt: Dry-Run über der Grenze verschiebt, druckt das Ergebnis, meldet oder
+// merkt den Hash als fertig.
+func TestPassTooManyBlocksDryRun(t *testing.T) {
+	printed := false
+	e := newEnv(t, func(o *Options, d *Deps) {
+		o.Dry, o.Notify = true, true
+		d.DryRun = func(string, *notion.Page, *domain.MeetingNote, []string, int) { printed = true }
+	})
+	e.llm.note = noteWithBlocks(5000)
+	p := e.write(t, "Sitzung.srt", testSRT, testM)
+	e.p.Pass(context.Background(), e.clock)
+	if printed || !exists(p) || failedFiles(e.o.FailedDir) != 0 || len(e.notifier.calls) != 0 || e.ledger.Has(sha256Hex([]byte(testSRT))) {
+		t.Fatalf("Dry-Run: gedruckt %v, Datei bleibt %v, Mitteilungen %v", printed, exists(p), e.notifier.calls)
+	}
+	if !strings.Contains(e.log.String(), "zu viele Blöcke (5000, höchstens 1000)") || strings.Contains(e.log.String(), "→ "+e.o.FailedDir) {
+		t.Fatalf("Log:\n%s", e.log)
+	}
+	// Watch-Schleife: kein neuer LLM-Lauf im direkt folgenden Durchlauf
+	e.p.Pass(context.Background(), e.clock.Add(10*time.Second))
+	if len(e.llm.got) != 1 {
+		t.Fatalf("LLM-Aufrufe = %d, want 1 (Wartezeit)", len(e.llm.got))
+	}
+}
+
+// Fängt: Verschieben nach _fehler scheitert, trotzdem Zustand gelöscht (LLM-Lauf
+// und Mitteilung bei jedem Durchlauf) oder Mitteilung ohne verschobene Datei.
+func TestPassTooManyBlocksMoveFails(t *testing.T) {
+	e := newEnv(t, func(o *Options, d *Deps) {
+		o.Notify = true
+		d.Mover = watch.Mover{Rename: func(string, string) error { return os.ErrPermission }}
+	})
+	e.llm.note = noteWithBlocks(5000)
+	tr := e.write(t, "Sitzung.srt", testSRT, testM)
+	e.p.Pass(context.Background(), e.clock)
+	st := e.p.States()[tr]
+	if !exists(tr) || len(e.notifier.calls) != 0 || st == nil || st.Attempts != 0 || !st.NextTry.Equal(e.clock.Add(2*time.Minute)) {
+		t.Fatalf("Datei bleibt %v, Mitteilungen %v, state %+v", exists(tr), e.notifier.calls, st)
+	}
+	e.p.Pass(context.Background(), e.clock.Add(10*time.Second))
+	if len(e.llm.got) != 1 {
+		t.Fatalf("LLM-Aufrufe = %d, want 1 (Wartezeit)", len(e.llm.got))
+	}
+}
+
+// Fängt: -file über der Grenze legt an, verschiebt oder meldet.
+func TestProcessFileTooManyBlocks(t *testing.T) {
+	e := newEnv(t, func(o *Options, _ *Deps) { o.Notify = true })
+	e.llm.note = noteWithBlocks(5000)
+	p := e.write(t, "Sitzung.srt", testSRT, testM)
+	_, err := e.p.ProcessFile(context.Background(), &watch.Entry{Path: p, Name: "Sitzung.srt", ModTime: testM, Kind: domain.KindTranscript, Content: []byte(testSRT)})
+	if !errors.Is(err, notion.ErrZuVieleBloecke) || len(e.notion.pages) != 0 || !exists(p) || len(e.notifier.calls) != 0 {
+		t.Fatalf("err=%v Seiten %d Datei bleibt %v Mitteilungen %v", err, len(e.notion.pages), exists(p), e.notifier.calls)
 	}
 }

@@ -46,6 +46,7 @@ Exceptions only with Mark's decision. They are marked in the task as **⚠ behav
 | R-M1-01, R-M1-02 | Ledger lines with status; "started without URL" → `_fehler` | D1 | 0004 |
 | R-M1-04 | New dependency `golang.org/x/sys` for the atomic rename; `go` 1.26 → 1.26.0; deleting own fresh/partial copy | Mark, 2026-11-02 | 0005 |
 | R-M3-01 | Abort at start if `llm.base_url` is not loopback | D3 | 0007 |
+| R-M3-06 | Note above 1000 Notion blocks is not sent: no page, no ledger entry, no retry; files to `_fehler` | Mark, 2026-11-03 (OD-11) | – |
 | R-M3-12 | Note with to-dos for Mark → `Prüfen` flag, notice box, notification | D5 | 0010 |
 | R-M0-11 | `go` directive 1.22 → 1.26: stricter TLS/x509/url/http defaults | Mark, 2026-11-01 (OD-01 revisited) | 0002 (extended) |
 | R-M3-13 | `-check` exits with a code other than 0 when a check shows ✗ (G10 changes) | D7 (OD-17) | 0012 |
@@ -526,13 +527,14 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 - Reviews: CR, SR, QA.
 - Status: done 2026-11-02. `maxAntwortBytes` = 10 MiB per client; oversize or read error on 2xx is non-transient without body content; error statuses read with the same limit; `Models()` errors at >= 300 (`-check` shows `✗ LM Studio nicht erreichbar … HTTP 401`, exit code and golden unchanged); `notion.ErrUnklar` wraps an incomplete 2xx `CreatePage` read; truncated PATCH reply counts as append error (`ErrUnvollstaendig`). CR and SR approved. Idea (no task): an LLM body read timeout is non-transient (as before); wrapping it in `domain.Transient` would match the CLAUDE.md retry rule, not changed now (coordinator). Follow-up: R-M3-17.
 
-#### R-M3-06 Total block cap
+#### R-M3-06 Total block cap ⚠
 - Goal: limit the number of blocks per page.
-- Acceptance: cap value and behavior per OD-11 (still open: value after measuring real notes, behavior for example "shorten + reason for `Prüfen`"; ask Mark right before this task); test with an LLM response far above the cap; golden G14 unchanged (it is below the cap).
+- Acceptance: cap value and behavior per OD-11 (decided, see Status); test with an LLM response far above the cap; golden G14 unchanged (it is below the cap).
 - Scope: `internal/notion` (blocks), tests.
-- Depends on: M2, answer to OD-11. Findings: S-09.
+- Depends on: M2, OD-11 (decided). Findings: S-09.
 - Model: sonnet, counting.
 - Reviews: CR, SR, QA.
+- Status: **done 2026-11-04.** OD-11 (Mark, 2026-11-03): cap 1000 blocks per note, transcript part not counted. `MaxBloecke`, `CountBlocks` (nested blocks counted; transcript divider, toggle and its paragraphs excluded), `CheckBlockCount`, `ErrZuVieleBloecke` in `internal/notion/blocks.go`. Checked in `internal/pipeline/pipeline.go` after `NoteBlocks`, before dry-run output, `begonnen` and `CreatePage`. Above the cap: no Notion page, no ledger entry, no retry; files to `_fehler` with `.fehler.txt`; notification `Meeting-Notiz nicht angelegt` only if `notify` is on and only after a successful move. If the move fails: state kept, retry in 2 min, no attempt counted, no notification. Dry-run in the watch loop: nothing moved, 2 min wait. `-file`: returns the error, moves nothing. Golden unchanged (G14 below the cap). Code review approved; fix round 1 (move failure, dry-run loop). Accepted: `NoteBlocks` is built twice (negligible cost). Open: pair partial move, see R-M3-18.
 
 #### R-M3-07 Absolute paths and minimal environment
 - Goal: `/usr/bin/security`, `/usr/bin/osascript` with a minimal environment.
@@ -657,6 +659,7 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 - Depends on: R-M1-07.
 - Model: opus, retry state.
 - Reviews: CR, SR, QA.
+- Also (from R-M3-06, coordinator 2026-11-04): the general `giveUp` path and the block-cap path (`ErrZuVieleBloecke`) both move the partner first and the transcript last, and stop at the first error (as `interrupted()` does). A pair can otherwise end up half moved (transcript moved, summary not). The block-cap branch already keeps the state on a move failure (retry in 2 min, no attempt counted), so only the pair order is open there.
 
 #### R-M3-19 Open export files with O_NOFOLLOW
 - Status: **merged into R-M3-03** (coordinator decision, 2026-11-02): same code in `internal/watch/fs.go`; R-M1-07 already skips non-regular files in `listEntries`. The goal and acceptance below move to R-M3-03.
@@ -799,7 +802,7 @@ Parallel only with disjoint files and `isolation: "worktree"`.
 | P3 | R-M0-08, R-M0-09, R-M0-10, R-M0-11 | in parallel with each other (separate test files); R-M0-11 touches only `go.mod` and docs | R-M0-09 only after R-M0-03; R-M0-11 only after R-M0-05 to R-M0-07 |
 | P4 | R-M1-01 → R-M1-02 → R-M1-03; R-M1-04 → R-M1-05 → R-M1-07 | R-M1-06 (config.go, main.go) | All other M1 tasks change `app.go` → one after another (order: 01, 02, 03, 04, 05, 07) |
 | P5 | R-M2-01 → 02 → 03 → 04 → 05 → 06 → 07 → 08 → 09 → 10 | none | Every cut changes callers in `app.go` |
-| P6 | Lane Config: R-M3-09 → R-M3-01 → R-M3-02 → R-M3-11 → R-M3-15 (R-M3-15 also after R-M3-07) | Lane Files: R-M3-03 → R-M3-04 → R-M3-14; Lane HTTP: R-M3-05 → R-M3-06 (after OD-11) → R-M3-08; Lane Processes: R-M3-07; Lane CLI: R-M3-13; R-M3-12 → R-M3-16 (sequential: same notification/log code and golden G16b) | Packages are disjoint after M2 |
+| P6 | Lane Config: R-M3-09 → R-M3-01 → R-M3-02 → R-M3-11 → R-M3-15 (R-M3-15 also after R-M3-07) | Lane Files: R-M3-03 → R-M3-04 → R-M3-14; Lane HTTP: R-M3-05 → R-M3-06 → R-M3-08; Lane Processes: R-M3-07; Lane CLI: R-M3-13; R-M3-12 → R-M3-16 (sequential: same notification/log code and golden G16b) | Packages are disjoint after M2 |
 | P7 | R-M4-02 | nothing (no open branches) | The rewrite needs a quiet state; earliest after R-M4-01, latest before the next release; ask OD-15 first |
 | P8 | R-M5-01 → R-M5-02 | R-M5-03, R-M4-03, R-M4-04 | |
 | P9 | R-M6-01 ∥ R-M6-02 → R-M6-03 | | |
@@ -861,7 +864,7 @@ All proposals are accepted ("decided: proposal") on 2026-11-01. Two points stay 
 | OD-08 | Is `llm.base_url` in your config loopback? | answered: yes, `http://localhost:1234/v1` | R-M3-01 not blocked |
 | OD-09 | Are there symlinks in the watch folder that should be processed? | decided: proposal: no → skip | – |
 | OD-10 | Set the existing ledger file and folders to 0600/0700 afterwards, or only new ones | decided: proposal: new ones only | – |
-| OD-11 | Total block cap: value and behavior (shorten + reason for `Prüfen`?) | **open**: value after measuring real notes; ask Mark right before the task | R-M3-06 |
+| OD-11 | Total block cap: value and behavior | decided: Mark, 2026-11-03: 1000 blocks per note, transcript part not counted; above the cap no Notion page, no ledger entry, no retry, files to `_fehler`, macOS notification (if `notify` is on) | done (R-M3-06) |
 | OD-12 | ID format check at start (abort on an invalid ID) | decided: proposal: PathEscape only, no check | – |
 | OD-13 | `ThrottleInterval` value | decided: 60 s | – |
 | OD-14 | D4: code default = today's text (stays in the repo) or neutral + values in your config. b) Is `my_name` in your config? | decided: proposal: neutral + config entry before the rebuild. b) answered: yes, `my_name: Mark` is in the config | R-M4-03 not blocked |
