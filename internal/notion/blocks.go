@@ -1,6 +1,8 @@
 package notion
 
 import (
+	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
@@ -94,6 +96,46 @@ func NoteBlocks(n *domain.MeetingNote, m domain.NoteMeta) []any {
 		b = append(b, divider(), toggle("🎙️ Transkript", transcriptParagraphs(m.Transcript)))
 	}
 	return b
+}
+
+// MaxBloecke ist die Obergrenze an Blöcken je Notiz (OD-11, S-09).
+const MaxBloecke = 1000
+
+// ErrZuVieleBloecke meldet, dass die Notiz mehr als MaxBloecke Blöcke hätte. Keine
+// Notion-Seite, kein neuer Versuch (OD-11).
+var ErrZuVieleBloecke = errors.New("zu viele Blöcke")
+
+// CountBlocks zählt die Blöcke, die NoteBlocks aus dem LLM-Inhalt baut,
+// verschachtelte (table_row, children) eingeschlossen. Das Transkript zählt
+// nicht: weder seine Absätze (schon auf 100 begrenzt) noch der Toggle und der
+// Trenner davor, sonst läge eine Notiz knapp unter der Grenze nur mit
+// include_transcript darüber.
+func CountBlocks(n *domain.MeetingNote, m domain.NoteMeta) int {
+	m.Transcript = ""
+	return countNested(NoteBlocks(n, m))
+}
+
+// CheckBlockCount liefert ErrZuVieleBloecke (mit Anzahl), wenn CountBlocks
+// über MaxBloecke liegt.
+func CheckBlockCount(n *domain.MeetingNote, m domain.NoteMeta) error {
+	if c := CountBlocks(n, m); c > MaxBloecke {
+		return fmt.Errorf("%w (%d, höchstens %d)", ErrZuVieleBloecke, c, MaxBloecke)
+	}
+	return nil
+}
+
+func countNested(blocks []any) int {
+	c := 0
+	for _, b := range blocks {
+		c++
+		bm, _ := b.(map[string]any)
+		typ, _ := bm["type"].(string)
+		content, _ := bm[typ].(map[string]any)
+		if children, ok := content["children"].([]any); ok {
+			c += countNested(children)
+		}
+	}
+	return c
 }
 
 // FormatTitle setzt Datum, Titel und Typ in das Titelformat ein.

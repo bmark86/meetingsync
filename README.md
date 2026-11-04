@@ -41,7 +41,7 @@ go build -o ~/bin/meetingsync .
 - Load Gemma and set the **context length to at least 32768**. The default (4096) is far too small for transcripts.
 - Copy the exact model identifier (in the Developer tab or with `lms ls`). You need it soon for `llm.model`.
 
-If LM Studio is not running, that is fine. The files stay in place and are retried automatically (after 1, 2, 4, 8 minutes, then every 16 minutes, until `max_attempts` is reached, then `_fehler`).
+If LM Studio is not running, that is fine. The files stay in place and are retried automatically (after 1, 2, 4, 8 minutes, then every 16 minutes, until `max_attempts` is reached, then `_fehler`). Exception: a note with more than 1000 Notion blocks (transcript not counted) is not retried and goes straight to `_fehler`.
 
 Time needed: about 4–5 minutes of LLM time per hour of meeting (from experience with `gemma-4-31b-qat`).
 
@@ -177,7 +177,7 @@ The full, commented reference of all options is in [config.example.yaml](config.
 | `orphan_summary_minutes` | `10` | How long such a file waits for its transcript |
 | `pair_window_seconds` | `180` | Time window in which a transcript and a summary count as a pair |
 | `stable_seconds` | `20` | A file must stay unchanged for this long |
-| `max_attempts` | `10` | Failed attempts (all errors, also temporary ones). After that, the file moves to `_fehler` (with `.fehler.txt`) |
+| `max_attempts` | `10` | Failed attempts (all errors count, also temporary ones, except the block cap, which goes to `_fehler` at once). After that, the file moves to `_fehler` (with `.fehler.txt`) |
 | `llm.model` | – | Model identifier from LM Studio |
 | `llm.max_chunk_chars` | `60000` | Longer transcripts are first condensed in parts |
 | `notion.create_tasks_for` | `me` | `me` = only your to-dos, `all` = all, `none` = none |

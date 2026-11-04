@@ -285,6 +285,25 @@ func (p *Pipeline) interrupted(j job, hash string, now time.Time) {
 // Nur die Wartezeit unterscheidet sich; ein Abbruch per Kontext zählt nicht.
 func (p *Pipeline) handleError(ctx context.Context, j job, err error, now time.Time) {
 	pr := j.primary
+	if errors.Is(err, notion.ErrZuVieleBloecke) {
+		// Ohne neuen Versuch nach _fehler (OD-11); max_attempts zählt nicht.
+		if p.o.Dry {
+			// nichts verschieben; Wartezeit, sonst LLM-Lauf bei jedem Durchlauf
+			p.log.Printf("   ✗ %v – Notion-Seite nicht angelegt (Dry-Run, Dateien bleiben liegen)", err)
+			p.retryLater(pr.Path, now)
+			return
+		}
+		p.log.Printf("   ✗ %v – Notion-Seite nicht angelegt, Dateien → %s", err, p.o.FailedDir)
+		if !p.fail(err, j.files()...) {
+			p.retryLater(pr.Path, now)
+			return
+		}
+		delete(p.states, pr.Path)
+		if p.o.Notify {
+			p.notifier.Notify("Meeting-Notiz nicht angelegt", pr.Name+": "+err.Error())
+		}
+		return
+	}
 	if !p.retry.counts(ctx, err) {
 		return
 	}
@@ -379,6 +398,10 @@ func (p *Pipeline) process(ctx context.Context, j job, hash string) (string, gap
 		meta.Transcript = text
 	}
 	blocks := notion.NoteBlocks(note, meta)
+	// vor "begonnen" und CreatePage: über der Grenze kein Protokolleintrag (OD-11)
+	if err := notion.CheckBlockCount(note, meta); err != nil {
+		return "", gaps{}, err
+	}
 
 	if p.o.Dry {
 		p.dryRun(title, project, note, reasons, len(blocks))
