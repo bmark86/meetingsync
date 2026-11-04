@@ -3,11 +3,13 @@ package pipeline
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -50,8 +52,9 @@ func testNote() *domain.MeetingNote {
 }
 
 type fakePage struct {
-	ds    string
-	props map[string]any
+	ds     string
+	props  map[string]any
+	blocks []any
 }
 
 // fakeNotion zeichnet angelegte Seiten auf. onCreate (optional) entscheidet je
@@ -63,17 +66,28 @@ type fakeNotion struct {
 	projects  []notion.Page
 	projErr   error
 	projCalls int
+	// keepOnErr: die Seite entsteht auch bei einem Fehler von onCreate
+	// (unklarer Ausgang: Notion legt an, die Antwort geht verloren)
+	keepOnErr bool
+	finds     int
+	findErr   error
+	appends   []string // "<pageID>:<Anzahl Blöcke>" je AppendRest
+	appended  [][]any  // Blöcke je AppendRest
+	appendErr error
 }
 
-func (f *fakeNotion) CreatePage(_ context.Context, ds string, props map[string]any, _ []any) (string, string, error) {
+func (f *fakeNotion) CreatePage(_ context.Context, ds string, props map[string]any, blocks []any) (string, string, error) {
 	var err error
 	if f.onCreate != nil {
 		err = f.onCreate(ds)
 	}
 	if err != nil && !errors.Is(err, notion.ErrUnvollstaendig) {
+		if f.keepOnErr {
+			f.pages = append(f.pages, fakePage{ds: ds, props: props, blocks: blocks})
+		}
 		return "", "", err
 	}
-	f.pages = append(f.pages, fakePage{ds: ds, props: props})
+	f.pages = append(f.pages, fakePage{ds: ds, props: props, blocks: blocks})
 	n := len(f.pages)
 	return fmt.Sprintf("page-%d", n), fmt.Sprintf("https://notion.so/page-%d", n), err
 }
@@ -81,6 +95,47 @@ func (f *fakeNotion) CreatePage(_ context.Context, ds string, props map[string]a
 func (f *fakeNotion) ActiveProjects(context.Context, string, notion.ProjectsProps, notion.Schema) ([]notion.Page, error) {
 	f.projCalls++
 	return f.projects, f.projErr
+}
+
+// FindByText liefert alle angelegten Seiten aus ds, deren Textspalte prop genau
+// text ist (älteste zuerst), oder findErr.
+func (f *fakeNotion) FindByText(_ context.Context, ds, prop, text string) ([]notion.PageRef, error) {
+	f.finds++
+	if f.findErr != nil {
+		return nil, f.findErr
+	}
+	var res []notion.PageRef
+	for i, pg := range f.pages {
+		if pg.ds == ds && richText(pg.props[prop]) == text {
+			n := i + 1
+			res = append(res, notion.PageRef{ID: fmt.Sprintf("page-%d", n), URL: fmt.Sprintf("https://notion.so/page-%d", n)})
+		}
+	}
+	return res, nil
+}
+
+func (f *fakeNotion) AppendRest(_ context.Context, pageID string, children []any) error {
+	f.appends = append(f.appends, fmt.Sprintf("%s:%d", pageID, len(children)))
+	f.appended = append(f.appended, children)
+	return f.appendErr
+}
+
+// richText liest den Text eines rich_text-Werts wie aus notion.NoteProperties.
+func richText(v any) string {
+	b, _ := json.Marshal(v) //nolint:errcheck // Werte aus NoteProperties
+	var p struct {
+		RichText []struct {
+			Text struct {
+				Content string `json:"content"`
+			} `json:"text"`
+		} `json:"rich_text"`
+	}
+	_ = json.Unmarshal(b, &p) //nolint:errcheck // anderer Typ: leerer Text
+	var sb strings.Builder
+	for _, r := range p.RichText {
+		sb.WriteString(r.Text.Content)
+	}
+	return sb.String()
 }
 
 func (f *fakeNotion) count(ds string) int {

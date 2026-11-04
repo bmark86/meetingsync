@@ -51,6 +51,14 @@ func (f *fakeNotion) ActiveProjects(context.Context, string, notion.ProjectsProp
 	return []notion.Page{{ID: "p1", Name: "AI-First"}}, nil
 }
 
+func (f *fakeNotion) FindByText(context.Context, string, string, string) ([]notion.PageRef, error) {
+	return nil, errors.New("FindByText im Test nicht erwartet")
+}
+
+func (f *fakeNotion) AppendRest(context.Context, string, []any) error {
+	return errors.New("AppendRest im Test nicht erwartet")
+}
+
 // fakeLLM meldet models oder err; Summarize liefert note.
 type fakeLLM struct {
 	models []string
@@ -193,6 +201,39 @@ func TestInitErrors(t *testing.T) {
 			}
 			if c.name == "Projects nicht lesbar" && s.ProjectsDS != "" {
 				t.Fatalf("ProjectsDS = %q, want leer", s.ProjectsDS)
+			}
+		})
+	}
+}
+
+// Fängt: Hinweis fehlt bei konfigurierter, aber fehlender oder falsch typisierter
+// Herkunftsspalte, oder kommt ohne Konfiguration / bei passender Spalte (R-M3-17).
+func TestInitSourceHint(t *testing.T) {
+	const hint = `Hinweis: Notes hat keine Textspalte "Quelle" (notes_properties.source) – kein Schutz vor einer zweiten Notiz nach unklarem Fehler beim Anlegen.`
+	cases := []struct {
+		name   string
+		source string
+		kind   notion.PropertyKind // "" = Spalte fehlt
+		want   bool
+	}{
+		{"nicht konfiguriert", "", "", false},
+		{"Spalte fehlt", "Quelle", "", true},
+		{"falscher Typ", "Quelle", notion.KindSelect, true},
+		{"Textspalte", "Quelle", notion.KindRichText, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			n := goodNotion()
+			if c.kind != "" {
+				n.schemas["notes"]["Quelle"] = c.kind
+			}
+			e, buf := testEnv(t, n)
+			e.Cfg.Notion.Notes.Source = c.source
+			if _, err := Init(context.Background(), e); err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(buf.String(), hint) != c.want {
+				t.Fatalf("Log (Hinweis erwartet: %v):\n%s", c.want, buf)
 			}
 		})
 	}

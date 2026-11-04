@@ -656,6 +656,7 @@ Exit: S-02, S-03, S-04, S-06, S-08, S-09, S-10, S-12 (permissions), S-16, S-17, 
 - Depends on: R-M1-02; M2 pipeline split preferred.
 - Model: opus, crash and retry semantics.
 - Reviews: CR, SR, QA. Update ADR 0004.
+- Status: **done 2026-11-04.** Column `notes_properties.source` ("Quelle", empty = off); marker `<file name> · <mtime 2006-01-02 15:04:05 in config timezone>`, no content hash (Mark, privacy). `ErrUnklar` for 5xx, `*url.Error`, unreadable/unparsable 2xx. Lookup of the stored marker before the next create; found = reuse; nothing within 5 min = wait; lookup error = failed attempt. LLM result cached in memory. Golden unchanged. Security review approved after fix rounds 1 and 2. ADR 0004 updated. Live test open.
 
 #### R-M3-18 Keep the attempt count when the move to _fehler fails
 - Goal: a failed move to `_fehler` does not reset `max_attempts`.

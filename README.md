@@ -134,7 +134,7 @@ To stop: `launchctl bootout gui/$(id -u)/de.borukhov.meetingsync`
 
 So that the inbox does not turn into an archive:
 
-1. In **Notes**, create a checkbox property **Prüfen** (optional. Without it, you only get the yellow box on the page). It is also checked for notes with to-dos for you.
+1. In **Notes**, create a checkbox property **Prüfen** (optional. Without it, you only get the yellow box on the page). It is also checked for notes with to-dos for you. Recommended, also optional: a text property **Quelle** (source), set in the config as `notes_properties.source: Quelle` (see [Configuration in detail](#configuration-in-detail)).
 2. On the Second Brain start page, add two linked views:
    - **Zu prüfen** ("to check") – Notes, filter: *Prüfen is checked* and *Status = Inbox*
    - **Meine offenen To-dos** ("my open to-dos") – Tasks, filter: *Completed is not checked*, sorted by *Due Date*
@@ -191,6 +191,7 @@ The full, commented reference of all options is in [config.example.yaml](config.
 | `llm.api_key_keychain_service` | empty | Keychain entry for the LLM key, e.g. `meetingsync-llm` (see step 3). The key is looked up in this order: env `LLM_API_KEY` → keychain (an error there aborts the start) → `llm.api_key` |
 | `llm.max_chunk_chars` | `60000` | Longer transcripts are first condensed in parts |
 | `notion.create_tasks_for` | `me` | `me` = only your to-dos, `all` = all, `none` = none |
+| `notes_properties.source` | empty | Name of a text property in Notes, e.g. `Quelle`. Gets "file name · modification time". After an unclear Notion error when creating a note (e.g. 5xx, timeout), the note is looked up before a retry, so no second note is created. Empty = off. If the property is missing, `-check` shows a hint |
 
 The Notion token is looked up in this order: environment variable `NOTION_TOKEN` → keychain, if `token_keychain_service` is set (an error there aborts, and `notion.token` is then not read) → `notion.token`.
 
