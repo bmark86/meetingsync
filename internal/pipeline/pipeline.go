@@ -229,6 +229,7 @@ func (p *Pipeline) Pass(ctx context.Context, now time.Time) {
 		}
 		if p.ledger.HasNear(s.ModTime, window) {
 			p.log.Printf("📎 %s gehört zu einem bereits verarbeiteten Transkript → Archiv", s.Name)
+			delete(p.states, s.Path) // wie beim Ledger-Treffer in handle: die Notiz existiert
 			p.archiveAt(now, s)
 			continue
 		}
@@ -255,6 +256,8 @@ func (p *Pipeline) handle(ctx context.Context, j job, now time.Time) {
 	hash := sha256Hex(pr.Content)
 	if p.ledger.Has(hash) {
 		p.log.Printf("↺ %s wurde schon verarbeitet → Archiv", pr.Name)
+		// fertig: der Zustand (auch unklares Anlegen) ist überholt; ein Archiv-Fehler setzt eine neue Wartezeit (A-19)
+		delete(p.states, pr.Path)
 		p.archiveJob(j, now)
 		return
 	}

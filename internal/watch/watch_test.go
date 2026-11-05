@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -419,5 +420,36 @@ func TestSyncDir(t *testing.T) {
 	}
 	if err := syncDir(filepath.Join(t.TempDir(), "fehlt")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// Fängt: Seen ohne übersprungene Dateien (Warnung käme je Durchlauf neu), mit
+// Unterordnern oder gefüllt trotz ReadDir-Fehler.
+func TestListSeen(t *testing.T) {
+	m := newMemFS()
+	m.add(wdir+"/a.srt", srt, now.Add(-time.Hour))
+	m.add(wdir+"/jung.srt", srt, now)
+	m.add(wdir+"/x.pdf", "x", now.Add(-time.Hour))
+	m.add(wdir+"/.versteckt", "x", now.Add(-time.Hour))
+	m.add(wdir+"/link.srt", srt, now.Add(-time.Hour)).mode = fs.ModeSymlink
+	m.add(wdir+"/_archiv", "", now.Add(-time.Hour)).mode = fs.ModeDir
+	m.add(wdir+"/_archiv/b.srt", srt, now.Add(-time.Hour))
+	l, _ := lister(m)
+	l.Seen = map[string]bool{}
+	mustList(t, l, now)
+	var got []string
+	for p := range l.Seen {
+		got = append(got, p)
+	}
+	slices.Sort(got)
+	want := []string{wdir + "/.versteckt", wdir + "/a.srt", wdir + "/jung.srt", wdir + "/link.srt", wdir + "/x.pdf"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("Seen = %v, want %v", got, want)
+	}
+
+	m.dirErr = errors.New("weg")
+	l.Seen = map[string]bool{}
+	if _, err := l.List(now); err == nil || len(l.Seen) != 0 {
+		t.Fatalf("err %v, Seen %v; want Fehler, leer", err, l.Seen)
 	}
 }

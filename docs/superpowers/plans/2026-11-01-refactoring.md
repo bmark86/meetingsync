@@ -762,8 +762,9 @@ Exit: A-10, A-19 closed; golden unchanged.
 - Acceptance: test: file disappears → entries gone after the next pass; the warning shows again only if the file reappears (record the behavior in the task); golden unchanged.
 - Scope: `internal/pipeline`, `internal/watch`, tests.
 - Depends on: R-M5-01. Findings: A-19.
-- Model: sonnet.
+- Model: sonnet (developer ran on opus: pruning interacts with R-M3-17 and R-M3-18 state; fix round sonnet).
 - Reviews: CR, QA.
+- Status: **done 2026-11-05.** Pruning against `watch.Lister.Seen`; `globalWarnKeys` kept; state deleted after a ledger hit. Coordinator decision: states with `ambiguousCreate` or `giveUp` are never pruned (kept until restart if the file never returns). A returning file without them restarts `max_attempts`. Golden unchanged, CR approved, tests 592 → 601. A-19 closed.
 
 #### R-M5-03 Own timeout for Models()
 - Goal: `-check` does not hang for 30 minutes.

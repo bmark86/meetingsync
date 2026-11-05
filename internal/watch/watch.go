@@ -45,6 +45,10 @@ type Lister struct {
 	Cache    Cache
 	Log      *log.Logger
 	WarnOnce func(key, format string, args ...any)
+	// Seen (optional) bekommt den Pfad jeder Datei im Ordner, auch der
+	// übersprungenen (keine Unterordner); der Aufrufer vergisst damit Pfade,
+	// die nicht mehr da sind (A-19). Bei einem Fehler von ReadDir bleibt es leer.
+	Seen map[string]bool
 }
 
 // List liefert die unterstützten regulären Dateien im Ordner. Stabil ist eine
@@ -58,6 +62,9 @@ func (l Lister) List(now time.Time) ([]*Entry, error) {
 	var out []*Entry
 	for _, d := range dirEntries {
 		name := d.Name()
+		if l.Seen != nil && !d.IsDir() {
+			l.Seen[filepath.Join(l.Dir, name)] = true
+		}
 		if d.IsDir() || strings.HasPrefix(name, ".") || strings.HasPrefix(name, "~$") || isTempName(name) {
 			continue
 		}

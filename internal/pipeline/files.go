@@ -3,14 +3,17 @@ package pipeline
 import (
 	"errors"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"meetingsync/internal/watch"
 )
 
-// listEntries liest den Exportordner über internal/watch.
+// listEntries liest den Exportordner über internal/watch. Ist er lesbar,
+// vergisst prune danach die Pfade, die nicht mehr darin liegen.
 func (p *Pipeline) listEntries(now time.Time) ([]*watch.Entry, error) {
-	return watch.Lister{
+	seen := map[string]bool{}
+	entries, err := watch.Lister{
 		FS:       p.fs,
 		Dir:      p.o.WatchDir,
 		Stable:   p.o.Stable,
@@ -18,7 +21,46 @@ func (p *Pipeline) listEntries(now time.Time) ([]*watch.Entry, error) {
 		Cache:    p.cache,
 		Log:      p.log,
 		WarnOnce: p.warnOnce,
+		Seen:     seen,
 	}.List(now)
+	if err != nil {
+		return nil, err // Ordner nicht lesbar: nichts vergessen
+	}
+	p.prune(seen)
+	return entries, nil
+}
+
+// globalWarnKeys sind die Warnschlüssel, die zu keiner Datei gehören; alle
+// anderen Schlüssel sind Dateipfade (ggf. mit "#"-Zusatz). Unabhängig von der
+// Form von watch_dir (auch "." ergibt Pfade ohne Ordneranteil).
+var globalWarnKeys = map[string]bool{"ledger-refresh": true, "watch-lock": true}
+
+// prune hält warned, cache und states klein (A-19): Einträge zu Pfaden im
+// Exportordner, die seen nicht enthält, werden gelöscht; Warnungen dazu
+// erscheinen wieder, wenn die Datei zurückkommt. Andere Schlüssel (z. B.
+// "ledger-refresh") bleiben. Ein Zustand mit unklarem Anlegen (R-M3-17) oder
+// gescheitertem Aufgeben (R-M3-18) bleibt: sein Marker bzw. das Ziel _fehler
+// schützt vor einer zweiten Notiz, wenn die Datei zurückkommt.
+func (p *Pipeline) prune(seen map[string]bool) {
+	for k := range p.warned {
+		if globalWarnKeys[k] || seen[k] {
+			continue
+		}
+		if i := strings.LastIndexByte(k, '#'); i >= 0 && seen[k[:i]] {
+			continue // z. B. path+"#read"
+		}
+		delete(p.warned, k)
+	}
+	for k := range p.cache {
+		if !seen[k] {
+			delete(p.cache, k)
+		}
+	}
+	for k, st := range p.states {
+		if !seen[k] && st.ambiguous == nil && st.giveUp == nil {
+			delete(p.states, k)
+		}
+	}
 }
 
 // archive verschiebt die Dateien ins Archiv und liefert die, die liegen
