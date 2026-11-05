@@ -707,19 +707,20 @@ Exit: `git grep` and `git log -p --all` without the three real IDs; tag `v1.0.0`
 - Status: **done 2026-11-04.** Real data source IDs in `config.example.yaml` and `config.example.json` replaced by `00000000-0000-0000-0000-000000000000`; comments and README tell users to enter their own IDs (dashes optional) and to leave Tasks/Projects empty if unused. No test change needed. Code review and security review approved. The IDs remain in git history until R-M4-02.
 
 #### R-M4-02 Clean the git history ⚠ destructive
+- Status: **prepared 2026-11-05, deferred until after the merge of `refactor/architektur` into `main`** (before the next release). ADR 0011 written. Details of the decision: ADR 0011, OD-15.
 ⚠ Behavior change, decided by Mark on 2026-11-01 (D2). Its own human approval right before it runs (AskUserQuestion by the coordinator), even if the plan is approved.
 - Goal: real IDs gone from all commits and tags.
 - Steps:
-  1. Preparation (no approval needed): ADR 0011, replacement list, script in the scratchpad, tool choice (OD-15, still open: `git filter-repo --replace-text` needs installing; ask Mark about tool and time right before this task).
-  2. Check: no open branches/worktrees/PRs; tell Mark about forks/clones.
+  1. Preparation (no approval needed, done 2026-11-05): ADR 0011, replacement list, tool `git filter-repo` installed (OD-15). Facts: 3 real IDs, 15 occurrences, only in old `config.example.yaml`/`.json`.
+  2. Check: clean working tree, no stashes, no extra worktrees, no open PRs. Forks/other clones: 0 forks, no other clones.
   3. Backup: `git bundle create <outside repo>/meetingsync-vor-rewrite.bundle --all`, `git bundle verify`.
   4. Approval by Mark (right before step 5).
-  5. Rewrite in a fresh clone, tag `v1.0.0` on the matching new commit, `git push --force` for `main` and tags.
-  6. Follow-up: check release notes `docs/releases/v1.0.0.md`; re-link the GitHub release; note that old commits may stay reachable through forks/caches.
-- Acceptance: `git log -p --all | grep -c -f <ID-Liste>` = 0 (the ID list is kept outside the repo (scratchpad), not in the repo); `make check` green on the new `main`; bundle verified; approval documented.
+  5. Rewrite in place (Mark's decision 2026-11-05, replaces "fresh clone"): `git filter-repo --force --replace-text <file>` rewrites all branches and tags (incl. `v1.0.0`), removes `origin`, expires reflogs, runs gc. Then re-add `origin`; Mark does the force pushes (`main`, `refactor/architektur` if it still exists, tags).
+  6. Follow-up: one docs commit maps old to new hashes via filter-repo's commit-map (11 references, 6 distinct, in `docs/progress.md`, the review file, this plan); check release notes `docs/releases/v1.0.0.md`; re-link the GitHub release; old SHAs may stay in GitHub caches (removal only via GitHub Support).
+- Acceptance: `git log -p --all | grep -c -F -f <ID-Liste>` = 0 (the ID list is kept outside the repo (scratchpad), not in the repo); `make check` green on the new `main`; bundle verified; approval documented.
 - Scope: git history, tags.
 - Out of scope: deleting local archive/error files, Notion.
-- Depends on: R-M4-01; no open branches; answer to OD-15. Findings: S-05.
+- Depends on: R-M4-01; `refactor/architektur` merged; OD-15 answered (2026-11-05). Findings: S-05.
 - Model: opus, irreversible operation.
 - Reviews: CR, SR, QA. ADR 0011.
 
@@ -815,7 +816,7 @@ Parallel only with disjoint files and `isolation: "worktree"`.
 | P4 | R-M1-01 → R-M1-02 → R-M1-03; R-M1-04 → R-M1-05 → R-M1-07 | R-M1-06 (config.go, main.go) | All other M1 tasks change `app.go` → one after another (order: 01, 02, 03, 04, 05, 07) |
 | P5 | R-M2-01 → 02 → 03 → 04 → 05 → 06 → 07 → 08 → 09 → 10 | none | Every cut changes callers in `app.go` |
 | P6 | Lane Config: R-M3-09 → R-M3-01 → R-M3-02 → R-M3-11 → R-M3-15 (R-M3-15 also after R-M3-07) | Lane Files: R-M3-03 → R-M3-04 → R-M3-14; Lane HTTP: R-M3-05 → R-M3-06 → R-M3-08; Lane Processes: R-M3-07; Lane CLI: R-M3-13; R-M3-12 → R-M3-16 (sequential: same notification/log code and golden G16b) | Packages are disjoint after M2 |
-| P7 | R-M4-02 | nothing (no open branches) | The rewrite needs a quiet state; earliest after R-M4-01, latest before the next release; ask OD-15 first |
+| P7 | R-M4-02 | nothing (no open branches) | The rewrite needs a quiet state; prepared 2026-11-05, runs once at the end after the merge into `main`, before the next release; the coordinator asks Mark for the go right before it runs |
 | P8 | R-M5-01 → R-M5-02 | R-M5-03, R-M4-03, R-M4-04 | |
 | P9 | R-M6-01 ∥ R-M6-02 → R-M6-03 | | |
 
@@ -835,7 +836,7 @@ Style like `docs/adr/0001-yaml-dependency.md` (Context, Decision, Alternatives c
 | 0008 | Notion over HTTPS only | R-M3-02 | warning instead of abort |
 | 0009 | Prompt personalization via config | R-M3-11 | freely configurable prompt file |
 | 0010 | Always check to-dos for Mark | R-M3-12 | only when the model sets `pruefen=true` |
-| 0011 | Clean the git history | R-M4-02 (before it runs) | placeholders only, history stays |
+| 0011 | Clean the git history | R-M4-02 (written 2026-11-05) | placeholders only, history stays; fresh clone instead of in place |
 | 0012 | `-check` exit code | R-M3-13 | keep exit 0, read the output |
 | 0013 | `-file` writes a ledger entry | R-M3-14 | keep as is, move the file by hand |
 | 0014 | `llm.api_key` from the Keychain | R-M3-15 | keep the key in the config file only |
@@ -880,7 +881,7 @@ All proposals are accepted ("decided: proposal") on 2026-11-01. Two points stay 
 | OD-12 | ID format check at start (abort on an invalid ID) | decided: proposal: PathEscape only, no check | – |
 | OD-13 | `ThrottleInterval` value | decided: 60 s | – |
 | OD-14 | D4: code default = today's text (stays in the repo) or neutral + values in your config. b) Is `my_name` in your config? | decided: proposal: neutral + config entry before the rebuild. b) answered: yes, `my_name: Mark` is in the config | R-M4-03 not blocked |
-| OD-15 | History rewrite: tool (install `git filter-repo`?), time, release notes v1.0.0. GitHub settings (Dependabot alerts, branch protection, signed tags) you do yourself | **open**: ask Mark right before the task | R-M4-02, R-M0-04 (settings part) |
+| OD-15 | History rewrite: tool (install `git filter-repo`?), time, release notes v1.0.0. GitHub settings (Dependabot alerts, branch protection, signed tags) you do yourself | answered 2026-11-05 (history part): tool `git filter-repo --replace-text` (installed, a40bce548d2c); rewrite once at the end, after the merge into `main`, before the next release; in place, no fresh clone; backup bundle first. Release notes v1.0.0 still open. GitHub settings part stays with Mark (open) | R-M4-02, R-M0-04 (settings part) |
 | OD-16 | Confirm the coverage targets from 2.3 | decided: proposal: yes | – |
 | OD-17 | `-check` exit ≠ 0 on ✗ (progress #5) | decided: yes → mandatory task R-M3-13 (⚠, ADR 0012) | – |
 | OD-18 | `-file` with ledger entry (progress #6) | decided: yes → mandatory task R-M3-14 (⚠, ADR 0013) | – |
