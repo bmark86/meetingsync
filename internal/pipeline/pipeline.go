@@ -249,6 +249,9 @@ func (p *Pipeline) Pass(ctx context.Context, now time.Time) {
 
 func (p *Pipeline) handle(ctx context.Context, j job, now time.Time) {
 	pr := j.primary
+	if !p.loadContent(pr) {
+		return // nicht lesbar (Warnung einmal je Datei) oder geändert: Zustand unverändert
+	}
 	hash := sha256Hex(pr.Content)
 	if p.ledger.Has(hash) {
 		p.log.Printf("↺ %s wurde schon verarbeitet → Archiv", pr.Name)
@@ -575,8 +578,13 @@ func (p *Pipeline) prepare(ctx context.Context, j job) (*noteResult, error) {
 		ExampleName: p.o.ExampleName,
 		MyLabel:     p.o.MyLabel,
 	}
+	// nicht lesbar oder seit der Ordnerliste geändert: ohne Zusammenfassung als Kontext
 	if j.summary != nil && p.o.UseSummaryAsContext {
-		in.SummaryText = string(j.summary.Content)
+		if p.loadContent(j.summary) {
+			in.SummaryText = string(j.summary.Content)
+		} else {
+			p.log.Printf("   ⚠️  %s nicht lesbar oder geändert → ohne Zusammenfassung als Kontext", j.summary.Name)
+		}
 	}
 	projects := p.ActiveProjects(ctx)
 	for _, pj := range projects {

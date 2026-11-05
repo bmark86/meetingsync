@@ -85,6 +85,26 @@ func (p *Pipeline) changedSinceRead(f *watch.Entry) bool {
 	return info.Size() != f.Size || !info.ModTime().Equal(f.ModTime)
 }
 
+// loadContent liest den Inhalt von f nach, wenn List ihn nicht gelesen hat
+// (Typ aus dem Cache, R-M5-01). ok=false: nicht lesbar oder seit der
+// Ordnerliste geändert; die Datei bleibt liegen, Zustand unverändert, der nächste
+// Durchlauf prüft sie neu (geändert: neue mtime, also erst wieder stabil).
+func (p *Pipeline) loadContent(f *watch.Entry) (ok bool) {
+	if f.Content != nil {
+		return true
+	}
+	b, err := p.fs.ReadFile(f.Path)
+	if err != nil {
+		p.warnOnce(f.Path+"#read", "⚠️  %s nicht lesbar: %v", f.Name, err)
+		return false
+	}
+	if int64(len(b)) != f.Size || p.changedSinceRead(f) {
+		return false
+	}
+	f.Content = b
+	return true
+}
+
 // fail verschiebt die Dateien nach _fehler; ok=false, wenn eine liegen blieb.
 func (p *Pipeline) fail(cause error, files ...*watch.Entry) (ok bool) {
 	ok = true

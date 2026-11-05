@@ -240,6 +240,31 @@ func TestListClassifyCache(t *testing.T) {
 	}
 }
 
+// Typ im Cache (gleiche mtime und Größe): nicht gelesen, Content nil; Fehlschlag
+// (neue mtime) liest wieder (R-M5-01).
+// Fängt: List liest jede stabile Datei in jedem Durchlauf.
+func TestListCacheHitNoRead(t *testing.T) {
+	m := newMemFS()
+	f := m.add(wdir+"/a.srt", srt, now.Add(-time.Hour))
+	l, _ := lister(m)
+	if e := mustList(t, l, now)[0]; e.Content == nil || len(m.reads) != 1 {
+		t.Fatalf("erster Durchlauf: Content=%v, gelesen %v", e.Content != nil, m.reads)
+	}
+	for range 3 {
+		e := mustList(t, l, now)[0]
+		if e.Content != nil || !e.Stable || e.Kind != domain.KindTranscript || e.Size != int64(len(srt)) {
+			t.Fatalf("Cache-Treffer: %+v", e)
+		}
+	}
+	if len(m.reads) != 1 {
+		t.Fatalf("gelesen %v, want einmal", m.reads)
+	}
+	f.modTime = f.modTime.Add(time.Second)
+	if e := mustList(t, l, now)[0]; string(e.Content) != srt || len(m.reads) != 2 {
+		t.Fatalf("nach Änderung: Content=%q, gelesen %v", e.Content, m.reads)
+	}
+}
+
 // Fängt: ReadDir-Fehler verschluckt; Info- oder Lesefehler bricht den
 // Durchlauf ab statt die Datei zu überspringen.
 func TestListErrors(t *testing.T) {

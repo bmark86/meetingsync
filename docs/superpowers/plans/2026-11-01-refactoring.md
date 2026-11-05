@@ -755,6 +755,7 @@ Exit: A-10, A-19 closed; golden unchanged.
 - Depends on: M3. Findings: A-10.
 - Model: opus, interaction with hash and TOCTOU.
 - Reviews: CR, SR, QA.
+- Status: **done 2026-11-05.** `watch.List` reads only on a cache miss; `pipeline.loadContent` reads in `handle` (skips the pass if the read fails, the length differs or the file changed); summary partner read only when used. Error paths (coordinator decision): unreadable cached file logs once; unreadable or changed summary partner gives a note without context and the summary is archived with the transcript. Golden unchanged; CR and SR approved. A-10 closed. Accepted risks: same-size+same-mtime change undetected, longer List-to-read window; idea: `os.SameFile`.
 
 #### R-M5-02 Bound the maps
 - Goal: `warned`, `cache`, `state` hold only paths that exist in the current pass; state deleted after a ledger hit.

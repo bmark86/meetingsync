@@ -12,8 +12,9 @@ import (
 	"meetingsync/internal/transcript"
 )
 
-// Entry ist eine Datei im Exportordner. Content und Kind sind nur bei
-// stabilen Dateien gesetzt.
+// Entry ist eine Datei im Exportordner. Kind ist nur bei stabilen Dateien
+// gesetzt, Content nur, wenn List die Datei gelesen hat (Typ nicht im Cache);
+// sonst ist Content nil und der Aufrufer liest bei der Verarbeitung nach.
 type Entry struct {
 	Path    string
 	Name    string
@@ -47,8 +48,8 @@ type Lister struct {
 }
 
 // List liefert die unterstützten regulären Dateien im Ordner. Stabil ist eine
-// Datei, die seit Stable unverändert und nicht leer ist; nur dann wird sie
-// gelesen und ihr Typ erkannt.
+// Datei, die seit Stable unverändert und nicht leer ist; nur dann wird ihr
+// Typ erkannt. Gelesen wird sie nur, wenn der Typ nicht im Cache steht.
 func (l Lister) List(now time.Time) ([]*Entry, error) {
 	dirEntries, err := l.FS.ReadDir(l.Dir)
 	if err != nil {
@@ -81,12 +82,12 @@ func (l Lister) List(now time.Time) ([]*Entry, error) {
 				l.WarnOnce(path, "Ignoriere %s (größer als 20 MB)", name)
 				continue
 			}
-			if e.Content, err = l.FS.ReadFile(path); err != nil {
-				continue
-			}
 			if c, ok := l.Cache[path]; ok && c.modTime.Equal(e.ModTime) && c.size == e.Size {
-				e.Kind = c.kind
+				e.Kind = c.kind // Inhalt liest der Aufrufer erst bei der Verarbeitung (R-M5-01)
 			} else {
+				if e.Content, err = l.FS.ReadFile(path); err != nil {
+					continue
+				}
 				e.Kind = transcript.Classify(path, e.Content, l.Opts)
 				l.Cache[path] = cachedKind{e.ModTime, e.Size, e.Kind}
 				l.Log.Printf("Neu: %s → %s", name, e.Kind)
