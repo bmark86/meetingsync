@@ -696,6 +696,7 @@ Status: **complete 2026-11-04** (R-M3-01 to R-M3-20, R-M3-19 merged into R-M3-03
 
 Goal: no real IDs or personal data in the public repo.
 Exit: `git grep` and `git log -p --all` without the three real IDs; tag `v1.0.0` on the cleaned commit; backup bundle exists.
+Status: **complete except R-M4-02, deferred by decision (2026-11-05, ADR 0011).** R-M4-01, R-M4-03, R-M4-04 done. Exit met for `git grep` on the current tree only; history, tag and bundle are open until R-M4-02 runs after the merge.
 
 #### R-M4-01 Placeholders
 - Goal: replace real Notion IDs with placeholders.

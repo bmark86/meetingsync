@@ -248,6 +248,28 @@ Actions for Mark around the next rebuild of `~/bin` (`go build -o ~/bin/meetings
 | Earlier, still open | Config migration to YAML, one week of manual testing, GitHub settings | 3, 4, 9 |
 | M3 exit | Approve the live test of R-M3-17 against real Notion | 33 |
 
+## M4 summary (R-M4-01, -03, -04 done 2026-11-04; R-M4-02 prepared, deferred by decision 2026-11-05)
+
+Branch `refactor/architektur`, HEAD 50dcfdf.
+
+| Task | Result | Commit |
+| --- | --- | --- |
+| R-M4-01 | Placeholder IDs (`00000000-0000-0000-0000-000000000000`) in `config.example.yaml`/`.json` (S-05, A-20) | a79fbd5 |
+| R-M4-03 | Neutral `my_name` default "Max" instead of "Mark" (A-20); golden config sets `my_name: Mark` explicitly | 85886b6 |
+| R-M4-04 | 12 root tests moved into `internal/pipeline`; `FileState`, `ErrUnterbrochen`, `config.Finalize` unexported, `States()` removed; 581 test runs before and after; golden unchanged | 418d407 |
+| R-M4-02 | Prepared, not executed: ADR 0011, replacement list, `git filter-repo` installed. Runs once after the merge into `main`, before the next release (follow-up 35) | 50dcfdf |
+
+M4 exit ("`git grep` and `git log -p --all` without the three real IDs; tag `v1.0.0` on the cleaned commit; backup bundle exists"):
+
+| Part | Status |
+| --- | --- |
+| `git grep` without the real IDs (current tree) | met (R-M4-01) |
+| `git log -p --all` without the real IDs | open: the 3 real IDs stay in history until R-M4-02; risk accepted by Mark (2026-11-05) |
+| Tag `v1.0.0` on the cleaned commit | open (R-M4-02) |
+| Backup bundle exists | open (R-M4-02 step 3) |
+
+M4 is complete except R-M4-02, deferred by decision (Mark, 2026-11-05, ADR 0011). The exit criterion is not fully met.
+
 ## Open follow-ups
 
 | # | Item | Owner | Status |
