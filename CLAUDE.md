@@ -4,7 +4,7 @@ Go tool (macOS, stdlib plus `go.yaml.in/yaml/v3` and `golang.org/x/sys`, `go 1.2
 
 ## Flow
 
-Poll the export folder (10 s). A file must stay unchanged for `stable_seconds` → detect transcript or summary by extension and content (`internal/transcript`) → pair transcript and summary (`pair_window_seconds`); a summary without a partner is handled by `orphan_summary_action` → LLM extraction, long transcripts are split into chunks (`internal/llm`) → Notion page and tasks (`internal/notion`: `client.go`, `blocks.go`, `properties.go`) → archive in `_archiv/JJJJ-MM` (JJJJ-MM = YYYY-MM), ledger against double processing (`internal/ledger`).
+Poll the export folder (10 s ticker in `internal/cli`, one pass in `internal/pipeline`, listing in `internal/watch`). A file must stay unchanged for `stable_seconds` → detect transcript or summary by extension and content (`internal/transcript`) → pair transcript and summary (`pair_window_seconds`); a summary without a partner is handled by `orphan_summary_action` → LLM extraction, long transcripts are split into chunks (`internal/llm`) → Notion page and tasks (`internal/notion`: `client.go`, `blocks.go`, `properties.go`) → archive in `_archiv/JJJJ-MM` (JJJJ-MM = YYYY-MM), ledger against double processing (`internal/ledger`).
 
 Retry: temporary errors (LM Studio or Notion not reachable (including timeout), HTTP 429/5xx, LM Studio model not loaded, Notion 401/403/404) are retried with backoff (1/2/4/8 min, then every 16 min). All errors count together against `max_attempts` (default 10; other errors are retried every 2 min). After that the file goes to `_fehler`. Exception: a note with more than 1000 Notion blocks (transcript not counted) is not retried and goes to `_fehler` at once.
 
@@ -12,9 +12,9 @@ Retry: temporary errors (LM Studio or Notion not reachable (including timeout), 
 
 - `main.go` flags, `internal/config` config (YAML/JSON, defaults)
 - `internal/cli` entry points (Init, Check, Run, `-file`, dry-run output), `internal/pipeline` processing flow, `internal/watch` file listing, pairing and moving
-- `internal/transcript`, `internal/ledger`, `internal/domain` (data types, error class transient), `internal/llm`, `internal/notion` (`client.go`, `blocks.go`, `properties.go`), `internal/notify` (macOS notification), `internal/secret` (Keychain token lookup) as described above
+- `internal/transcript`, `internal/ledger`, `internal/domain` (data types, error class transient), `internal/llm`, `internal/notion` (`client.go`, `blocks.go`, `properties.go`), `internal/notify` (macOS notification), `internal/secret` (Keychain lookup for Notion token and LLM key) as described above
 - `config.example.yaml` commented reference of all options
-- Docs in `docs/`: `progress.md` (open items), `adr/`, `launchd.md`, `changelog.md`
+- Docs in `docs/`: `progress.md` (open items), `adr/`, `launchd.md`, `changelog.md`, `architecture.md` (packages and data flow), `testing.md` (test layers, golden tests)
 - Active plan: `docs/superpowers/plans/2026-11-01-refactoring.md`
 
 ## Commands
@@ -26,7 +26,7 @@ Retry: temporary errors (LM Studio or Notion not reachable (including timeout), 
 - `make vuln` (govulncheck, pinned version)
 - `make check` (vet + lint + test + vuln, Definition of Done)
 - `go build -o ~/bin/meetingsync .`
-- `meetingsync -check` (checks folder, Notion/LM Studio; exits 1 if any check shows ✗, otherwise 0), `-dry-run -file <file>` (writes nothing), `-once`, `-config <path>`
+- `meetingsync -check` (checks folder, Notion/LM Studio; exits 1 if any check shows ✗ or on a config, token or keychain error, otherwise 0), `-dry-run -file <file>` (writes nothing), `-once`, `-config <path>`
 - `-file` without `-dry-run` creates a real note and writes a ledger entry, but does not move the file. It waits while a service pass runs (both lock the export folder).
 
 ## Definition of Done

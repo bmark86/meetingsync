@@ -779,22 +779,26 @@ Exit: A-10, A-19 closed; golden unchanged. **Met; M5 complete 2026-11-06.**
 
 Goal: the current state is fully described. ADRs are written in their tasks (table 7), not here. All docs follow the Language guardrail.
 Exit: files below exist, links checked, `docs/progress.md` current.
+Status: **complete 2026-11-06.** Exit met for `docs/`: `architecture.md` and `testing.md` exist, relative links in `docs/*.md` and `docs/adr/*.md` checked, `progress.md` current. README and CLAUDE.md edits of R-M6-03 were done by a parallel task; their review (CR, QA) is separate.
 
 #### R-M6-01 docs/architecture.md
 - Content: context, packages and dependency direction (Mermaid), runtime view of the flow (sequence), ledger states (state diagram), error and retry model, security model/trust boundaries (Mac, LM Studio, Notion, Keychain), launchd deployment. Max. ~2 pages.
 - Depends on: M5. Findings: A-21.
 - Model: sonnet (docs-writer). Reviews: CR, SR, QA.
+- Status: **done 2026-11-06** (commit 9f058ad). CR and SR approved, 11 minor fixes.
 
 #### R-M6-02 docs/testing.md
 - Content: pyramid, golden tests and fakes, normalization, coverage targets, updating golden files on purpose (`-update`, review duty, ⚠ tasks only).
 - Depends on: M5. Findings: A-08, A-21.
 - Model: sonnet (docs-writer). Reviews: CR, QA.
+- Status: **done 2026-11-06** (commit 9f058ad). CR approved, 9 minor fixes. Review found the update command wrong; corrected to `go test . -run Golden -update` here, in ADR 0003 and in `golden_test.go`.
 
 #### R-M6-03 README, CLAUDE.md, changelog, progress
 - Content: commands (`make build/lint/vuln/check`), toolchain (with a note: `GOTOOLCHAIN=local` or a blocked proxy.golang.org makes the first build fail, because go1.26.10 must be downloaded once), package structure in CLAUDE.md section "Ablauf" (flow), `-check` exit code and `-file` ledger behavior, changelog section for the release, progress.md cleaned up.
 - Depends on: R-M6-01, R-M6-02.
 - Model: haiku, bringing docs up to date.
 - Reviews: CR, QA.
+- Status: **done 2026-11-06** (commit follows). Changelog Unreleased grouped and extended, `progress.md` cleaned up with M6 summary and refactoring status; README and CLAUDE.md edited by a parallel task. Version number and release date are not set (no plan entry).
 
 ### Optional tasks
 

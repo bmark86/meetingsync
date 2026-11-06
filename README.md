@@ -27,7 +27,7 @@ If the model is unsure (speaker assignment, poor audio quality, no timestamps) o
 
 ### 1. Build
 
-The build needs Go 1.26 (`go 1.26.0` in `go.mod`). Besides the standard library, the only dependencies are `go.yaml.in/yaml/v3` (config) and `golang.org/x/sys` (atomic file move without overwriting). `go.mod` pins the toolchain to go1.26.10. An installed Go 1.21 or newer is enough: with the default `GOTOOLCHAIN=auto`, Go downloads go1.26.10 on the first build.
+The build needs Go 1.26 (`go 1.26.0` in `go.mod`). Besides the standard library, the only dependencies are `go.yaml.in/yaml/v3` (config) and `golang.org/x/sys` (atomic file move without overwriting). `go.mod` pins the toolchain to go1.26.10. An installed Go 1.21 or newer is enough: with the default `GOTOOLCHAIN=auto`, Go downloads go1.26.10 on the first build. That download happens only once. With `GOTOOLCHAIN=local` and a Go older than 1.26.0, or with `proxy.golang.org` blocked, the first build fails until go1.26.10 is available.
 
 ```bash
 cd meetingsync
@@ -225,3 +225,5 @@ Temporary errors (LM Studio or Notion not reachable, also on timeout, HTTP 429/5
 - [docs/progress.md](docs/progress.md) – task status and open items
 - [docs/adr/](docs/adr/) – architecture decisions
 - [docs/launchd.md](docs/launchd.md) – plist and `launchctl` explained
+- [docs/architecture.md](docs/architecture.md) – packages and data flow
+- [docs/testing.md](docs/testing.md) – test layers and golden tests
