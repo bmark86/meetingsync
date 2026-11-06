@@ -88,7 +88,7 @@ Error paths (M1, M3) may get new log lines and error messages. This goes into th
 | stdout/log | Complete; logger without timestamp, or timestamp prefix removed by regex |
 | Exit code | For CLI scenarios |
 | Storage | `testdata/golden/<scenario>/{requests.json, tree.txt, ledger.jsonl, stdout.txt, log.txt, exit.txt}` |
-| Update | `go test -run Golden ./... -update` |
+| Update | `go test . -run Golden -update` (corrected 2026-11-06, R-M6-02 review) |
 
 **Normalization**, final list (everything else stays raw):
 

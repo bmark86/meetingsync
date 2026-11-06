@@ -3,7 +3,7 @@ package main
 // Golden-Harness (R-M0-05): friert das heutige Verhalten ein. Fakes für
 // LM Studio und Notion zeichnen jeden Request auf; Dateibaum, Ledger und Log
 // werden normalisiert mit testdata/golden/<szenario>/ verglichen.
-// Neu schreiben: go test -run Golden ./... -update
+// Neu schreiben: go test . -run Golden -update
 // Szenarien kommen per registerGolden (in init) aus beliebigen Dateien dazu,
 // z. B. golden_flow_test.go und golden_cli_test.go.
 //
@@ -466,7 +466,7 @@ func checkGolden(t *testing.T, scenario string, got map[string]string) {
 	for _, name := range names {
 		want, err := os.ReadFile(filepath.Join(dir, name)) //nolint:gosec // G304: Pfad unter testdata/golden
 		if err != nil {
-			t.Errorf("%s/%s fehlt (neu schreiben: go test -run Golden ./... -update): %v", scenario, name, err)
+			t.Errorf("%s/%s fehlt (neu schreiben: go test . -run Golden -update): %v", scenario, name, err)
 			continue
 		}
 		if string(want) != got[name] {
