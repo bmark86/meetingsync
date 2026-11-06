@@ -81,9 +81,18 @@ Open user actions for Mark (details in the follow-ups below):
 | Rebuild `~/bin`, restart the service (old service has no folder lock) | 30 |
 | Optional: LLM key in the Keychain (`llm.api_key_keychain_service`) | R-M3-15 |
 | Approve and run the live test of R-M3-17 against real Notion | 33 |
-| After the merge: history rewrite (R-M4-02), force-push, tags | 35 |
+| Release, in this order (see below): merge, history rewrite, force-push, tag v2.0.0, GitHub release | 35 |
 | Decide: `-file` on a summary with its transcript still in the folder; reverse-DNS label and repo owner name in the public repo | 31, 34 |
 | Earlier, still open: config migration to YAML, one week of manual testing, GitHub settings (Dependabot alerts, branch protection), `begonnen` lines / `_fehler` note after a crash, umlaut and Keychain check under launchd, optional `chmod` on `_archiv`/`_fehler`/ledger, plist `ThrottleInterval` | 3, 4, 9, 14, 24, 25, 26 |
+
+Release order (version v2.0.0, Mark, 2026-11-06; upgrade notes: [releases/v2.0.0.md](releases/v2.0.0.md)):
+
+| Step | Who | Action |
+| --- | --- | --- |
+| 1 | Mark | Push `refactor/architektur`, merge it into `main` |
+| 2 | Coordinator | Run R-M4-02 (history rewrite) on the merged `main`; asks Mark for the go first (ADR 0011) |
+| 3 | Mark | Force-push `main`, tag `v2.0.0` on the new `main`, create the GitHub release from `docs/releases/v2.0.0.md`; the rewrite re-creates the `v1.0.0` tag |
+| 4 | Coordinator | Follow-up docs commit: map old to new commit hashes after the rewrite (follow-up 35) |
 
 ## M1 summary (complete 2026-11-02: R-M1-01 to R-M1-07 + R-M1-EXIT)
 

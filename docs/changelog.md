@@ -2,9 +2,9 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [2.0.0] - not yet released
 
-Refactoring release (branch `refactor/architektur`, milestones M0 to M6). Version and date are not set yet. R-M4-02 (git history cleanup) is deferred until after the merge (ADR 0011). Entries marked ⚠ change visible behavior.
+Refactoring release (branch `refactor/architektur`, milestones M0 to M6). Version 2.0.0 (SemVer major because of breaking changes, Mark, 2026-11-06); the date is set when Mark tags. Upgrade notes: [releases/v2.0.0.md](releases/v2.0.0.md). R-M4-02 (git history cleanup) is deferred until after the merge (ADR 0011). Entries marked ⚠ change visible behavior.
 
 ### Added
 - R-M0-02: Makefile targets `build` (to `./bin`, version via ldflags), `lint`, `test` (with `-race`), `vuln`; `check` = vet + lint + test + vuln. Tools pinned: golangci-lint v2.11.4, govulncheck v1.9.0.
