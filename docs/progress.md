@@ -61,6 +61,7 @@
 | R-M5-01 | Read content only when processing (A-10, closed): `watch.List` reads only on a cache miss, `pipeline.loadContent` reads in `handle` (skip pass if read fails, length != listed size or file changed); summary partner read only when used. 0 reads for backoff and unchanged known files (counting fake FS). New logs: `<name> nicht lesbar: <err>`, `<name> nicht lesbar oder geändert → ohne Zusammenfassung als Kontext` (summary archived with transcript, never an orphan). Golden unchanged; `make check` green. Decision: coordinator (error-path changes). CR and SR approved. Residual risks: same-size+same-mtime change not detected; optional idea: `os.SameFile` | done | 2026-11-05 |
 | R-M4-04 | Root integration tests behind package boundaries: 12 root tests that read pipeline internals moved unchanged by name to `internal/pipeline/moved_root_test.go` (now on the pipeline fakes, equivalent assertions). Unexported `pipeline.FileState`, `ErrUnterbrochen`, `config.Finalize`; `Pipeline.States()` removed. `e2e_test.go` and `internal/cli/cli_test.go` write a temp YAML and load it via `config.Load`. 581 test runs before and after; golden byte-identical; `make check` exit 0. CR approved | done | 2026-11-04 |
 | R-M5-02 | Bound the maps (A-19, closed): pipeline prunes `warned`, classification cache and per-file state to `watch.Lister.Seen` each pass (empty readable folder prunes all; `ReadDir` error prunes nothing); global warn keys kept via `globalWarnKeys`; ledger hit deletes state. Decisions: coordinator: states with `ambiguousCreate`/`giveUp` never pruned (duplicate-page risk, ADR 0004; deviation: they stay until restart for files that never return); vanished-and-returned file restarts `max_attempts`. Developer opus instead of sonnet (interaction with R-M3-17/18). Golden unchanged; `make check` green; tests 592 → 601. CR approved | done | 2026-11-05 |
+| R-M5-03 | Own timeout for `Models()` (A-15, timeout part): `Models()` (only used by `-check`) derives a 10 s context timeout (Mark, 2026-11-05) from the caller's context (`modelsTimeout` in `internal/llm/client.go`). Before, only `llm.timeout_minutes` (default 30 min) applied, so `-check` could hang when LM Studio accepts the connection but never answers. Chat and extraction requests unchanged. On timeout `-check` shows the usual `✗ LM Studio nicht erreichbar unter …` line; no new message text. Test with a hanging fake server; golden unchanged; `make check` green; test runs 601 → 602. Developer haiku. Code review approved | done | 2026-11-06 |
 | R-M3-14 ⚠ | `-file` writes a ledger entry (D8, OD-18, A-14): `begonnen` before `CreatePage`, `fertig` after, `verworfen` on a failed `CreatePage`; the file is not moved (Mark, 2026-11-04), the service archives it later as already processed (`↺ … schon verarbeitet → Archiv`); files outside the export folder stay. `-file` always processes the given file, also if its hash is known (coordinator). `-dry-run -file` unchanged (G09). Mutual exclusion (coordinator): advisory `flock` on the export folder (`internal/ledger/lock.go`, no lock file); service pass skipped while held, `-file` waits; service reads foreign ledger lines per pass (`Ledger.Refresh`). Golden G09b added, rest byte-identical; code review approved, fix round 1 done. ADR 0013. Residual risks: ADR 0013 | done | 2026-11-04 |
 
 ## M1 summary (complete 2026-11-02: R-M1-01 to R-M1-07 + R-M1-EXIT)
@@ -106,7 +107,7 @@ Decisions taken in M1:
 | A-07 | R-M2-04, R-M2-05, R-M2-07, R-M2-08 |
 | A-12 | R-M2-07 |
 | A-13 | R-M2-10 |
-| A-15 | R-M2-01, R-M2-05 |
+| A-15 | R-M2-01, R-M2-05, R-M3-05 (`Models()` status check), R-M5-03 (`Models()` timeout) |
 
 Exit criteria (met):
 - Package `main` contains only `main.go` (`TestArchRootPackageOnlyMain`).
@@ -272,6 +273,18 @@ M4 exit ("`git grep` and `git log -p --all` without the three real IDs; tag `v1.
 
 M4 is complete except R-M4-02, deferred by decision (Mark, 2026-11-05, ADR 0011). The exit criterion is not fully met.
 
+## M5 summary (complete 2026-11-06: R-M5-01 to R-M5-03)
+
+Branch `refactor/architektur`, HEAD 941b499 plus uncommitted R-M5-03.
+
+| Task | Result | Commit |
+| --- | --- | --- |
+| R-M5-01 | Content read only on a classification cache miss and in `handle` (A-10); 0 reads for backoff and unchanged files | c2ab737 |
+| R-M5-02 | `warned`, classification cache and per-file state pruned to the current folder listing (A-19) | 941b499 |
+| R-M5-03 | `Models()` has its own 10 s timeout (A-15, timeout part); tests 601 → 602 | R-M5-03 |
+
+M5 exit ("A-10, A-19 closed; golden unchanged"): met. A-10 (R-M5-01) and A-19 (R-M5-02) are closed; golden was unchanged in all three tasks. A-15 is not in the exit line; per the finding table above its parts are covered by R-M2-01, R-M2-05 (error types), R-M3-05 (status check) and R-M5-03 (timeout). Code review of R-M5-03 is approved.
+
 ## Open follow-ups
 
 | # | Item | Owner | Status |
@@ -311,3 +324,4 @@ M4 is complete except R-M4-02, deferred by decision (Mark, 2026-11-05, ADR 0011)
 | 33 | Live test of R-M3-17 against real Notion (needs Mark's approval) | Mark | open |
 | 34 | Low: the reverse-DNS label `de.borukhov.meetingsync` and the repo owner name stay in the public repo. Assumed intentional, not confirmed (R-M4-01) | Mark | open |
 | 35 | End of project, after the merge of `refactor/architektur` into `main` and before the next release: run R-M4-02 (history rewrite, ADR 0011) after the coordinator's final go; then Mark force-pushes `main`, `refactor/architektur` (if it still exists) and tags, re-links the GitHub release; follow-up docs commit maps old to new hashes | Mark / Coordinator | open (R-M4-02) |
+| 36 | Optional: `-check` on a `Models()` timeout prints `LM Studio nicht erreichbar unter …: … context deadline exceeded`; the server accepted the connection but did not answer. Wrap `errors.Is(err, context.DeadlineExceeded)` as `keine Antwort innerhalb von 10 s` (cli). Found in R-M5-03 code review | Coordinator | open (optional) |

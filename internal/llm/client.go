@@ -270,8 +270,16 @@ func (l *Client) chat(ctx context.Context, msgs []chatMsg, schema any) (string, 
 	return out.Choices[0].Message.Content, nil
 }
 
+// modelsTimeout begrenzt nur die Abfrage von /models (-check). Nimmt LM Studio
+// die Verbindung an und antwortet nie, würde sonst erst der Timeout von
+// llm.timeout_minutes (30 Minuten) greifen. Chat-Anfragen sind nicht betroffen.
+// Als Variable, damit der Test den Wert verkürzen kann.
+var modelsTimeout = 10 * time.Second
+
 // Models listet die Modell-IDs, die LM Studio anbietet (für -check).
 func (l *Client) Models(ctx context.Context) ([]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, modelsTimeout)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(l.opts.BaseURL, "/")+"/models", nil)
 	if err != nil {
 		return nil, err

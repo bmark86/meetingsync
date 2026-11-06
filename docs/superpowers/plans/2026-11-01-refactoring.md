@@ -746,7 +746,7 @@ Status: **complete except R-M4-02, deferred by decision (2026-11-05, ADR 0011).*
 ### M5 Performance and robustness
 
 Goal: no needless I/O, no unbounded growth.
-Exit: A-10, A-19 closed; golden unchanged.
+Exit: A-10, A-19 closed; golden unchanged. **Met; M5 complete 2026-11-06.**
 
 #### R-M5-01 Read content only when processing
 - Goal: `ReadFile` only on a cache miss (classification) and during processing.
@@ -773,6 +773,7 @@ Exit: A-10, A-19 closed; golden unchanged.
 - Depends on: R-M3-05. Findings: A-15.
 - Model: haiku, one timeout.
 - Reviews: CR, QA.
+- Status: **done 2026-11-06.** `Models()` derives a 10 s context timeout (`modelsTimeout`, value by Mark 2026-11-05) from the caller's context; chat requests unchanged; `-check` shows the usual "nicht erreichbar" line on timeout. Test with a hanging fake server; golden unchanged; tests 601 → 602. Code review approved.
 
 ### M6 Documentation
 

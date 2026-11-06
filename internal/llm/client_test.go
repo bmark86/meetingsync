@@ -412,6 +412,27 @@ func TestModelsUnreachable(t *testing.T) {
 	}
 }
 
+// Fängt: LM Studio nimmt die Verbindung an, antwortet auf /models aber nie.
+// Ohne eigenen Timeout hinge -check bis zum Timeout von llm.timeout_minutes.
+func TestModelsTimesOutOnHangingServer(t *testing.T) {
+	old := modelsTimeout
+	modelsTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { modelsTimeout = old })
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+	l := NewClient(Options{BaseURL: srv.URL, Timeout: time.Minute}, log.New(io.Discard, "", 0), nil)
+	start := time.Now()
+	ids, err := l.Models(context.Background())
+	if !errors.Is(err, context.DeadlineExceeded) || ids != nil {
+		t.Fatalf("ids = %v, err = %v; want DeadlineExceeded", ids, err)
+	}
+	if d := time.Since(start); d > 5*time.Second {
+		t.Errorf("Models brauchte %v, Timeout ist %v", d, modelsTimeout)
+	}
+}
+
 func TestSplitHelpersKeepUTF8(t *testing.T) {
 	long := strings.Repeat("äöü ", 2000)
 	for _, c := range splitByLines(long, 5000) {
