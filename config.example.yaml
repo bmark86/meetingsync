@@ -22,32 +22,40 @@ watch_dir: ~/Meetings/MacWhisper
 
 # Prüfintervall für den Exportordner in Sekunden (Minimum 2). Standard: 10
 # poll_interval_seconds: 10
+
 # So lange (Sekunden) muss eine Datei unverändert sein, bevor sie verarbeitet wird.
 # Standard: 20
 # stable_seconds: 20
+
 # Zeitfenster (Sekunden), in dem Transkript und Zusammenfassung als Paar gelten.
 # Standard: 180
 # pair_window_seconds: 180
+
 # Minuten, die eine Zusammenfassung auf ihr Transkript wartet, bevor orphan_summary_action
 # greift. Standard: 10
 # orphan_summary_minutes: 10
+
 # Was mit einer Zusammenfassung ohne Transkript geschieht. Standard: note
 #   note = Notiz aus der Datei mit Prüf-Hinweis, archive = ohne Notiz ins Archiv,
 #   keep = bleibt liegen (Warnung im Log).
 orphan_summary_action: note
+
 # Fehlversuche je Datei (Minimum 1), danach Verschieben nach failed_dir; Retry nach 2 Minuten.
 # Gilt für alle Fehler. Vorübergehende Fehler (LM Studio oder Notion nicht erreichbar, Modell
 # nicht geladen, Timeout, HTTP 429/5xx, Notion 401/403/404) zählen mit, warten aber mit Backoff
 # 1, 2, 4, 8, 16 Minuten (danach 16). Standard: 10
 # max_attempts: 10
+
 # Endungen (mit oder ohne Punkt), die immer als Transkript gelten, auch eigene wie ".log".
 # Ohne Eintrag: .srt/.vtt sind immer Transkript, .json wird an der Segmentstruktur erkannt,
 # bei .txt/.md/.markdown entscheidet der Inhalt. Standard: leer
 transcript_extensions: []
+
 # Beispiel: transcript_extensions: [".log", "transcript"]
 # Endungen, die immer als Zusammenfassung gelten (Transkript-Liste hat Vorrang).
 # Standard: leer
 summary_extensions: []
+
 # IANA-Zeitzone für Datum/Uhrzeit aus dem Dateinamen und den Archivordner (JJJJ-MM).
 # Standard: Europe/Berlin
 # timezone: Europe/Berlin
@@ -59,27 +67,34 @@ summary_extensions: []
 # Dein Name, damit deine To-dos erkannt werden und das Modell dich zuordnen kann.
 # Standard: Max
 my_name: Max
+
 # Deine Rolle für den Prompt ("Protokollant für <Name>, <Rolle>"). Standard: leer
 # (dann steht nur der Name im Prompt).
 my_role: "Teamlead"
+
 # Beispielname in den Prompt-Beispielen (Anrede, "vermutlich <Name>?"). Er sollte
 # nicht zu den echten Teilnehmenden gehören. Standard: Alex
 example_name: Alex
+
 # Sprecher-Label deiner Mikrofonspur, z. B. "Microphone" (eigene Spur im kombinierten
 # MacWhisper-SRT). Standard: leer (Modell rät aus dem Kontext).
 my_speaker_label: ""
+
 # Transkript als aufklappbarer Block in der Notion-Seite (sehr lange werden gekürzt).
 # Sonst verlässt es den Mac nicht. Standard: false
 include_transcript: false
+
 # MacWhisper-Zusammenfassung zusätzlich als Kontext ans Modell geben (sonst nur archiviert).
 # Standard: false
 use_summary_as_context: false
+
 # Seitentitel. Standard: "{date} – {title}"
 #   {date} = Meetingdatum JJJJ-MM-TT, {date_de} = Meetingdatum TT.MM.JJJJ (nicht Exportdatum),
 #   {title} = Titel vom Modell,
 #   {typ} = Meeting-Typ vom Modell: 1:1 | Team | Extern | Lenkungskreis | Sonstiges
 #   (unbekannte Werte werden zu Sonstiges).
-title_format: "{date} – {title}"
+title_format: "{date} - {title}"
+
 # Mac-Mitteilung bei To-dos für dich oder Prüfbedarf. Standard: true
 notify: true
 
@@ -97,16 +112,21 @@ llm:
   # (api_key_keychain_service) -> api_key. Ist der Dienst gesetzt, wird api_key nicht gelesen.
   # Nie echten Wert ins Repo, bevorzugt Schlüsselbund.
   # api_key: ""
+
   # Name des Schlüsselbund-Eintrags, z. B. meetingsync-llm. Standard: leer = kein Schlüsselbund.
   # Anlegen (fragt den Key ab): security add-generic-password -a "$USER" -s <name> -w
   # api_key_keychain_service: ""
+
   # Sampling-Temperatur (niedrig = deterministischer). Standard: 0.2
   temperature: 0.2
+
   # HTTP-Timeout je LLM-Anfrage in Minuten. Standard: 30
   # timeout_minutes: 30
+
   # Längere Texte werden in Chunks dieser Größe vorverdichtet. Einheit: Bytes (≈ Zeichen,
   # Umlaute zählen doppelt), Minimum 5000. Standard: 60000
   max_chunk_chars: 60000
+
   # JSON-Schema an LM Studio senden. Bei Ablehnung (HTTP 4xx) fällt das Tool automatisch auf
   # "Schema im Prompt" zurück; false = immer Schema im Prompt. Standard: true
   structured_output: true
@@ -120,11 +140,14 @@ notion:
   # (token_keychain_service) -> token. Ist der Dienst gesetzt, wird token nicht gelesen.
   # Kein Token ins Repo, bevorzugt Schlüsselbund. Standard: leer
   # token: ""
+
   # Name des Schlüsselbund-Eintrags. Standard: leer = kein Schlüsselbund.
   # Anlegen (fragt das Token ab): security add-generic-password -a "$USER" -s <name> -w
   token_keychain_service: meetingsync-notion
+
   # API-Basis-URL. Standard: https://api.notion.com
   # base_url: https://api.notion.com
+
   # API-Version; nur mit Bedacht ändern, der Client nutzt Data Sources (2025-09-03).
   # Standard: "2025-09-03"
   # api_version: "2025-09-03"
@@ -133,9 +156,11 @@ notion:
   # akzeptiert. Die Platzhalter durch deine eigenen IDs aus Notion ersetzen (siehe README).
   # Notes: hier landen die Meeting-Notizen. Pflicht, kein Standard.
   notes_data_source_id: 00000000-0000-0000-0000-000000000000
+
   # Tasks: Ziel der To-dos. Standard: leer (keine To-dos). Nicht genutzt? Wert leer lassen
   # ("") oder Zeile entfernen, sonst antwortet Notion mit 404 und die Datei wird wiederholt.
   tasks_data_source_id: 00000000-0000-0000-0000-000000000000
+  
   # Projects: Quelle für Projektvorschläge und Verknüpfung. Standard: leer (keine Zuordnung).
   # Nicht genutzt? Wert leer lassen ("") oder Zeile entfernen, sonst antwortet Notion mit 404
   # und die Datei wird wiederholt.
