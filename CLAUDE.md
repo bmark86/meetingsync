@@ -20,6 +20,7 @@ Retry: temporary errors (LM Studio or Notion not reachable (including timeout), 
 ## Commands
 
 - `make build` (builds `./bin/meetingsync` with the version set; `./bin` is gitignored)
+- `make install` (builds like `make build`, then copies to `~/bin/meetingsync` via a temp file and rename; restart the service afterwards with `launchctl kickstart -k gui/$(id -u)/de.borukhov.meetingsync`)
 - `make test` (`go test -race ./...`, including `e2e_test.go`)
 - `make vet` (`go vet ./...`)
 - `make lint` (golangci-lint, pinned version)

@@ -10,7 +10,7 @@
   "orphan_summary_action": "note",
   "transcript_extensions": [],
   "summary_extensions": [],
-  "title_format": "{date} – {title}",
+  "title_format": "{date} - {title}",
   "notify": true,
 
   "llm": {

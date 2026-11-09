@@ -2,9 +2,17 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [2.0.0] - not yet released
+## [Unreleased]
 
-Refactoring release (branch `refactor/architektur`, milestones M0 to M6). Version 2.0.0 (SemVer major because of breaking changes, Mark, 2026-11-06); the date is set when Mark tags. Upgrade notes: [releases/v2.0.0.md](releases/v2.0.0.md). R-M4-02 (git history cleanup) was executed locally on 2026-11-09 (ADR 0011); Mark's force-pushes are still open. Entries marked ⚠ change visible behavior.
+### Added
+- R-F-01: `make install` (`BINDIR ?= $(HOME)/bin`): builds with the version, copies to `$(BINDIR)/meetingsync.new`, then `mv -f` onto `meetingsync`. The atomic rename avoids overwriting a running signed binary in place (macOS may kill it). Documented in README, CLAUDE.md and `docs/launchd.md`.
+
+### Changed
+- R-F-02: `config.example.json` aligned with `config.example.yaml`: `title_format` is `"{date} - {title}"` (hyphen), as set in commit 74e3880; `TestExampleConfigsIdentical` passes again. The code default stays `"{date} – {title}"` (en dash). Mark's decision.
+
+## [2.0.0] - 2026-11-09
+
+Refactoring release (branch `refactor/architektur`, milestones M0 to M6). Version 2.0.0 (SemVer major because of breaking changes, Mark, 2026-11-06); tagged 2026-11-09. Upgrade notes: [releases/v2.0.0.md](releases/v2.0.0.md). R-M4-02 (git history cleanup) was executed on 2026-11-09 (ADR 0011); the force-pushes of `main` and `v1.0.0` were done the same day. Entries marked ⚠ change visible behavior.
 
 ### Added
 - R-M0-02: Makefile targets `build` (to `./bin`, version via ldflags), `lint`, `test` (with `-race`), `vuln`; `check` = vet + lint + test + vuln. Tools pinned: golangci-lint v2.11.4, govulncheck v1.9.0.

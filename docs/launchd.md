@@ -61,7 +61,7 @@ Start `meetingsync` directly. It runs until you close the terminal or restart th
 
 - From 2026-11-01 Mark tests by hand for one week. The service is **not** set up.
 - If this works without problems, the service is set up:
-  1. Build the binary: `go build -o ~/bin/meetingsync .`
+  1. Install the binary: `make install` (builds with the version and copies it to `~/bin`; override with `BINDIR=<dir>`). It copies to `meetingsync.new` and renames, so a running signed binary is never overwritten in place (macOS may kill it).
   2. Copy the plist to `~/Library/LaunchAgents/` and replace `DEINNAME`. `-config` points to `~/.config/meetingsync/config.yaml` (the template already says this).
   3. `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/de.borukhov.meetingsync.plist`
   4. Check the log: `tail -f ~/Library/Logs/meetingsync.log`
@@ -79,6 +79,7 @@ Result of `-file`:
 - A file in the watch folder is archived by the service on its next pass as already processed (`↺ … schon verarbeitet → Archiv`). No second note. A file outside the watch folder stays where it is.
 - While the service runs a pass, `-file` waits (log `Dienst verarbeitet gerade den Exportordner – warte, bis der Durchlauf fertig ist …`). If the service archived the file meanwhile, `-file` fails with not found.
 - While `-file` runs, service passes are skipped (log `Anderer Lauf aktiv …`).
+- Update of a running service: `make install`, then `launchctl kickstart -k gui/$(id -u)/de.borukhov.meetingsync`.
 - After installing a new binary, restart the service. An old service has no folder lock and could create a second page (follow-up 30).
 - Without `watch_dir`, `-file` runs without the lock.
 - Delete or move actions on Mark's files only with his consent.

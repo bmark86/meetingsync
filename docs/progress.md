@@ -57,7 +57,7 @@
 | R-M3-17 ⚠ | No duplicate page after an ambiguous `CreatePage` failure (OD-05 residual risk, follow-up 15): `ErrUnklar` for 5xx, `*url.Error`, unreadable/unparsable 2xx; marker in Notes column `notes_properties.source` (empty = off); lookup of the stored marker (ledger `verworfen`) before the next create; found = reuse page; nothing found within 5 min = wait; lookup error = failed attempt; LLM result cached in memory. Decisions: Mark (M3 gate 2026-11-02): text column; Mark (2026-11-04, privacy): marker `<file name> · <mtime>`, no content hash in Notion. Golden unchanged. Security review approved after fix rounds 1 and 2. ADR 0004 updated. Residual risks: ADR 0004. Live test against real Notion still open (needs Mark's approval) | done | 2026-11-04 |
 | R-M3-14 ⚠ | `-file` writes a ledger entry (D8, OD-18, A-14): `begonnen` before `CreatePage`, `fertig` after, `verworfen` on a failed `CreatePage`; the file is not moved (Mark, 2026-11-04), the service archives it later as already processed (`↺ … schon verarbeitet → Archiv`); files outside the export folder stay. `-file` always processes the given file, also if its hash is known (coordinator). `-dry-run -file` unchanged (G09). Mutual exclusion (coordinator): advisory `flock` on the export folder (`internal/ledger/lock.go`, no lock file); service pass skipped while held, `-file` waits; service reads foreign ledger lines per pass (`Ledger.Refresh`). Golden G09b added, rest byte-identical; code review approved, fix round 1 done. ADR 0013. Residual risks: ADR 0013 | done | 2026-11-04 |
 | R-M4-01 | Real Notion data source IDs replaced by placeholders in `config.example.yaml`/`.json` (S-05, A-20); comments and README say to enter own IDs, Tasks/Projects empty if unused. No test change. Code and security review approved. IDs stay in git history until R-M4-02 | done | 2026-11-04 |
-| R-M4-02 ⚠ | Git history cleanup (S-05), executed 2026-11-09 after the merge into `main` with Mark's go (facts: follow-up 35, ADR 0011); Mark's pushes open. Decisions: Mark (2026-11-05, OD-15): `git filter-repo --replace-text`, in place (no fresh clone), one run at the end after the merge into `main` and before the next release, backup bundle first, Mark force-pushes. Plan step "fresh clone" replaced. Facts: 3 real IDs, 15 occurrences, only in old example configs. ADR 0011. Residual risk: GitHub caches | done | 2026-11-09 |
+| R-M4-02 ⚠ | Git history cleanup (S-05), executed 2026-11-09 after the merge into `main` with Mark's go (facts: follow-up 35, ADR 0011); force-pushes done 2026-11-09. Decisions: Mark (2026-11-05, OD-15): `git filter-repo --replace-text`, in place (no fresh clone), one run at the end after the merge into `main` and before the next release, backup bundle first, Mark force-pushes. Plan step "fresh clone" replaced. Facts: 3 real IDs, 15 occurrences, only in old example configs. ADR 0011. Residual risk: GitHub caches | done | 2026-11-09 |
 | R-M4-03 | Personal defaults (A-20): code default of `my_name` "Mark" -> "Max" (`internal/config`); example configs and README show "Max". Golden harness, `e2e_test.go`, `app_flow_test.go` set `my_name: Mark` explicitly (golden config relied on the old default, found during the task); golden byte-identical. Mark's config keeps `my_name: Mark` (OD-14b). Committed (f63cd9b); reviews passed. | done | 2026-11-04 |
 | R-M4-04 | Root integration tests behind package boundaries: 12 root tests that read pipeline internals moved unchanged by name to `internal/pipeline/moved_root_test.go` (now on the pipeline fakes, equivalent assertions). Unexported `pipeline.FileState`, `ErrUnterbrochen`, `config.Finalize`; `Pipeline.States()` removed. `e2e_test.go` and `internal/cli/cli_test.go` write a temp YAML and load it via `config.Load`. 581 test runs before and after; golden byte-identical; `make check` exit 0. CR approved | done | 2026-11-04 |
 | R-M5-01 | Read content only when processing (A-10, closed): `watch.List` reads only on a cache miss, `pipeline.loadContent` reads in `handle` (skip pass if read fails, length != listed size or file changed); summary partner read only when used. 0 reads for backoff and unchanged known files (counting fake FS). New logs: `<name> nicht lesbar: <err>`, `<name> nicht lesbar oder geändert → ohne Zusammenfassung als Kontext` (summary archived with transcript, never an orphan). Golden unchanged; `make check` green. Decision: coordinator (error-path changes). CR and SR approved. Residual risks: same-size+same-mtime change not detected; optional idea: `os.SameFile` | done | 2026-11-05 |
@@ -66,22 +66,25 @@
 | R-M6-01 | `docs/architecture.md`: context, packages and dependency direction, runtime sequence, ledger states, error and retry model, trust boundaries, launchd (A-21). CR and SR approved, 11 minor fixes | done (c3d91a3) | 2026-11-06 |
 | R-M6-02 | `docs/testing.md`: test pyramid, golden tests and fakes, normalization, coverage targets, updating golden files (A-08, A-21). CR approved, 9 minor fixes. Review found the documented update command wrong: `testing.md`, the plan and the `golden_test.go` comments use `go test . -run Golden -update` (ADR 0003 fixed in R-M6-03) | done (c3d91a3) | 2026-11-06 |
 | R-M6-03 | README, CLAUDE.md, changelog and progress brought up to date: Unreleased changelog intro added and entries reordered (misplaced duplicate R-M2-08 entry removed from 1.0.0), M6 summary and refactoring status here, update command corrected in ADR 0003. README and CLAUDE.md edited by a parallel task. Code review CHANGES_REQUIRED, fixed in round 1 (findings 1–6); finding 7 accepted (make targets documented in CLAUDE.md only, README keeps plain go commands); finding 8 moot (M6 marked complete at commit time after verification). Commit follows | done | 2026-11-06 |
+| R-F-01 | After v2.0.0 (unreleased): `make install`: `BINDIR ?= $(HOME)/bin`, copy to `meetingsync.new`, atomic `mv -f` (no in-place overwrite of a running signed binary); version via ldflags from `make build`; README, CLAUDE.md, `docs/launchd.md` updated. Code review approved. Minors not taken (coordinator: not needed for default use): unquoted `BINDIR`, `BINDIR` override not in CLAUDE.md, README fallback `go build -o ~/bin` kept. Developer haiku | done | 2026-11-09 |
+| R-F-02 | After v2.0.0 (unreleased): `config.example.json` `title_format` aligned to the hyphen in `config.example.yaml` (commit 74e3880 broke `TestExampleConfigsIdentical`); code default stays en dash. Decision: Mark. `make check` exit 0. Developer haiku | done | 2026-11-09 |
+| R-LIVE | Live test against real Notion (approved by Mark): `make build`, `-check` exit 0 (Notes and Tasks reachable, 11 active projects, model available); `-dry-run -file` then `-file` on a synthetic transcript outside the export folder created one note (0 tasks, no project, review callout, Status Inbox, "Quelle" filled with `<file name> · <mtime>`); ledger got `begonnen` then a v1-compatible `fertig`. Page layout matches v1.0.0. A `.txt` without timestamps is classified as summary (as in v1.0.0). Mark deletes the test note; the two ledger lines stay (harmless). Hint: Notes DB has no "Prüfen" checkbox, so review hints are only the callout. Closes follow-ups 27, 32, 33 | done | 2026-11-09 |
 
 ## Refactoring status (2026-11-09)
 
-M0 to M6 are complete, including R-M4-02 (git history cleanup, executed 2026-11-09 after the merge into `main`, ADR 0011). Remaining: Mark's pushes and the release (follow-up 35).
+M0 to M6 are complete, including R-M4-02 (git history cleanup, executed 2026-11-09 after the merge into `main`, ADR 0011). Remaining: GitHub release v2.0.0, check the `v1.0.0` GitHub release (follow-up 35). Branch `refactor/architektur` deleted on GitHub (2026-11-09).
 
 Open user actions for Mark (details in the follow-ups below):
 
 | Action | Follow-up |
 | --- | --- |
-| Force-push `main` and `v1.0.0`, delete `refactor/architektur` on GitHub (see Release order steps 4 to 6) | 35 |
-| Add `my_role` and `example_name` to `~/.config/meetingsync/config.yaml` before the rebuild | 27 |
-| Add `notes_properties.source: Quelle` under `notion:`, then run `meetingsync -check` | 32 |
-| Rebuild `~/bin`, restart the service (old service has no folder lock) | 30 |
+| done 2026-11-09: force-push `main` and `v1.0.0`; `refactor/architektur` deleted on GitHub (Release order step 6) | 35 |
+| done 2026-11-09: `my_role`, `example_name` and `notion.notes_properties.source: Quelle` in the config, "Quelle" column exists, `-check` green | 27, 32 |
+| Switch the service to v2.0.0: `make install`, then `launchctl kickstart -k gui/$(id -u)/de.borukhov.meetingsync` (old service has no folder lock; not yet confirmed) | 30 |
 | Optional: LLM key in the Keychain (`llm.api_key_keychain_service`) | R-M3-15 |
-| Approve and run the live test of R-M3-17 against real Notion | 33 |
-| Release, remaining steps (see below): force-pushes, tag v2.0.0, GitHub release, check the v1.0.0 release | 35 |
+| Optional: add a "Prüfen" checkbox column to the Notes database (without it the review hint is only the callout box) | R-LIVE |
+| done 2026-11-09: live test of R-M3-17 against real Notion (Mark deletes the test note) | 33 |
+| done 2026-11-09: force-pushes, tag v2.0.0. Open: GitHub release from `docs/releases/v2.0.0.md`, check the `v1.0.0` GitHub release (not confirmed) | 35 |
 | Decide: `-file` on a summary with its transcript still in the folder; reverse-DNS label and repo owner name in the public repo | 31, 34 |
 | Earlier, still open: config migration to YAML, one week of manual testing, GitHub settings (Dependabot alerts, branch protection), `begonnen` lines / `_fehler` note after a crash, umlaut and Keychain check under launchd, optional `chmod` on `_archiv`/`_fehler`/ledger, plist `ThrottleInterval` | 3, 4, 9, 14, 24, 25, 26 |
 
@@ -92,10 +95,10 @@ Release order (version v2.0.0, Mark, 2026-11-06; upgrade notes: [releases/v2.0.0
 | 1 | Mark | done 2026-11-09: `refactor/architektur` merged into `main` (merge commit) |
 | 2 | Coordinator | done 2026-11-09: R-M4-02 history rewrite on the merged `main` (Mark's go, ADR 0011) |
 | 3 | Coordinator | done 2026-11-09: follow-up docs commit maps old to new commit hashes (follow-up 35) |
-| 4 | Mark | open: `git push --force origin main` |
-| 5 | Mark | open: `git push --force origin v1.0.0` (tag re-written by the rewrite) |
-| 6 | Mark | open: `git push origin --delete refactor/architektur` (merged branch, Mark's decision) |
-| 7 | Mark | open: tag `v2.0.0` on the new `main`, create the GitHub release from `docs/releases/v2.0.0.md` |
+| 4 | Mark | done 2026-11-09: `git push --force origin main` |
+| 5 | Mark | done 2026-11-09: `git push --force origin v1.0.0` (tag re-written by the rewrite) |
+| 6 | Mark | done 2026-11-09: `git push origin --delete refactor/architektur` (remote branch confirmed gone via `git ls-remote --heads origin refactor/architektur`) |
+| 7 | Mark | done 2026-11-09: tag `v2.0.0` on the new `main`. Open: GitHub release from `docs/releases/v2.0.0.md` |
 | 8 | Mark | open: check the `v1.0.0` GitHub release still points to the re-pushed tag |
 
 ## M1 summary (complete 2026-11-02: R-M1-01 to R-M1-07 + R-M1-EXIT)
@@ -188,7 +191,7 @@ Next: M3 (gate passed 2026-11-02; complete 2026-11-04, see M3 summary).
 
 ## M3 summary (complete 2026-11-04: R-M3-01 to R-M3-20; R-M3-19 merged into R-M3-03)
 
-Branch `refactor/architektur`, HEAD acc1b60. Exit open: live test of R-M3-17 against real Notion needs Mark's approval (follow-up 33).
+Branch `refactor/architektur`, HEAD acc1b60. Exit: live test of R-M3-17 against real Notion done 2026-11-09 (follow-up 33).
 
 | Finding | Closed by |
 | --- | --- |
@@ -268,13 +271,13 @@ Accepted residual risks:
 | Residual risks of the folder lock and of the marker lookup: see ADR 0013 and ADR 0004 | R-M3-14, R-M3-17 |
 | `-file` on a summary while its transcript is still in the folder (follow-up 31) | R-M3-14 |
 
-Actions for Mark around the next rebuild of `~/bin` (`go build -o ~/bin/meetingsync .`):
+Actions for Mark around the next rebuild of `~/bin` (`make install`):
 
 | When | Action | Follow-up |
 | --- | --- | --- |
-| Before | Add `my_role: Head of Engineering` and `example_name: Sascha` to `~/.config/meetingsync/config.yaml`; otherwise the prompt has no role and the example name is "Alex" | 27 |
-| Before | Add under `notion:` the lines `notes_properties:` and `  source: Quelle`; without them the duplicate-page protection is off | 32 |
-| After | Run `meetingsync -check`; no hint about the "Quelle" column should appear | 32 |
+| Before | done 2026-11-09: `my_role` and `example_name` in `~/.config/meetingsync/config.yaml` | 27 |
+| Before | done 2026-11-09: `notes_properties.source: Quelle` under `notion:` | 32 |
+| After | done 2026-11-09: `meetingsync -check` shows no hint about the "Quelle" column | 32 |
 | After | `-check` now exits 1 on any ✗ (matters for scripts) | 5 |
 | After | Restart the service; an old running service has no folder lock and no ledger refresh | 30 |
 | Optional | LLM key in the Keychain: `security add-generic-password -a "$USER" -s meetingsync-llm -w`, then `llm.api_key_keychain_service: meetingsync-llm` | R-M3-15 |
@@ -283,7 +286,8 @@ Actions for Mark around the next rebuild of `~/bin` (`go build -o ~/bin/meetings
 | Earlier, still open | Optional `chmod 700` on `_archiv`/`_fehler`, `chmod 600` on the ledger | 25 |
 | Earlier, still open | Optional: copy the plist template with `ThrottleInterval` and reload the agent | 26 |
 | Earlier, still open | Config migration to YAML, one week of manual testing, GitHub settings | 3, 4, 9 |
-| M3 exit | Approve the live test of R-M3-17 against real Notion | 33 |
+| M3 exit | done 2026-11-09: live test of R-M3-17 against real Notion | 33 |
+| Optional | Add a "Prüfen" checkbox column to the Notes database | R-LIVE |
 
 ## M4 summary (complete 2026-11-09: R-M4-01 to R-M4-04)
 
@@ -302,10 +306,10 @@ M4 exit ("`git grep` and `git log -p --all` without the three real IDs; tag `v1.
 | --- | --- |
 | `git grep` without the real IDs (current tree) | met (R-M4-01) |
 | `git log -p --all` without the real IDs | met locally (2026-11-09): `git log -p --all \| grep -c -F -f <ID list>` = 0 (before: 15 on `main`, 9 in `v1.0.0`); tag messages 0 |
-| Tag `v1.0.0` on the cleaned commit | met locally: re-written by filter-repo, contained in `main`; GitHub copy follows with Mark's force-push |
+| Tag `v1.0.0` on the cleaned commit | met locally: re-written by filter-repo, contained in `main`; GitHub copy updated by force-push 2026-11-09 |
 | Backup bundle exists | met: `~/Backups/meetingsync-vor-rewrite.bundle`, verified, all refs |
 
-M4 is complete. The remote still holds the old history until Mark force-pushes (follow-up 35).
+M4 is complete. The remote was updated by force-push on 2026-11-09 (follow-up 35).
 
 ## M5 summary (complete 2026-11-06: R-M5-01 to R-M5-03)
 
@@ -359,13 +363,13 @@ M6 exit ("files below exist, links checked, `docs/progress.md` current"): met fo
 | 24 | Manual check at the next real run (launchd): a notification with ü/ö shows correctly and the Keychain token is still read. Under launchd `LANG` was already unset before R-M3-07; the new loss is `__CF_USER_TEXT_ENCODING`. Expected fine (argv is UTF-8). If umlauts are garbled, add `__CF_USER_TEXT_ENCODING` to the `minimalEnv` allowlist in `internal/notify` | Mark | open (R-M3-07) |
 | 25 | Optional, not required: existing `_archiv`/`_fehler` folders and the ledger keep their old permissions (meetingsync never changes them). To make them private: `chmod 700` on the folders, `chmod 600` on the ledger | Mark | open (R-M3-04) |
 | 26 | Optional, when switching to launchd: the installed plist does not have `ThrottleInterval` yet. Copy the template again to `~/Library/LaunchAgents/`, then `launchctl bootout` and `launchctl bootstrap` (see `docs/launchd.md`) | Mark | open (R-M3-10) |
-| 27 | Before the next rebuild of `~/bin`, add these two lines to `~/.config/meetingsync/config.yaml`: `my_role: Head of Engineering` and `example_name: Sascha`. Otherwise the prompt changes (no role, example name "Alex") | Mark | open (R-M3-11) |
+| 27 | Before the next rebuild of `~/bin`, add these two lines to `~/.config/meetingsync/config.yaml`: `my_role: Head of Engineering` and `example_name: Sascha`. Otherwise the prompt changes (no role, example name "Alex") | Mark | done (2026-11-09, config checked by Mark) |
 | 28 | CLAUDE.md "Retry" paragraph says all errors count against `max_attempts`; since R-M3-06 a note above the block cap goes to `_fehler` at once, without retry. CLAUDE.md is outside `docs/`, the coordinator routes the edit | Coordinator | done (R-M3-13 commit) |
 | 29 | Block-cap path (R-M3-06) re-runs the LLM every 2 min while the move to `_fehler` keeps failing (rare). Fix needs moving the notification. Accepted by coordinator | Coordinator | open (R-M3-18) |
 | 30 | After the rebuild of `~/bin` with R-M3-14: restart the service. An old running service has no folder lock and no ledger refresh, so `-file` plus the old service could create a second page (ADR 0013) | Mark | open |
 | 31 | Pre-existing, unchanged by R-M3-14: `-file` on a summary while its transcript is still in the export folder: the service still creates a page from the pair (only the primary hash is checked). Decision for Mark | Mark | open |
-| 32 | After the rebuild of `~/bin` with R-M3-17: add to `~/.config/meetingsync/config.yaml` under `notion:` the lines `notes_properties:` and `  source: Quelle`, then run `meetingsync -check`; no hint about the column should appear. Without them the protection is off | Mark | open |
-| 33 | Live test of R-M3-17 against real Notion (needs Mark's approval) | Mark | open |
+| 32 | After the rebuild of `~/bin` with R-M3-17: add to `~/.config/meetingsync/config.yaml` under `notion:` the lines `notes_properties:` and `  source: Quelle`, then run `meetingsync -check`; no hint about the column should appear. Without them the protection is off | Mark | done (2026-11-09, `-check` exit 0) |
+| 33 | Live test of R-M3-17 against real Notion (needs Mark's approval) | Mark | done (2026-11-09, see R-LIVE) |
 | 34 | Low: the reverse-DNS label `de.borukhov.meetingsync` and the repo owner name stay in the public repo. Assumed intentional, not confirmed (R-M4-01) | Mark | open |
-| 35 | R-M4-02 executed 2026-11-09 (Mark's go) after `refactor/architektur` was merged into `main`: backup bundle `~/Backups/meetingsync-vor-rewrite.bundle` created and verified (all refs); `git filter-repo --force --replace-text` (a40bce548d2c) replaced the 3 real IDs by the placeholder in all commits and tag `v1.0.0`; `git log -p --all \| grep -c -F -f <ID list>` = 0, tag messages 0, reflog empty, old objects gone; `make check` green on the new `main`; `origin` re-added; commit map at `~/Backups/meetingsync-commit-map.txt` (outside the repo); local branches `backup/vor-squash` and `refactor/architektur` deleted. Hash mapping: commit hashes in docs now refer to the rewritten history (the two R-M0-05 commits were squashed into one earlier, now 419e91b). **Still to do by Mark:** `git push --force origin main`, `git push --force origin v1.0.0`, `git push origin --delete refactor/architektur`, then tag `v2.0.0` on the new `main` and create the GitHub release from `docs/releases/v2.0.0.md`; check the `v1.0.0` GitHub release still points to the re-pushed tag. Residual risk: GitHub may keep old SHAs in caches (only GitHub Support can purge) | Mark | open (Mark's pushes) |
+| 35 | R-M4-02 executed 2026-11-09 (Mark's go) after `refactor/architektur` was merged into `main`: backup bundle `~/Backups/meetingsync-vor-rewrite.bundle` created and verified (all refs); `git filter-repo --force --replace-text` (a40bce548d2c) replaced the 3 real IDs by the placeholder in all commits and tag `v1.0.0`; `git log -p --all \| grep -c -F -f <ID list>` = 0, tag messages 0, reflog empty, old objects gone; `make check` green on the new `main`; `origin` re-added; commit map at `~/Backups/meetingsync-commit-map.txt` (outside the repo); local branches `backup/vor-squash` and `refactor/architektur` deleted. Hash mapping: commit hashes in docs now refer to the rewritten history (the two R-M0-05 commits were squashed into one earlier, now 419e91b). **Done 2026-11-09:** `git push --force origin main`, `git push --force origin v1.0.0`, tag `v2.0.0` on the new `main`. **Done 2026-11-09:** remote branch `refactor/architektur` deleted (Release order step 6). **Still open:** GitHub release from `docs/releases/v2.0.0.md`, check that the `v1.0.0` GitHub release still points to the re-pushed tag. Residual risk: GitHub may keep old SHAs in caches (only GitHub Support can purge) | Mark | open (GitHub release, v1.0.0 check) |
 | 36 | Optional: `-check` on a `Models()` timeout prints `LM Studio nicht erreichbar unter …: … context deadline exceeded`; the server accepted the connection but did not answer. Wrap `errors.Is(err, context.DeadlineExceeded)` as `keine Antwort innerhalb von 10 s` (cli). Found in R-M5-03 code review | Coordinator | open (optional) |

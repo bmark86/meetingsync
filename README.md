@@ -32,8 +32,10 @@ The build needs Go 1.26 (`go 1.26.0` in `go.mod`). Besides the standard library,
 ```bash
 cd meetingsync
 go test ./...                       # optional, takes 1 second
-go build -o ~/bin/meetingsync .
+make install                        # preferred: builds with version, installs to ~/bin/meetingsync
 ```
+
+Without make: `go build -o ~/bin/meetingsync .`
 
 ### 2. Prepare LM Studio
 
