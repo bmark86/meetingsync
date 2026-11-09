@@ -1,0 +1,45 @@
+Konfiguration: <tmp>/config.yaml
+Sirius Sync.srt erkannt als: Transkript
+   LLM läuft (317 Zeichen, Modell gemma-test) …
+   LLM fertig nach <dur>: "Sirius Sync"
+────────── DRY-RUN ──────────
+Titel:    2026-10-01 – Sirius Sync
+Projekt:  AI-First
+Prüfen:   true Enthält To-dos für dich – bitte Zuordnung und Fälligkeit prüfen
+Blöcke:   26
+{
+  "titel": "Sirius Sync",
+  "typ": "Team",
+  "teilnehmer": [
+    "Mark"
+  ],
+  "kontext_ziel": "Stand der Build-Pipeline klären.",
+  "themen": [
+    {
+      "titel": "Pipeline",
+      "punkte": [
+        "Build dauert 12 Minuten"
+      ]
+    }
+  ],
+  "entscheidungen": [
+    "Cache wird eingeführt"
+  ],
+  "next_actions": [
+    {
+      "aufgabe": "Budget für Runner klären",
+      "owner": "Mark",
+      "deadline": "2026-10-02",
+      "fuer_mich": true
+    }
+  ],
+  "offene_fragen": [],
+  "naechstes_meeting": {
+    "datum": "",
+    "themen": []
+  },
+  "projekt": "ai-first",
+  "pruef_gruende": [],
+  "pruefen": false
+}
+─────────────────────────────

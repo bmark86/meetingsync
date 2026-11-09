@@ -1,0 +1,67 @@
+[
+  {
+    "server": "notion",
+    "method": "GET",
+    "path": "/v1/data_sources/notes-ds",
+    "headers": {
+      "Accept-Encoding": "gzip",
+      "Authorization": "Bearer <token>",
+      "Notion-Version": "2025-09-03",
+      "User-Agent": "Go-http-client/1.1"
+    }
+  },
+  {
+    "server": "notion",
+    "method": "GET",
+    "path": "/v1/data_sources/tasks-ds",
+    "headers": {
+      "Accept-Encoding": "gzip",
+      "Authorization": "Bearer <token>",
+      "Notion-Version": "2025-09-03",
+      "User-Agent": "Go-http-client/1.1"
+    }
+  },
+  {
+    "server": "notion",
+    "method": "GET",
+    "path": "/v1/data_sources/projects-ds",
+    "headers": {
+      "Accept-Encoding": "gzip",
+      "Authorization": "Bearer <token>",
+      "Notion-Version": "2025-09-03",
+      "User-Agent": "Go-http-client/1.1"
+    }
+  },
+  {
+    "server": "notion",
+    "method": "POST",
+    "path": "/v1/data_sources/projects-ds/query",
+    "headers": {
+      "Accept-Encoding": "gzip",
+      "Authorization": "Bearer <token>",
+      "Content-Length": "144",
+      "Content-Type": "application/json",
+      "Notion-Version": "2025-09-03",
+      "User-Agent": "Go-http-client/1.1"
+    },
+    "body": {
+      "filter": {
+        "and": [
+          {
+            "property": "status",
+            "status": {
+              "does_not_equal": "Done"
+            }
+          },
+          {
+            "checkbox": {
+              "equals": false
+            },
+            "property": "Archive"
+          }
+        ]
+      },
+      "page_size": 100
+    }
+  }
+]

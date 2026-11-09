@@ -1,0 +1,43 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: none
+  enable:
+    - govet
+    - errcheck
+    - staticcheck
+    - unused
+    - ineffassign
+    - gosec
+  settings:
+    errcheck:
+      # Auch "_ = f()" melden: jede bewusst ignorierte Fehlerrueckgabe braucht
+      # einen Grund-Kommentar und ein //nolint:errcheck.
+      check-blank: true
+    staticcheck:
+      checks:
+        - all
+        # ST1005: dauerhaft deaktiviert, kein Schuldposten. Fehlertexte sind
+        # deutsch, Substantive werden grossgeschrieben ("Datei ist leer").
+        - -ST1005
+  exclusions:
+    rules:
+      # errcheck check-blank: In Tests sind ignorierte Fehler in Hilfscode
+      # (Handler, Fixtures) ueblich; ein Fehler dort laesst den Test ohnehin
+      # scheitern. Die Regel gilt daher nur fuer Produktionscode.
+      - linters: [errcheck]
+        path: _test\.go$
+      # gosec G301/G302/G306 nur in Tests: Fixtures unter t.TempDir() mit
+      # 0644/0755 bilden vorhandene Dateien/Ordner nach (OD-10). Produktionscode
+      # legt seit R-M3-04 (S-12) mit 0600/0700 an und braucht keine Ausnahme.
+      - linters: [gosec]
+        path: _test\.go$
+        text: "G30[126]:"
+      # version wird nur per -ldflags "-X main.version=..." gesetzt und per
+      # "go version -m" gelesen (OD-02), nicht im Code.
+      - path: ^main\.go$
+        linters: [unused]
+        text: "var version is unused"

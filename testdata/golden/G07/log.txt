@@ -1,0 +1,6 @@
+Neu: 2026-09-30 10-00 Review.json → Transkript
+→ 2026-09-30 10-00 Review.json (Transkript, 0 KB)
+   LLM läuft (136 Zeichen, Modell gemma-test) …
+   LLM fertig nach <dur>: "Planung Q4"
+   ✓ Notion: 2026-09-30 – Planung Q4 (1 To-dos für dich, ⚠️ prüfen) https://www.notion.so/page-1
+   📦 2026-09-30 10-00 Review.json → <tmp>/watch/_archiv/2026-10/2026-09-30 10-00 Review.json

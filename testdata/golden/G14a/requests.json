@@ -1,0 +1,3866 @@
+[
+  {
+    "server": "notion",
+    "method": "GET",
+    "path": "/v1/data_sources/notes-ds",
+    "headers": {
+      "Accept-Encoding": "gzip",
+      "Authorization": "Bearer <token>",
+      "Notion-Version": "2025-09-03",
+      "User-Agent": "Go-http-client/1.1"
+    }
+  },
+  {
+    "server": "notion",
+    "method": "GET",
+    "path": "/v1/data_sources/tasks-ds",
+    "headers": {
+      "Accept-Encoding": "gzip",
+      "Authorization": "Bearer <token>",
+      "Notion-Version": "2025-09-03",
+      "User-Agent": "Go-http-client/1.1"
+    }
+  },
+  {
+    "server": "notion",
+    "method": "GET",
+    "path": "/v1/data_sources/projects-ds",
+    "headers": {
+      "Accept-Encoding": "gzip",
+      "Authorization": "Bearer <token>",
+      "Notion-Version": "2025-09-03",
+      "User-Agent": "Go-http-client/1.1"
+    }
+  },
+  {
+    "server": "notion",
+    "method": "POST",
+    "path": "/v1/data_sources/projects-ds/query",
+    "headers": {
+      "Accept-Encoding": "gzip",
+      "Authorization": "Bearer <token>",
+      "Content-Length": "144",
+      "Content-Type": "application/json",
+      "Notion-Version": "2025-09-03",
+      "User-Agent": "Go-http-client/1.1"
+    },
+    "body": {
+      "filter": {
+        "and": [
+          {
+            "property": "status",
+            "status": {
+              "does_not_equal": "Done"
+            }
+          },
+          {
+            "checkbox": {
+              "equals": false
+            },
+            "property": "Archive"
+          }
+        ]
+      },
+      "page_size": 100
+    }
+  },
+  {
+    "server": "llm",
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "headers": {
+      "Accept-Encoding": "gzip",
+      "Content-Length": "4242",
+      "Content-Type": "application/json",
+      "User-Agent": "Go-http-client/1.1"
+    },
+    "body": {
+      "messages": [
+        {
+          "role": "system",
+          "content": "Du bist ein sorgfältiger Protokollant für Mark, Head of Engineering. Du bekommst das Material eines Meetings (automatisch transkribiert, kann Hörfehler enthalten) und erstellst daraus strukturierte Meeting-Notizen.\n\nRegeln:\n- Schreibe auf Deutsch, knapp und konkret. Fachbegriffe dürfen Englisch bleiben.\n- Erfinde nichts. Was nicht im Material steht, bleibt leer (\"\" bzw. []).\n- Sprecher: Das Transkript nutzt Labels wie \"Speaker 1\". Eines der Labels ist Mark selbst (eigene Mikrofonspur); erkenne es am Kontext. Ordne andere Labels nur dann echten Namen zu, wenn es eindeutig aus dem Gespräch hervorgeht (Anrede, Vorstellung, \"Danke, Sascha\"). Bei Unsicherheit schreibe z. B. \"Speaker 2 (vermutlich Sascha?)\", setze pruefen=true und nenne den Grund.\n- titel: kurz und aussagekräftig, ohne Datum, höchstens 8 Wörter.\n- typ: \"1:1\" (zwei Personen), \"Team\", \"Extern\" (Kunden, Partner, Dienstleister), \"Lenkungskreis\" oder \"Sonstiges\".\n- teilnehmer: Namen bzw. Labels aller Sprechenden, Mark eingeschlossen.\n- kontext_ziel: 1-3 Sätze, warum das Meeting stattfand und was am Ende klar sein sollte.\n- themen: die wichtigsten 2-8 Themen, je 1-6 Stichpunkte mit konkreten Fakten, Zahlen und Argumenten.\n- entscheidungen: nur ausdrücklich getroffene Entscheidungen, keine Meinungen.\n- next_actions: nur konkrete Aufgaben oder Zusagen. owner = Name der verantwortlichen Person. fuer_mich=true, wenn Mark die Aufgabe übernimmt oder zugesagt hat. deadline nur, wenn genannt, im Format YYYY-MM-DD; relative Angaben (\"bis Freitag\", \"nächste Woche\") rechnest du ab dem Meetingdatum um. Sonst \"\".\n- offene_fragen: ungeklärte oder vertagte Punkte.\n- naechstes_meeting: nur, wenn ein Folgetermin oder Folgethemen erwähnt wurden.\n- projekt: wähle aus der vorgegebenen Liste nur, wenn das Meeting eindeutig zu genau einem Projekt gehört, sonst \"\".\n- pruef_gruende/pruefen: pruefen=true, wenn Sprecherzuordnung, Aufgaben oder Inhalt unsicher sind (z. B. schlechte Transkriptqualität); in pruef_gruende stehen kurze Gründe.\nAntworte ausschließlich mit einem JSON-Objekt nach dem vorgegebenen Schema, ohne Erklärtext."
+        },
+        {
+          "role": "user",
+          "content": "Meetingdatum: Donnerstag, 01.10.2026 (2026-10-01), Beginn ca. 00:00\n\nMögliche Projekte:\n- AI-First\n- Plattform\n\nTranskript:\n\u003c\u003c\u003c\n[00:00:01] Speaker 1: Hallo zusammen, kurzer Stand zur Build-Pipeline.\n[00:00:06] Speaker 2: Der Build dauert gerade 12 Minuten, der Cache fehlt.\n[00:12:00] Speaker 1: Dann führen wir den Cache ein. Ich kläre das Budget für die Runner bis Freitag.\n[00:46:50] Speaker 2: Danke Mark, ich baue den Cache. Bis Freitag.\n\u003e\u003e\u003e"
+        }
+      ],
+      "model": "gemma-test",
+      "response_format": {
+        "json_schema": {
+          "name": "meeting_note",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "titel": {
+                "type": "string"
+              },
+              "typ": {
+                "type": "string",
+                "enum": [
+                  "1:1",
+                  "Team",
+                  "Extern",
+                  "Lenkungskreis",
+                  "Sonstiges"
+                ]
+              },
+              "teilnehmer": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "kontext_ziel": {
+                "type": "string"
+              },
+              "themen": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "titel": {
+                      "type": "string"
+                    },
+                    "punkte": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "titel",
+                    "punkte"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "entscheidungen": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "next_actions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "aufgabe": {
+                      "type": "string"
+                    },
+                    "owner": {
+                      "type": "string"
+                    },
+                    "deadline": {
+                      "type": "string"
+                    },
+                    "fuer_mich": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "aufgabe",
+                    "owner",
+                    "deadline",
+                    "fuer_mich"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "offene_fragen": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "naechstes_meeting": {
+                "type": "object",
+                "properties": {
+                  "datum": {
+                    "type": "string"
+                  },
+                  "themen": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "datum",
+                  "themen"
+                ],
+                "additionalProperties": false
+              },
+              "projekt": {
+                "type": "string",
+                "enum": [
+                  "",
+                  "AI-First",
+                  "Plattform"
+                ]
+              },
+              "pruef_gruende": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "pruefen": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "titel",
+              "typ",
+              "teilnehmer",
+              "kontext_ziel",
+              "themen",
+              "entscheidungen",
+              "next_actions",
+              "offene_fragen",
+              "naechstes_meeting",
+              "projekt",
+              "pruef_gruende",
+              "pruefen"
+            ],
+            "additionalProperties": false
+          },
+          "strict": true
+        },
+        "type": "json_schema"
+      },
+      "stream": false,
+      "temperature": 0.2
+    }
+  },
+  {
+    "server": "notion",
+    "method": "POST",
+    "path": "/v1/pages",
+    "headers": {
+      "Accept-Encoding": "gzip",
+      "Authorization": "Bearer <token>",
+      "Content-Length": "19248",
+      "Content-Type": "application/json",
+      "Notion-Version": "2025-09-03",
+      "User-Agent": "Go-http-client/1.1"
+    },
+    "body": {
+      "children": [
+        {
+          "callout": {
+            "color": "yellow_background",
+            "icon": {
+              "emoji": "⚠️",
+              "type": "emoji"
+            },
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Bitte prüfen: Enthält To-dos für dich – bitte Zuordnung und Fälligkeit prüfen"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "callout"
+        },
+        {
+          "heading_2": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "📅 Meeting-Info"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_2"
+        },
+        {
+          "object": "block",
+          "table": {
+            "children": [
+              {
+                "object": "block",
+                "table_row": {
+                  "cells": [
+                    [
+                      {
+                        "annotations": {
+                          "bold": true
+                        },
+                        "text": {
+                          "content": "Datum"
+                        },
+                        "type": "text"
+                      }
+                    ],
+                    [
+                      {
+                        "text": {
+                          "content": "01.10.2026 (Do)"
+                        },
+                        "type": "text"
+                      }
+                    ]
+                  ]
+                },
+                "type": "table_row"
+              },
+              {
+                "object": "block",
+                "table_row": {
+                  "cells": [
+                    [
+                      {
+                        "annotations": {
+                          "bold": true
+                        },
+                        "text": {
+                          "content": "Uhrzeit"
+                        },
+                        "type": "text"
+                      }
+                    ],
+                    [
+                      {
+                        "text": {
+                          "content": "00:00–00:47 (47 min), geschätzt"
+                        },
+                        "type": "text"
+                      }
+                    ]
+                  ]
+                },
+                "type": "table_row"
+              },
+              {
+                "object": "block",
+                "table_row": {
+                  "cells": [
+                    [
+                      {
+                        "annotations": {
+                          "bold": true
+                        },
+                        "text": {
+                          "content": "Ort / Link"
+                        },
+                        "type": "text"
+                      }
+                    ],
+                    [
+                      {
+                        "text": {
+                          "content": "–"
+                        },
+                        "type": "text"
+                      }
+                    ]
+                  ]
+                },
+                "type": "table_row"
+              },
+              {
+                "object": "block",
+                "table_row": {
+                  "cells": [
+                    [
+                      {
+                        "annotations": {
+                          "bold": true
+                        },
+                        "text": {
+                          "content": "Typ"
+                        },
+                        "type": "text"
+                      }
+                    ],
+                    [
+                      {
+                        "text": {
+                          "content": "Team"
+                        },
+                        "type": "text"
+                      }
+                    ]
+                  ]
+                },
+                "type": "table_row"
+              },
+              {
+                "object": "block",
+                "table_row": {
+                  "cells": [
+                    [
+                      {
+                        "annotations": {
+                          "bold": true
+                        },
+                        "text": {
+                          "content": "Quelle"
+                        },
+                        "type": "text"
+                      }
+                    ],
+                    [
+                      {
+                        "text": {
+                          "content": "Planung Q4.srt"
+                        },
+                        "type": "text"
+                      }
+                    ]
+                  ]
+                },
+                "type": "table_row"
+              }
+            ],
+            "has_column_header": false,
+            "has_row_header": true,
+            "table_width": 2
+          },
+          "type": "table"
+        },
+        {
+          "divider": {},
+          "object": "block",
+          "type": "divider"
+        },
+        {
+          "heading_2": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "👥 Teilnehmer"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_2"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Mark"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Sascha"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "divider": {},
+          "object": "block",
+          "type": "divider"
+        },
+        {
+          "heading_2": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "🎯 Kontext & Ziel des Meetings"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_2"
+        },
+        {
+          "object": "block",
+          "paragraph": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Ä"
+                },
+                "type": "text"
+              },
+              {
+                "text": {
+                  "content": "nderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung f"
+                },
+                "type": "text"
+              },
+              {
+                "text": {
+                  "content": "ür Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe."
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "type": "paragraph"
+        },
+        {
+          "divider": {},
+          "object": "block",
+          "type": "divider"
+        },
+        {
+          "heading_2": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "📝 Besprochene Themen"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_2"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 01"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 01 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 01 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 02"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 02 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 02 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 03"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 03 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 03 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 04"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 04 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 04 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 05"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 05 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 05 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 06"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 06 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 06 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 07"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 07 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 07 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 08"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 08 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 08 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 09"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 09 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 09 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 10"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 10 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 10 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 11"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 11 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 11 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 12"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 12 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 12 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 13"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 13 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 13 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 14"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 14 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 14 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 15"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 15 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 15 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 16"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 16 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 16 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 17"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 17 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 17 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 18"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 18 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 18 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 19"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 19 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 19 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 20"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 20 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 20 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 21"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 21 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 21 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 22"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 22 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 22 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 23"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 23 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 23 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 24"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 24 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 24 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 25"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 25 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 25 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 26"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 26 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 26 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 27"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 27 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 27 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 28"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 28 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 28 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 29"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 29 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 29 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 30"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        }
+      ],
+      "parent": {
+        "data_source_id": "notes-ds",
+        "type": "data_source_id"
+      },
+      "properties": {
+        "Name": {
+          "title": [
+            {
+              "text": {
+                "content": "2026-10-01 – Planung Q4"
+              },
+              "type": "text"
+            }
+          ]
+        },
+        "Prüfen": {
+          "checkbox": true
+        },
+        "Status": {
+          "status": {
+            "name": "Inbox"
+          }
+        }
+      }
+    }
+  },
+  {
+    "server": "notion",
+    "method": "PATCH",
+    "path": "/v1/blocks/page-1/children",
+    "headers": {
+      "Accept-Encoding": "gzip",
+      "Authorization": "Bearer <token>",
+      "Content-Length": "12554",
+      "Content-Type": "application/json",
+      "Notion-Version": "2025-09-03",
+      "User-Agent": "Go-http-client/1.1"
+    },
+    "body": {
+      "children": [
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 30 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 30 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 31"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 31 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 31 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 32"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 32 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 32 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 33"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 33 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 33 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 34"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 34 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 34 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 35"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 35 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 35 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 36"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 36 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 36 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 37"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 37 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 37 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 38"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 38 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 38 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 39"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 39 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 39 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 40"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 40 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 40 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 41"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 41 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 41 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 42"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 42 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 42 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 43"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 43 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 43 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 44"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 44 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 44 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 45"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 45 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 45 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 46"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 46 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 46 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 47"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 47 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 47 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 48"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 48 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 48 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 49"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 49 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 49 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 50"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 50 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 50 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 51"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 51 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 51 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 52"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 52 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 52 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 53"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 53 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 53 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 54"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 54 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 54 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 55"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 55 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 55 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 56"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 56 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 56 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 57"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 57 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 57 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 58"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 58 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 58 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 59"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 59 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 59 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 60"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 60 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 60 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 61"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 61 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 61 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 62"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 62 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 62 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 63"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 63 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        }
+      ]
+    }
+  },
+  {
+    "server": "notion",
+    "method": "PATCH",
+    "path": "/v1/blocks/page-1/children",
+    "headers": {
+      "Accept-Encoding": "gzip",
+      "Authorization": "Bearer <token>",
+      "Content-Length": "10590",
+      "Content-Type": "application/json",
+      "Notion-Version": "2025-09-03",
+      "User-Agent": "Go-http-client/1.1"
+    },
+    "body": {
+      "children": [
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 63 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 64"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 64 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 64 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 65"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 65 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 65 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 66"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 66 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 66 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 67"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 67 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 67 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 68"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 68 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 68 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 69"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 69 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 69 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Thema 70"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 70 a"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Punkt 70 b"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "heading_3": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Langer Punkt"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_3"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Ä"
+                },
+                "type": "text"
+              },
+              {
+                "text": {
+                  "content": "nderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung f"
+                },
+                "type": "text"
+              },
+              {
+                "text": {
+                  "content": "ür Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe. Größere Änderung für Übergabe."
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "divider": {},
+          "object": "block",
+          "type": "divider"
+        },
+        {
+          "heading_2": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "✅ Entscheidungen"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_2"
+        },
+        {
+          "object": "block",
+          "to_do": {
+            "checked": false,
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Cache wird eingeführt"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "type": "to_do"
+        },
+        {
+          "divider": {},
+          "object": "block",
+          "type": "divider"
+        },
+        {
+          "heading_2": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "🚀 Next Actions"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_2"
+        },
+        {
+          "object": "block",
+          "table": {
+            "children": [
+              {
+                "object": "block",
+                "table_row": {
+                  "cells": [
+                    [
+                      {
+                        "text": {
+                          "content": "Aufgabe"
+                        },
+                        "type": "text"
+                      }
+                    ],
+                    [
+                      {
+                        "text": {
+                          "content": "Owner"
+                        },
+                        "type": "text"
+                      }
+                    ],
+                    [
+                      {
+                        "text": {
+                          "content": "Deadline"
+                        },
+                        "type": "text"
+                      }
+                    ]
+                  ]
+                },
+                "type": "table_row"
+              },
+              {
+                "object": "block",
+                "table_row": {
+                  "cells": [
+                    [
+                      {
+                        "text": {
+                          "content": "Budget für Runner klären"
+                        },
+                        "type": "text"
+                      }
+                    ],
+                    [
+                      {
+                        "text": {
+                          "content": "Mark ⭐"
+                        },
+                        "type": "text"
+                      }
+                    ],
+                    [
+                      {
+                        "text": {
+                          "content": "02.10.2026"
+                        },
+                        "type": "text"
+                      }
+                    ]
+                  ]
+                },
+                "type": "table_row"
+              }
+            ],
+            "has_column_header": true,
+            "has_row_header": false,
+            "table_width": 3
+          },
+          "type": "table"
+        },
+        {
+          "divider": {},
+          "object": "block",
+          "type": "divider"
+        },
+        {
+          "heading_2": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "❓ Offene Fragen / Parked"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_2"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "Wer reviewt den Cache?"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "divider": {},
+          "object": "block",
+          "type": "divider"
+        },
+        {
+          "heading_2": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "📅 Nächstes Meeting"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "heading_2"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "annotations": {
+                  "bold": true
+                },
+                "text": {
+                  "content": "Datum: "
+                },
+                "type": "text"
+              },
+              {
+                "text": {
+                  "content": "–"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        },
+        {
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "annotations": {
+                  "bold": true
+                },
+                "text": {
+                  "content": "Themen: "
+                },
+                "type": "text"
+              },
+              {
+                "text": {
+                  "content": "–"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "object": "block",
+          "type": "bulleted_list_item"
+        }
+      ]
+    }
+  },
+  {
+    "server": "notion",
+    "method": "POST",
+    "path": "/v1/pages",
+    "headers": {
+      "Accept-Encoding": "gzip",
+      "Authorization": "Bearer <token>",
+      "Content-Length": "396",
+      "Content-Type": "application/json",
+      "Notion-Version": "2025-09-03",
+      "User-Agent": "Go-http-client/1.1"
+    },
+    "body": {
+      "parent": {
+        "data_source_id": "tasks-ds",
+        "type": "data_source_id"
+      },
+      "properties": {
+        "Completed": {
+          "checkbox": false
+        },
+        "Description": {
+          "rich_text": [
+            {
+              "text": {
+                "content": "Aus Meeting: 2026-10-01 – Planung Q4 · Owner: Mark"
+              },
+              "type": "text"
+            }
+          ]
+        },
+        "Due Date": {
+          "date": {
+            "start": "2026-10-02"
+          }
+        },
+        "Name": {
+          "title": [
+            {
+              "text": {
+                "content": "Budget für Runner klären"
+              },
+              "type": "text"
+            }
+          ]
+        },
+        "Notes": {
+          "relation": [
+            {
+              "id": "page-1"
+            }
+          ]
+        }
+      }
+    }
+  }
+]

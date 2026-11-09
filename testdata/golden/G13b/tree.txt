@@ -1,0 +1,6 @@
+_archiv/
+e56f41762cfb8c354208c483d1a1893c342b8992abd6d31b11685af7832fa0ef  _archiv/.meetingsync-ledger.jsonl (normalized)
+_archiv/2026-10/
+2f66b078d79552912dfd8607479382c049aea581d3e1e34a9d726f861d3dd6cd  2026-09-30T22:47:30Z  _archiv/2026-10/Planung A.md
+48ecfc1dfbd6fb0c79985672ca4cc850282d49be7fcc2ad0fa71e07fe5639411  2026-09-30T22:48:00Z  _archiv/2026-10/Planung B.md
+278d5c4b9892a60bfb34b541169def072842ee8b41ad2e0acd1557f398bcace2  2026-09-30T22:47:00Z  _archiv/2026-10/Planung Q4.srt

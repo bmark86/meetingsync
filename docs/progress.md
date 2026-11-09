@@ -5,15 +5,363 @@
 | T1 | YAML config | done (bf32c03) | 2026-10-31 |
 | T2 | Commented example config | done | 2026-10-31 |
 | T6 | Retry limit for transient errors | done | 2026-11-01 |
+| R-PLAN | Architecture/security review + refactoring plan (2026-11-01) | done (report and plan written; 52 tasks planned) | 2026-11-01 |
+| R-M0-01 | Pin the toolchain (go1.26.10, govulncheck 0 findings) | done | 2026-11-01 |
+| R-M0-02 | Makefile: build, lint, test -race, vuln, check | done | 2026-11-01 |
+| R-M0-03 | golangci-lint config, 12 findings fixed | done | 2026-11-01 |
+| R-M0-04 | GitHub Actions CI (macOS), Dependabot, SECURITY.md. CI run (green): https://github.com/bmark86/meetingsync/actions/runs/41356860373 | done | 2026-11-01 |
+| R-M0-05 | Golden harness (fakes, recorder, normalization, `-update`), scenario G01; ADR 0003 | done | 2026-11-01 |
+| R-M0-06 | Golden flow scenarios G02–G16c (20 scenarios, `golden_flow_test.go`) | done | 2026-11-02 |
+| R-M0-07 | Golden CLI/error scenarios G09–G12c (9 scenarios, `golden_cli_test.go`); coverage ca. 76 % | done | 2026-11-02 |
+| R-M0-08 | Unit tests flow: ledger reload, pass gating, wait window, orphan actions, `Run`; shared golden builders | done | 2026-11-02 |
+| R-M0-09 | Unit tests Notion/LLM clients; test seam `sleepFn` (notion.go); total coverage ca. 86 % | done | 2026-11-02 |
+| R-M0-10 | Hermetic acceptance test (re-exec, no `go build`); gosec G204 exception for tests removed | done | 2026-11-02 |
+| R-M0-11 | go directive 1.22 → 1.26 (toolchain go1.26.10); legacy GODEBUG defaults gone; golden tests unchanged, live `-check` green | done | 2026-11-02 |
+| R-M1-01 | Ledger with status (`begonnen`/`fertig`/`verworfen`), fsync in `Add`; v1.0.0 compatible; ADR 0004 | done | 2026-11-02 |
+| R-M1-02 ⚠ | Crash-safe flow: `begonnen` before `CreatePage`, restart rule to `_fehler`, crash matrix tests; ADR 0004. Decisions: identical-copy hash set per pass (coordinator); OD-05 residual risk becomes R-M3-17 (Mark, 2026-11-02); moveFile copy-fallback accumulation deferred to R-M1-04 | done | 2026-11-02 |
+| R-M1-03 | Do not lose tasks and remaining blocks silently: gaps counted in the `fertig` line (`todos_fehlen`, `bloecke_fehler`) and logged; cancel stops task requests; `CreatePage` returns `errUnvollstaendig`; golden unchanged; ADR 0004. Decisions: `LoadLedger` does not read the gap fields back (coordinator); per-task log line `To-do %q nicht angelegt` still contains the task text, stays per D10 (coordinator); OD-04: missing parts only recorded | done | 2026-11-02 |
+| R-M1-04 ⚠ | moveFile without overwriting: atomic `RenamexNp` (RENAME_EXCL), safe copy fallback, `.fehler.txt` with O_EXCL, failed move retried after 2 min; ADR 0005, ADR 0004. Decisions: Mark (2026-11-02) approved dependency `golang.org/x/sys` and deleting own fresh/partial copy; coordinator: no other deletions, EINVAL no fallback trigger, `go 1.26.0` accepted, Linux unsupported, TOCTOU between `Lstat` and `Remove` accepted | done | 2026-11-02 |
+| R-M1-05 ⚠ | TOCTOU recheck before archive (primary file only, size + mtime); ADR 0004. Decisions: coordinator: recheck only the primary (ledger key); a kept summary partner would become an orphan, lose its `HasNear` match and with `orphan_summary_action=note` create an extra summary-only note (reproduced by the reviewer, even for a plain touch); a changed partner is archived unprocessed as before. Intended behavior change: a transcript changed during processing gets its own note next pass (no summary context); first note stays | done | 2026-11-02 |
+| R-M1-07 ⚠ | Archive backoff and regular files only: `archive()` failures retried after 2 min (not counted against `max_attempts`) on all archive paths; `listEntries` skips non-regular files (log `keine reguläre Datei … übersprungen`, fixes a FIFO hang); golden unchanged; ADR 0004, ADR 0005. Decisions: Mark (2026-11-02): failed folder fsync after a synced copy warns, move continues (also for `_fehler`); coordinator: summary retry gate before `HasNear` (rare error case: archived at `nextTry`, at most 16 min later, never a second note); retry-state helper merged in R-M2-09 | done | 2026-11-02 |
+| R-M1-EXIT | M1 exit: errcheck `check-blank: true`; test files excluded for errcheck (path-scoped); 28 blank-ignored errors in production code carry `//nolint:errcheck` with a German reason; no code change (identical after stripping comments); body read errors handled in R-M3-05 | done | 2026-11-02 |
+| R-M1-06 | Config validation: clamps and unknown keys as startup warnings; `llm.timeout_minutes` min 1 | done | 2026-11-02 |
+| R-M2-01 | `internal/domain` (types, `Transient`/`IsTransient`), `arch_test.go` dependency-direction test; domain coverage 100 %; golden byte-identical; ADR 0015. Decision: Mark (2026-11-02) ADR number 0015 | done | 2026-11-02 |
+| R-M2-02 | `internal/transcript` (classify, text, timing; pure, imports stdlib + `internal/domain` only, arch_test rule); coverage 100 %; golden byte-identical. QA found a pre-existing date bug, not fixed: follow-up 22 | done | 2026-11-02 |
+| R-M2-03 | `internal/ledger` (`ledger.Ledger`, `ledger.Entry`, `ledger.Load`, `Add`, `Has`, `HasNear`, `Started`; stdlib only, arch_test rule); fixture moved to `internal/ledger/testdata/`; coverage 97.3 %; golden byte-identical. Decisions: coordinator: no `Begin`/`Finish` redesign, method set stays to avoid API churn; `syncDir`/`absDur` duplicated in `app.go` and `internal/ledger` (accepted, shared helper possible later); gosec G30[126]/G304 exclusions extended to `internal/ledger/ledger.go`, to be removed in R-M3-03/R-M3-04 | done | 2026-11-02 |
+| R-M2-04 | `internal/notion` (`client.go`, `blocks.go`, new `properties.go`): typed `PropertyKind` (Notion API names, decoded from the schema JSON; kind-to-payload mapping only in `value`/`filter`), `NoteProperties`/`TaskProperties`, `Schema`, `ActiveProjects` filter, `PageWriter` interface (wiring in R-M2-09); `internal/notion` imports stdlib + domain only (arch_test); coverage 97.8 %; golden byte-identical; security review approved | done | 2026-11-02 |
+| R-M2-05 | `internal/llm` (`client.go`: `Options`, `Summarizer`, `Client`, `NewClient`, `NoteInput`, `Normalize`, `Models`); pure move, prompts/schema/splitter/parse retry/schema fallback byte-identical; `httpError` unexported, classification via `domain.Transient`; 18 tests moved; arch_test rule (stdlib + domain only), added in fix round 1 after the first report claimed it without it; golden unchanged. `App` still holds `*llm.Client`; `mustJSON` duplicated in `app.go` and `internal/llm` (merge in R-M2-09) | done | 2026-11-02 |
+| R-M2-06 | `internal/notify` (`Notifier`, `New()` osascript notifier, unexported runner seam); command/escaping byte-identical; `App.notifier`; arch_test rule (stdlib only); gosec G204 exclusion extended to `internal/notify/notify.go` (removal in R-M3-07); golden byte-identical; CR and SR approved. QA: fake notifier injected in golden/flow tests (pre-existing gap: scenarios ran with `Notify=true`). Next: R-M2-07 config and TokenSource (opus, security-relevant: secrets; Mark approved M2 incl. R-M2-07 at the gate) | done | 2026-11-02 |
+| R-M2-07 | `internal/config` (`Load` returns warnings; `Default`, `DefaultPath`, `Finalize`, `ExpandHome` exported; no `os/exec`, no `loc`) and `internal/secret` (`TokenSource`, Keychain lookup, unexported runner seam); time zone resolved in `main`, `NewApp(cfg, loc, tokens, logger, dry)`; arch rules; gosec G204 path `internal/secret/secret.go`. Coverage config 92.1 %, secret 100 %. Golden byte-identical; CR and SR approved. Next: R-M2-08 | done | 2026-11-02 |
+| R-M2-08 | `internal/watch` (`Lister`, `PairSummary`, `Near`, `FS`/`OS` read side, `Mover{Rename, Copy, SyncDir}` atomic move unchanged; nil fields = real functions). Decision: coordinator: FS covers ReadDir/ReadFile/Lstat only, the move is not rebuilt on an FS abstraction (`os.SameFile`/`RENAME_EXCL` risk, ADR 0015); arch rule; gosec G30[126]/G304 paths moved to `internal/watch`. Coverage 96.2 %, tests 216 → 231, golden byte-identical, CR and SR approved. Next: R-M2-09 pipeline (opus) | done | 2026-11-02 |
+| R-M2-09a | `internal/pipeline` core: flow, retry policy type, archive, fail moved from `app.go`; injection via `Deps` (clock, FS, Mover, Summarizer, Notion port, Notifier port, `*ledger.Ledger`); state helpers merged (follow-up 21); ADR 0006. Decisions: coordinator: split R-M2-09 into 09a/09b; concrete `*ledger.Ledger` accepted; own `Notifier` port (arch rule); `handleError` computes its own backoff. Coverage 93.5 % own / 98.8 % combined, tests 231 → 251, golden byte-identical, CR and SR approved. Incident: a reviewer ran `git stash` and popped it at once; working tree verified intact. Next: R-M2-09b (opus) | done | 2026-11-02 |
+| R-M2-09b | Pipeline leftovers: `Client.sleep` replaces `sleepFn`; `appSeams` + `newApp` (zero value in `NewApp`); `newFlowApp` on fakes, `hookNotion` removed; nil-guards for `Notifier`/`DryRun` in `pipeline.New`. Decisions: coordinator: `mustJSON` stays twice, `Normalize` stays a separate call, `FormatTitle`/`deadlineLabel` stay in `internal/notion`, no `watchtest` FS (real temp dirs). Tests 251 → 253, golden byte-identical, review approved | done | 2026-11-02 |
+| R-M2-10 | Entry point and wiring: `app.go` deleted; new `internal/cli` (`Env`, `Init` → `Setup`, `NewPipeline`, `Check`, `Run`, `ProcessSingleFile`, `printDryRun`); `cli.Notion` interface; `main.go` only file of package `main` (flags, `loadConfig`, `newEnv`, exit codes); `appSeams` removed; arch rules incl. `TestArchRootPackageOnlyMain`; G304 exclusion path `internal/cli/cli.go`. Decisions: coordinator: two wiring helpers (one would move the `Konfiguration:` line), notify/secret built only in `main`, Run/ticker in `cli`, Notion transport stays a `newEnv` parameter. Tests 253 → 268, coverage 86–100 % per package, golden byte-identical, review approved | done | 2026-11-02 |
+| R-M3-01 ⚠ | `llm.base_url` loopback only (S-02, D3): exact lowercase `localhost`, `127.0.0.1`, `::1`, no userinfo, http/https; LLM client without proxy and without redirects (fix round 1: `LOCALHOST` + proxy and 307 reproduced by the reviewer); README troubleshooting row; ADR 0007. Residual risk: `/etc/hosts`. Golden unchanged. Follow-ups in R-M3-02: redirect protection for Notion, base URL in messages as scheme://host:port | done | 2026-11-02 |
+| R-M3-02 ⚠ | `notion.base_url` HTTPS only (S-03): http only for exact loopback, no userinfo, value-free start errors; Notion client without redirects (proxy allowed); `domain.RedactURL` in messages and `-check`. Decisions: Mark (2026-11-02) approved `-check` printing the LM Studio address without path (golden G10b, one line); coordinator: `llm.base_url` and `notion.base_url` also reject `?`/`#` (url.Error prints the request URL). Residual: request path in the local log. README rows; ADR 0008; security review approved | done | 2026-11-02 |
+| R-M3-03 | Regular files only, no symlink follow (S-04, merged with R-M3-19): `watch.OS.ReadFile` opens with `O_RDONLY\|O_NOFOLLOW\|O_NONBLOCK`, requires `fstat` regular file, reads via `LimitReader` up to 20 MB (`maxDateiBytes`, unchanged); a symlink swapped in after listing → ELOOP, FIFO/folder → `keine reguläre Datei`, nothing read, no hang. Copy-fallback source in `move.go` opened the same way (identity checks kept). Listing already skipped non-regular entries (R-M1-07). gosec G304 path exclusion removed from `.golangci.yml`; line-level `nolint` with German reasons at the remaining opens (ledger file, `syncDir`, `ReadFile`, `copyExcl`, `-file` path). Golden unchanged, no new log lines. Decisions: coordinator: `-file` (`ProcessSingleFile`) still follows a user-given symlink and has no 20 MB limit (explicit CLI action by Mark); hard links into the watch folder not refused (needs the same user writing into the folder, `Nlink > 1` check is speculative). Mark (2026-11-03): iCloud "Desktop & Documents" sync is not active, so dataless iCloud files with `O_NONBLOCK` are not a concern. Security review approved (a symlinked `watch_dir` or parent folder still works; `O_NONBLOCK` has no effect on regular-file reads). Idea (no task): optional `warnOnce` when `ReadFile` fails during listing (silently skipped, as before) | done | 2026-11-03 |
+| R-M3-04 | File permissions (S-12, OD-10 new items only): new ledger, `.fehler.txt`, copy-fallback copies 0600; new archive root, `_fehler`, month folders 0700, set explicitly (umask-independent); existing items and renamed export files keep their mode. Ledger `Add` uses `O_EXCL` to detect creation. `mkdirPrivate` duplicated in `internal/ledger` and `internal/watch` (import rules, accepted). gosec G301/G302/G306 exclusions only for `_test.go`. Golden unchanged; security review approved. Residual: Chmod follows symlinks between Mkdir and Chmod. Optional follow-up 25 | done | 2026-11-03 |
+| R-M3-05 | Response size limits: `io.LimitReader` (10 MiB, `maxAntwortBytes`) in `internal/notion` and `internal/llm`; oversize or read error on 2xx is a non-transient error without body; error statuses keep their classification; `Models()` errors at status >= 300; `notion.ErrUnklar` for incomplete 2xx `CreatePage` (used in R-M3-17); truncated PATCH reply = append error (warning). Golden unchanged; code and security review approved. Idea (no task): an LLM body read timeout is non-transient (as before); wrapping it in `domain.Transient` would match the CLAUDE.md retry rule; coordinator decided not to change behavior now | done | 2026-11-02 |
+| R-M3-07 | Absolute paths and minimal environment (S-10): `/usr/bin/osascript` (`internal/notify`) and `/usr/bin/security` (`internal/secret`) as constants; environment `HOME`, `USER`, `LANG` (each only if set) + `PATH=/usr/bin:/bin`; arguments, escaping, trimming, error texts unchanged. gosec G204 exclusion removed (line-level `nolint` with reason on both `exec.Command` lines). Decisions: coordinator: `minimalEnv` duplicated in both packages (shared package would need an arch rule change); the PATH stubs for `security`/`osascript` in `ci.yml` and the golden setup now only guard against bare-name calls and are kept (removal is optional cleanup). Tests assert exact path and environment; marker stubs verified that no test starts the real binaries. Security review approved. Manual check: follow-up 24 | done | 2026-11-02 |
+| R-M3-09 | Config values out of error messages (S-17): `orphan_summary_action muss note, archive oder keep sein`, `create_tasks_for muss me, all oder none sein`, `unbekannte Zeitzone in timezone (IANA-Name erwartet, z. B. Europe/Berlin)` (no wrapping of the `time.LoadLocation` error, it contains the name). Tests assert value absence; golden unchanged; code and security review approved. Remaining messages echo only the `-config` path and unknown key names (outside S-17). Follow-up #1 done | done | 2026-11-02 |
+| R-M3-19 | Open export files with O_NOFOLLOW: merged into R-M3-03 (coordinator decision, 2026-11-02); done with R-M3-03 | done | 2026-11-03 |
+| R-M3-10 | plist `ThrottleInterval` 60 s in the repo template (S-21, OD-13); `plutil -lint` ok; `docs/launchd.md` row and note; installed plist untouched. Security review approved | done | 2026-11-03 |
+| R-M3-08 | IDs in Notion URL paths escaped with `url.PathEscape` (S-16): databases, data_sources, data_sources query, blocks children; `/v1/pages` has no ID; valid UUIDs unchanged, golden byte-identical; tests `TestIDsAreEscapedInPath`, `TestValidUUIDPathUnchanged`. Review approved. Accepted residual risk (OD-12, no change): `.` and `..` are not escaped, a config value `..` could be normalized by a server or proxy | done | 2026-11-03 |
+| R-M3-20 ⚠ | German date with underscore/dash/dot and time in file name (`07.01.2026_08-45`) no longer read as ISO date; German date used when it starts before the ISO match (follow-up 22). Decisions: Mark (2026-11-02) approved the fix (output change); coordinator: `DD.MM.YYYY.HH.MM` gets date only (`reDateDE` does not allow `.` before the time), pattern not widened; accepted limit: only the leftmost ISO and German matches are compared (`07.01.2026_08-45 und 2026-11-01` uses the German date). Golden unchanged; code review approved | done | 2026-11-03 |
+| R-M3-06 | Total block cap 1000 per note (S-09, OD-11): above it no Notion page, no ledger entry, no retry; files to `_fehler` with `.fehler.txt`, notification if `notify` is on. Golden unchanged; code review approved, fix round 1 done | done | 2026-11-04 |
+| R-M3-11 | Prompt personalization (S-20, A-20, D4, OD-14): config keys `my_role` (default empty, then ", <role>" is left out) and `example_name` (default `Alex`, empty/whitespace reset in `Finalize`) replace the hard-coded "Head of Engineering" and "Sascha" in the LLM system prompt; passed `internal/cli` → `internal/pipeline` `Options` → `llm.NoteInput`; `config.example.yaml`/`.json` document both. Golden configs set both values, golden byte-identical. Decisions: Mark (2026-11-01, OD-14): neutral code defaults, values in his config before the rebuild; coordinator: pass-through edits in pipeline/cli accepted (outside planned scope), `my_role` not trimmed (whitespace-only role is self-inflicted). Code and security review approved; ADR 0009 | done | 2026-11-04 |
+| R-M3-18 | Failed move to `_fehler` keeps the attempt count (open item 19): state kept with cause and content hash, retry in 2 min; after `max_attempts` the next try moves the files without an LLM run; changed content counts as new; `failJob` moves partner first, transcript last (interrupted, giveUp, block-cap paths). Golden unchanged; code review approved after fix round 1 (hash binding, 2 tests) | done | 2026-11-04 |
+| R-M3-13 ⚠ | `-check` exit code (D7, OD-17, A-14): exit 1 if any check line shows ✗ (folder, LM Studio, model), 0 if all ✓; output unchanged; `cli.Check` returns `errCheckFailed`, `main.go` unchanged. Golden: `exit.txt` of G10b and G10c 0 → 1, G10a and G10d unchanged. Follow-up 5 done. Decision: Mark (2026-11-01). launchd unaffected (does not run `-check`). Tell Mark before the next rebuild (scripts). code review approved; ADR 0012 | done | 2026-11-04 |
+| R-M3-15 ⚠ | `llm.api_key` from the Keychain (D9, OD-20, S-18): order env `LLM_API_KEY` -> Keychain if `llm.api_key_keychain_service` is set -> `llm.api_key`; no key = no `Authorization` header, golden unchanged; header only to the loopback URL; key never in logs/errors (tested); `internal/secret` shared `source` for `NewNotion` (unchanged) and `NewLLM`. Decisions: Mark (2026-11-04): lookup order as for the Notion token, Keychain error aborts start also in dry-run and `-check`; coordinator: a Keychain error stops `-check` before any ✓/✗ line (fail closed). Security review (opus) approved; ADR 0014. Optional for Mark, setup: `security add-generic-password -a "$USER" -s meetingsync-llm -w`, then `llm.api_key_keychain_service: meetingsync-llm` | done | 2026-11-04 |
+| R-M3-12 ⚠ | `Prüfen` flag for to-dos for Mark (D5, OD-22): any note with a next action `fuer_mich=true` gets the reason "Enthält To-dos für dich – bitte Zuordnung und Fälligkeit prüfen", always, also with `create_tasks_for=none`; checkbox, notice box, log, notification, dry-run. Golden: 21 scenarios changed on purpose, G14a bullet crosses the chunk boundary. Decisions: Mark (2026-11-01 D5; wording 2026-11-04). Consequence: almost every note gets `Prüfen=true`; box counts toward the 1000-block cap. Code review approved; ADR 0010 | done | 2026-11-04 |
+| R-M3-16 ⚠ | To-do count in log and notification only for `fuer_mich=true` (OD-23, follow-up 10): `createTasks` returns the count of created `fuer_mich` tasks; a failed creation is not counted. Golden: G16b `4` → `2` only, test `TestToDoCountOnlyFuerMich`. Decision: Mark (2026-11-02). No ADR (coordinator) | done | 2026-11-04 |
+| R-M3-17 ⚠ | No duplicate page after an ambiguous `CreatePage` failure (OD-05 residual risk, follow-up 15): `ErrUnklar` for 5xx, `*url.Error`, unreadable/unparsable 2xx; marker in Notes column `notes_properties.source` (empty = off); lookup of the stored marker (ledger `verworfen`) before the next create; found = reuse page; nothing found within 5 min = wait; lookup error = failed attempt; LLM result cached in memory. Decisions: Mark (M3 gate 2026-11-02): text column; Mark (2026-11-04, privacy): marker `<file name> · <mtime>`, no content hash in Notion. Golden unchanged. Security review approved after fix rounds 1 and 2. ADR 0004 updated. Residual risks: ADR 0004. Live test against real Notion still open (needs Mark's approval) | done | 2026-11-04 |
+| R-M3-14 ⚠ | `-file` writes a ledger entry (D8, OD-18, A-14): `begonnen` before `CreatePage`, `fertig` after, `verworfen` on a failed `CreatePage`; the file is not moved (Mark, 2026-11-04), the service archives it later as already processed (`↺ … schon verarbeitet → Archiv`); files outside the export folder stay. `-file` always processes the given file, also if its hash is known (coordinator). `-dry-run -file` unchanged (G09). Mutual exclusion (coordinator): advisory `flock` on the export folder (`internal/ledger/lock.go`, no lock file); service pass skipped while held, `-file` waits; service reads foreign ledger lines per pass (`Ledger.Refresh`). Golden G09b added, rest byte-identical; code review approved, fix round 1 done. ADR 0013. Residual risks: ADR 0013 | done | 2026-11-04 |
+| R-M4-01 | Real Notion data source IDs replaced by placeholders in `config.example.yaml`/`.json` (S-05, A-20); comments and README say to enter own IDs, Tasks/Projects empty if unused. No test change. Code and security review approved. IDs stay in git history until R-M4-02 | done | 2026-11-04 |
+| R-M4-02 ⚠ | Git history cleanup (S-05) prepared, not executed. Decisions: Mark (2026-11-05, OD-15): `git filter-repo --replace-text`, in place (no fresh clone), one run at the end after the merge into `main` and before the next release, backup bundle first, Mark force-pushes. Plan step "fresh clone" replaced. Facts: 3 real IDs, 15 occurrences, only in old example configs. The coordinator asks Mark for the go right before it runs. ADR 0011. Residual risk: GitHub caches | prepared, deferred (after merge) | 2026-11-05 |
+| R-M4-03 | Personal defaults (A-20): code default of `my_name` "Mark" -> "Max" (`internal/config`); example configs and README show "Max". Golden harness, `e2e_test.go`, `app_flow_test.go` set `my_name: Mark` explicitly (golden config relied on the old default, found during the task); golden byte-identical. Mark's config keeps `my_name: Mark` (OD-14b). Committed (85886b6); reviews passed. | done | 2026-11-04 |
+| R-M4-04 | Root integration tests behind package boundaries: 12 root tests that read pipeline internals moved unchanged by name to `internal/pipeline/moved_root_test.go` (now on the pipeline fakes, equivalent assertions). Unexported `pipeline.FileState`, `ErrUnterbrochen`, `config.Finalize`; `Pipeline.States()` removed. `e2e_test.go` and `internal/cli/cli_test.go` write a temp YAML and load it via `config.Load`. 581 test runs before and after; golden byte-identical; `make check` exit 0. CR approved | done | 2026-11-04 |
+| R-M5-01 | Read content only when processing (A-10, closed): `watch.List` reads only on a cache miss, `pipeline.loadContent` reads in `handle` (skip pass if read fails, length != listed size or file changed); summary partner read only when used. 0 reads for backoff and unchanged known files (counting fake FS). New logs: `<name> nicht lesbar: <err>`, `<name> nicht lesbar oder geändert → ohne Zusammenfassung als Kontext` (summary archived with transcript, never an orphan). Golden unchanged; `make check` green. Decision: coordinator (error-path changes). CR and SR approved. Residual risks: same-size+same-mtime change not detected; optional idea: `os.SameFile` | done | 2026-11-05 |
+| R-M5-02 | Bound the maps (A-19, closed): pipeline prunes `warned`, classification cache and per-file state to `watch.Lister.Seen` each pass (empty readable folder prunes all; `ReadDir` error prunes nothing); global warn keys kept via `globalWarnKeys`; ledger hit deletes state. Decisions: coordinator: states with `ambiguousCreate`/`giveUp` never pruned (duplicate-page risk, ADR 0004; deviation: they stay until restart for files that never return); vanished-and-returned file restarts `max_attempts`. Developer opus instead of sonnet (interaction with R-M3-17/18). Golden unchanged; `make check` green; tests 592 → 601. CR approved | done | 2026-11-05 |
+| R-M5-03 | Own timeout for `Models()` (A-15, timeout part): `Models()` (only used by `-check`) derives a 10 s context timeout (Mark, 2026-11-05) from the caller's context (`modelsTimeout` in `internal/llm/client.go`). Before, only `llm.timeout_minutes` (default 30 min) applied, so `-check` could hang when LM Studio accepts the connection but never answers. Chat and extraction requests unchanged. On timeout `-check` shows the usual `✗ LM Studio nicht erreichbar unter …` line; no new message text. Test with a hanging fake server; golden unchanged; `make check` green; test runs 601 → 602. Developer haiku. Code review approved | done (a217b4b) | 2026-11-06 |
+| R-M6-01 | `docs/architecture.md`: context, packages and dependency direction, runtime sequence, ledger states, error and retry model, trust boundaries, launchd (A-21). CR and SR approved, 11 minor fixes | done (9f058ad) | 2026-11-06 |
+| R-M6-02 | `docs/testing.md`: test pyramid, golden tests and fakes, normalization, coverage targets, updating golden files (A-08, A-21). CR approved, 9 minor fixes. Review found the documented update command wrong: `testing.md`, the plan and the `golden_test.go` comments use `go test . -run Golden -update` (ADR 0003 fixed in R-M6-03) | done (9f058ad) | 2026-11-06 |
+| R-M6-03 | README, CLAUDE.md, changelog and progress brought up to date: Unreleased changelog intro added and entries reordered (misplaced duplicate R-M2-08 entry removed from 1.0.0), M6 summary and refactoring status here, update command corrected in ADR 0003. README and CLAUDE.md edited by a parallel task. Code review CHANGES_REQUIRED, fixed in round 1 (findings 1–6); finding 7 accepted (make targets documented in CLAUDE.md only, README keeps plain go commands); finding 8 moot (M6 marked complete at commit time after verification). Commit follows | done | 2026-11-06 |
+
+## Refactoring status (2026-11-06)
+
+Branch `refactor/architektur`. M0 to M6 are complete except R-M4-02 (git history cleanup), which is deferred until after the merge into `main` (Mark, 2026-11-05, ADR 0011). The M4 exit is therefore only met for the current tree.
+
+Open user actions for Mark (details in the follow-ups below):
+
+| Action | Follow-up |
+| --- | --- |
+| Force-push `refactor/architektur` (rewritten by the squash, 2026-11-09; see Release order step 1) | – |
+| Add `my_role` and `example_name` to `~/.config/meetingsync/config.yaml` before the rebuild | 27 |
+| Add `notes_properties.source: Quelle` under `notion:`, then run `meetingsync -check` | 32 |
+| Rebuild `~/bin`, restart the service (old service has no folder lock) | 30 |
+| Optional: LLM key in the Keychain (`llm.api_key_keychain_service`) | R-M3-15 |
+| Approve and run the live test of R-M3-17 against real Notion | 33 |
+| Release, in this order (see below): merge, history rewrite, force-push, tag v2.0.0, GitHub release | 35 |
+| Decide: `-file` on a summary with its transcript still in the folder; reverse-DNS label and repo owner name in the public repo | 31, 34 |
+| Earlier, still open: config migration to YAML, one week of manual testing, GitHub settings (Dependabot alerts, branch protection), `begonnen` lines / `_fehler` note after a crash, umlaut and Keychain check under launchd, optional `chmod` on `_archiv`/`_fehler`/ledger, plist `ThrottleInterval` | 3, 4, 9, 14, 24, 25, 26 |
+
+Release order (version v2.0.0, Mark, 2026-11-06; upgrade notes: [releases/v2.0.0.md](releases/v2.0.0.md)):
+
+| Step | Who | Action |
+| --- | --- | --- |
+| 1 | Mark | Force-push `refactor/architektur` (rewritten by the squash of b6af06d/c48e5f4 into 6935655, 2026-11-09), then merge it into `main` |
+| 2 | Coordinator | Run R-M4-02 (history rewrite) on the merged `main`; asks Mark for the go first (ADR 0011) |
+| 3 | Mark | Force-push `main`, tag `v2.0.0` on the new `main`, create the GitHub release from `docs/releases/v2.0.0.md`; the rewrite re-creates the `v1.0.0` tag |
+| 4 | Coordinator | Follow-up docs commit: map old to new commit hashes after the rewrite (follow-up 35) |
+
+## M1 summary (complete 2026-11-02: R-M1-01 to R-M1-07 + R-M1-EXIT)
+
+| Finding | Closed by |
+| --- | --- |
+| A-01 | R-M1-01, R-M1-02 |
+| A-02 | R-M1-03 |
+| A-11 | R-M1-01, R-M1-02, R-M1-03, R-M1-04 |
+| A-12 | R-M1-06 |
+| S-13 | R-M1-01, R-M1-02 |
+| S-14 | R-M1-04 |
+| S-15 | R-M1-05 |
+
+Exit criteria:
+- Golden unchanged except `ledger.jsonl` (`begonnen` lines, D1).
+- Crash matrix tests green.
+- errcheck `check-blank` on.
+
+Decisions taken in M1:
+
+| By | Decision | Task |
+| --- | --- | --- |
+| Mark | OD-05 residual risk (duplicate page after ambiguous `CreatePage` failure) becomes R-M3-17 | R-M1-02 |
+| Mark | Deleting meetingsync's own fresh/partial copy is allowed | R-M1-04 |
+| Mark | New dependency `golang.org/x/sys` | R-M1-04 |
+| Mark | Failed folder fsync warns and the move continues (supersedes the coordinator rule "no deletion after syncDir error" for syncDir) | R-M1-07 |
+| Coordinator | Identical-copy hash set per pass | R-M1-02 |
+| Coordinator | `ledger.Load` (formerly `LoadLedger`) does not read the gap fields | R-M1-03 |
+| Coordinator | TOCTOU recheck on the primary file only | R-M1-05 |
+| Coordinator | `EINVAL` is not a fallback trigger | R-M1-04 |
+| Coordinator | `go 1.26.0` accepted | R-M1-04 |
+| Coordinator | No deletion after an identity mismatch (and after a syncDir error, see above) | R-M1-04 |
+
+## M2 summary (complete 2026-11-02: R-M2-01 to R-M2-10)
+
+| Finding | Closed by |
+| --- | --- |
+| A-03 | R-M2-01 to R-M2-10 |
+| A-04 | R-M2-09a, R-M2-10 |
+| A-05 | R-M2-06, R-M2-09a, R-M2-09b, R-M2-10 |
+| A-06 | R-M2-01, R-M2-02 |
+| A-07 | R-M2-04, R-M2-05, R-M2-07, R-M2-08 |
+| A-12 | R-M2-07 |
+| A-13 | R-M2-10 |
+| A-15 | R-M2-01, R-M2-05, R-M3-05 (`Models()` status check), R-M5-03 (`Models()` timeout) |
+
+Exit criteria (met):
+- Package `main` contains only `main.go` (`TestArchRootPackageOnlyMain`).
+- Dependency-direction test in `arch_test.go` (`go list -deps`).
+- Golden byte-identical over the whole of M2.
+- Coverage per package 86–100 %; tests 253 → 268 Test functions after R-M2-10.
+
+Decisions taken in M2:
+
+| By | Decision | Task |
+| --- | --- | --- |
+| Mark | ADR number 0015 for the package split | R-M2-01 |
+| Mark | Approved M2 incl. R-M2-07 (opus, secrets) at the gate | R-M2-07 |
+| Coordinator | Ledger API kept (no `Begin`/`Finish` redesign) | R-M2-03 |
+| Coordinator | R-M2-09 split into 09a/09b; concrete `*ledger.Ledger` injected | R-M2-09 |
+| Coordinator | `watch.FS` read-only plus `Mover` for the atomic move | R-M2-08 |
+| Coordinator | `mustJSON` stays twice; `llm.Normalize` stays a separate call; `FormatTitle`/`deadlineLabel` stay in `internal/notion`; no `watchtest` FS | R-M2-09b |
+| Coordinator | R-M2-10 upgraded to opus | R-M2-10 |
+| Coordinator | Two wiring helpers (`loadConfig`, `newEnv`) instead of one | R-M2-10 |
+
+Incidents:
+- R-M2-05: the first report claimed an arch rule that did not exist; caught in verification, rule added in fix round 1.
+- R-M2-09a: a reviewer ran `git stash` and popped it at once; working tree verified intact, harmless.
+
+Next: M3 (gate passed 2026-11-02; complete 2026-11-04, see M3 summary).
+
+## M3 gate decisions (2026-11-02)
+
+| By | Decision | Task |
+| --- | --- | --- |
+| Mark | M3 approved as planned (20 tasks, incl. security changes: secrets, permissions, plist); tasks marked ⚠ change visible behavior as described in the plan | M3 |
+| Mark | German date with underscore time is fixed | R-M3-20 |
+| Mark | No duplicate page after an ambiguous `CreatePage` failure: marker in a new optional text column in the Notes database (e.g. "Quelle", created by Mark, name configurable via `notes_properties`); file identifier written there and queried before a retry; without the column behavior stays as today | R-M3-17 |
+| Coordinator | M3 lanes run partly in parallel git worktrees (disjoint packages); results are applied to the branch only after review and a green `make check` | M3 |
+
+## M3 decisions (2026-11-04)
+
+| By | Decision | Task |
+| --- | --- | --- |
+| Mark | `llm.api_key` lookup order like the Notion token; Keychain service name in `llm.api_key_keychain_service`; Keychain error aborts start | R-M3-15 |
+| Mark | Reason text for tasks without a clear owner: "Enthält To-dos für dich – bitte Zuordnung und Fälligkeit prüfen" | R-M3-12 |
+| Mark | `-file` does not move the file; a file left in the export folder is later archived by the service as a duplicate (agreed) | R-M3-14 |
+| Mark | The Notes column "Quelle" (text) exists | R-M3-17 |
+
+## M3 summary (complete 2026-11-04: R-M3-01 to R-M3-20; R-M3-19 merged into R-M3-03)
+
+Branch `refactor/architektur`, HEAD 1c8eb44. Exit open: live test of R-M3-17 against real Notion needs Mark's approval (follow-up 33).
+
+| Finding | Closed by |
+| --- | --- |
+| S-02 | R-M3-01 |
+| S-03 | R-M3-02 |
+| S-04 | R-M3-03 (with R-M3-19) |
+| S-06 | R-M3-12 |
+| S-08 | R-M3-05 |
+| S-09 | R-M3-06 |
+| S-10 | R-M3-07 |
+| S-12 (permissions) | R-M3-04 |
+| S-16 | R-M3-08 |
+| S-17 | R-M3-09 |
+| S-18 | R-M3-15 |
+| S-20 | R-M3-11 |
+| S-21 | R-M3-10 |
+| A-14 | R-M3-13, R-M3-14 |
+
+Tasks without a finding ID: R-M3-16 (to-do count), R-M3-17 (OD-05 residual risk), R-M3-18 (follow-up 19), R-M3-20 (follow-up 22).
+
+ADRs written in M3:
+
+| ADR | Topic | Task |
+| --- | --- | --- |
+| 0007 | `llm.base_url` loopback only | R-M3-01 |
+| 0008 | Notion HTTPS only | R-M3-02 |
+| 0009 | Prompt personalization | R-M3-11 |
+| 0010 | `Prüfen` flag for to-dos | R-M3-12 |
+| 0012 | `-check` exit code | R-M3-13 |
+| 0013 | `-file` ledger entry and folder lock | R-M3-14 |
+| 0014 | `llm.api_key` from the Keychain | R-M3-15 |
+| 0004 (updated) | Ambiguous `CreatePage` failure, residual risks | R-M3-17 |
+
+ADR 0011 (git history cleanup, R-M4-02) is written but the rewrite is deferred.
+
+Golden changes made on purpose (all other golden files byte-identical):
+
+| Task | Change |
+| --- | --- |
+| R-M3-12 | 21 scenarios changed (`fuer_mich` to-dos set `Prüfen`); G14a bullet crosses the chunk boundary |
+| R-M3-13 | `exit.txt` of G10b and G10c 0 -> 1 |
+| R-M3-14 | New scenario G09b |
+| R-M3-16 | G16b count line `4` -> `2` |
+| R-M3-02 | G10b: one line, LM Studio address without path (approved earlier by Mark) |
+
+Decisions taken in M3 (gate decisions and 2026-11-04 decisions are in the two tables above):
+
+| By | Decision | Task |
+| --- | --- | --- |
+| Mark | Neutral code defaults for `my_role` / `example_name`, values in his config before the rebuild (OD-14) | R-M3-11 |
+| Mark | iCloud "Desktop & Documents" sync not active, dataless files not a concern (2026-11-03) | R-M3-03 |
+| Mark | Cap of 1000 blocks per note (OD-11, 2026-11-03) | R-M3-06 |
+| Mark | `-check` exits 1 on ✗ (D7, OD-17) | R-M3-13 |
+| Mark | Marker without content hash in Notion: `<file name> · <mtime>` (privacy, 2026-11-04) | R-M3-17 |
+| Mark | Keychain error aborts start, also in dry-run | R-M3-15 |
+| Coordinator | R-M3-19 merged into R-M3-03 | R-M3-03 |
+| Coordinator | `-file` still follows a user-given symlink, no 20 MB limit; hard links not refused | R-M3-03 |
+| Coordinator | `llm.base_url` and `notion.base_url` also reject `?` and `#` | R-M3-02 |
+| Coordinator | `minimalEnv` and `mkdirPrivate` duplicated per package (import rules) | R-M3-04, R-M3-07 |
+| Coordinator | LLM body read timeout stays non-transient | R-M3-05 |
+| Coordinator | `-file` always processes the given file; advisory `flock` on the export folder plus `Ledger.Refresh` | R-M3-14 |
+| Coordinator | Keychain error stops `-check` before any ✓/✗ line (fail closed) | R-M3-15 |
+| Coordinator | No ADR for R-M3-16 | R-M3-16 |
+| Coordinator | Hash binding for the kept retry state; pair move order partner first, transcript last | R-M3-18 |
+
+Accepted residual risks:
+
+| Risk | Task |
+| --- | --- |
+| `/etc/hosts` can redirect `localhost` for the LLM URL | R-M3-01 |
+| Request path in the local log | R-M3-02 |
+| Hard links into the watch folder not refused; `-file` follows symlinks | R-M3-03 |
+| `Chmod` follows symlinks between `Mkdir` and `Chmod`; existing folders and ledger keep old modes | R-M3-04 |
+| `.` and `..` not escaped in Notion URL IDs (OD-12) | R-M3-08 |
+| Block-cap path re-runs the LLM every 2 min while the move to `_fehler` keeps failing (follow-up 29) | R-M3-06, R-M3-18 |
+| Almost every note gets `Prüfen=true`; the box counts toward the 1000-block cap | R-M3-12 |
+| Residual risks of the folder lock and of the marker lookup: see ADR 0013 and ADR 0004 | R-M3-14, R-M3-17 |
+| `-file` on a summary while its transcript is still in the folder (follow-up 31) | R-M3-14 |
+
+Actions for Mark around the next rebuild of `~/bin` (`go build -o ~/bin/meetingsync .`):
+
+| When | Action | Follow-up |
+| --- | --- | --- |
+| Before | Add `my_role: Head of Engineering` and `example_name: Sascha` to `~/.config/meetingsync/config.yaml`; otherwise the prompt has no role and the example name is "Alex" | 27 |
+| Before | Add under `notion:` the lines `notes_properties:` and `  source: Quelle`; without them the duplicate-page protection is off | 32 |
+| After | Run `meetingsync -check`; no hint about the "Quelle" column should appear | 32 |
+| After | `-check` now exits 1 on any ✗ (matters for scripts) | 5 |
+| After | Restart the service; an old running service has no folder lock and no ledger refresh | 30 |
+| Optional | LLM key in the Keychain: `security add-generic-password -a "$USER" -s meetingsync-llm -w`, then `llm.api_key_keychain_service: meetingsync-llm` | R-M3-15 |
+| Earlier, still open | Existing `begonnen` lines in the ledger and `_fehler` note after a crash | 14 |
+| Earlier, still open | Check umlauts in notifications and the Keychain token under launchd | 24 |
+| Earlier, still open | Optional `chmod 700` on `_archiv`/`_fehler`, `chmod 600` on the ledger | 25 |
+| Earlier, still open | Optional: copy the plist template with `ThrottleInterval` and reload the agent | 26 |
+| Earlier, still open | Config migration to YAML, one week of manual testing, GitHub settings | 3, 4, 9 |
+| M3 exit | Approve the live test of R-M3-17 against real Notion | 33 |
+
+## M4 summary (R-M4-01, -03, -04 done 2026-11-04; R-M4-02 prepared, deferred by decision 2026-11-05)
+
+Branch `refactor/architektur`, HEAD 50dcfdf.
+
+| Task | Result | Commit |
+| --- | --- | --- |
+| R-M4-01 | Placeholder IDs (`00000000-0000-0000-0000-000000000000`) in `config.example.yaml`/`.json` (S-05, A-20) | a79fbd5 |
+| R-M4-03 | Neutral `my_name` default "Max" instead of "Mark" (A-20); golden config sets `my_name: Mark` explicitly | 85886b6 |
+| R-M4-04 | 12 root tests moved into `internal/pipeline`; `FileState`, `ErrUnterbrochen`, `config.Finalize` unexported, `States()` removed; 581 test runs before and after; golden unchanged | 418d407 |
+| R-M4-02 | Prepared, not executed: ADR 0011, replacement list, `git filter-repo` installed. Runs once after the merge into `main`, before the next release (follow-up 35) | 50dcfdf |
+
+M4 exit ("`git grep` and `git log -p --all` without the three real IDs; tag `v1.0.0` on the cleaned commit; backup bundle exists"):
+
+| Part | Status |
+| --- | --- |
+| `git grep` without the real IDs (current tree) | met (R-M4-01) |
+| `git log -p --all` without the real IDs | open: the 3 real IDs stay in history until R-M4-02; risk accepted by Mark (2026-11-05) |
+| Tag `v1.0.0` on the cleaned commit | open (R-M4-02) |
+| Backup bundle exists | open (R-M4-02 step 3) |
+
+M4 is complete except R-M4-02, deferred by decision (Mark, 2026-11-05, ADR 0011). The exit criterion is not fully met.
+
+## M5 summary (complete 2026-11-06: R-M5-01 to R-M5-03)
+
+Branch `refactor/architektur`, HEAD a217b4b.
+
+| Task | Result | Commit |
+| --- | --- | --- |
+| R-M5-01 | Content read only on a classification cache miss and in `handle` (A-10); 0 reads for backoff and unchanged files | c2ab737 |
+| R-M5-02 | `warned`, classification cache and per-file state pruned to the current folder listing (A-19) | 941b499 |
+| R-M5-03 | `Models()` has its own 10 s timeout (A-15, timeout part); tests 601 → 602 | a217b4b |
+
+M5 exit ("A-10, A-19 closed; golden unchanged"): met. A-10 (R-M5-01) and A-19 (R-M5-02) are closed; golden was unchanged in all three tasks. A-15 is not in the exit line; per the finding table above its parts are covered by R-M2-01, R-M2-05 (error types), R-M3-05 (status check) and R-M5-03 (timeout). Code review of R-M5-03 is approved.
+
+## M6 summary (complete 2026-11-06: R-M6-01 to R-M6-03)
+
+| Task | Result | Commit |
+| --- | --- | --- |
+| R-M6-01 | `docs/architecture.md` (A-21); CR and SR approved, 11 minor fixes | 9f058ad |
+| R-M6-02 | `docs/testing.md` (A-08, A-21); CR approved, 9 minor fixes; update command `go test . -run Golden -update` in `testing.md` and the `golden_test.go` comments | 9f058ad |
+| R-M6-03 | README, CLAUDE.md, changelog (intro added, entries reordered; misplaced duplicate R-M2-08 entry removed from 1.0.0), progress cleanup; update command corrected in ADR 0003. Code review CHANGES_REQUIRED, fixed in round 1 (findings 1–6); finding 7 accepted (make targets documented in CLAUDE.md only, README keeps plain go commands); finding 8 moot (M6 marked complete at commit time after verification) | follows |
+
+M6 exit ("files below exist, links checked, `docs/progress.md` current"): met for `docs/`. `architecture.md` and `testing.md` exist, relative links in `docs/*.md` and `docs/adr/*.md` were checked, this file is current. README and CLAUDE.md changes of R-M6-03 were code-reviewed together with the docs; findings fixed in round 1.
 
 ## Open follow-ups
 
 | # | Item | Owner | Status |
 | --- | --- | --- | --- |
-| 1 | Error messages for `orphan_summary_action` and `timezone` print the value with `%q` (pre-existing, affects JSON and YAML) | open | open |
-| 2 | Local toolchain go1.25.5 has stdlib vulnerabilities (security review). Recommendation: rebuild with Go 1.26.10 or newer | open | open |
+| 1 | Error messages for `orphan_summary_action`, `create_tasks_for` and `timezone` printed the value with `%q` (pre-existing, affects JSON and YAML); fixed in R-M3-09 | – | done (R-M3-09) |
+| 2 | Local toolchain go1.25.5 has stdlib vulnerabilities (security review). Recommendation: rebuild with Go 1.26.10 or newer | – | done (R-M0-01) |
 | 3 | Migrate the real config to `config.yaml` and update the installed plist | Mark | open |
 | 4 | One week of manual testing from 2026-11-01, then set up the launchd service (see `docs/launchd.md`) | Mark | open |
-| 5 | `meetingsync -check` exits 0 although a check fails (✗ seen for LM Studio; `Check` returns nil in `app.go`) | open | open |
-| 6 | `-file` without `-dry-run` writes no ledger entry and leaves the file in place; a later service run would process it a second time | open | open |
-| 7 | An LLM request that always hits `llm.timeout_minutes` counts as transient (llm.go ~185): retried every 16 min forever, never moved to `_fehler`. Decide whether that is intended (decision: Mark) | open | done (T6) |
+| 5 | `meetingsync -check` exited 0 although a check failed (✗ seen for LM Studio; `Check` returned nil in `internal/cli/cli.go`); now exit 1 on any ✗ | – | done (R-M3-13) |
+| 6 | `-file` without `-dry-run` writes no ledger entry and leaves the file in place; a later service run would process it a second time | – | done (R-M3-14) |
+| 7 | An LLM request that always hits `llm.timeout_minutes` counts as transient (llm.go ~185): retried every 16 min forever, never moved to `_fehler`. Decide whether that is intended (decision: Mark) | – | done (T6) |
+| 8 | `go` directive still 1.22: legacy GODEBUG defaults stay active (see ADR 0002) | Mark | done (R-M0-11) |
+| 9 | GitHub settings: allow Actions (read-only token, approve fork PRs), enable Private vulnerability reporting, Dependabot alerts and security updates, branch protection for `main` with required check `check`, no force push | Mark | open |
+| 10 | With `create_tasks_for=all` the log/notification says "N To-dos für dich" counting all created tasks, not only Mark's (frozen in golden G16b). Decided by Mark (2026-11-02): count only `fuer_mich` | Mark | done (R-M3-16) |
+| 11 | Golden test helpers duplicated between `golden_flow_test.go` and `golden_cli_test.go`. Consolidate in R-M0-08 | Mark | done (R-M0-08) |
+| 12 | Transcript toggle truncation at 99 paragraphs not covered by golden tests. Add unit test in R-M0-08 | Mark | done (R-M0-08) |
+| 13 | G10b freezes OS/Go-specific "connection refused" text. Watched in R-M0-11 | Mark | done (unchanged with go 1.26) |
+| 14 | Before rebuilding `~/bin` (R-M1-02): new `begonnen` lines appear in the ledger (v1.0.0 skips them). A crash during page creation leaves the file in `_fehler` with a note to check Notion; if the page is missing, move the file(s) back into the export folder | Mark | open |
+| 15 | After an ambiguous `CreatePage` failure (5xx, network error, timeout, unreadable 2xx body) a retry can create duplicate pages (ADR 0004). Decided by Mark (2026-11-02) | Mark | done (R-M3-17) |
+| 16 | R-M1-04 must not leave a growing number of copies in `_fehler` when `Remove(src)` fails; deleting meetingsync's own copy needs Mark's approval | Mark | done (R-M1-04, approved 2026-11-02) |
+| 17 | `archive()` failures (`Remove(src)`, folder fsync on the target volume) repeat every poll; `listEntries` accepts non-regular files | – | done (R-M1-07) |
+| 18 | Plan ADR numbering for the package split (was 0005, now taken by `golang.org/x/sys`) | – | done (ADR 0015, Mark at the M2 gate, 2026-11-02) |
+| 19 | `handleError` deletes the retry state even when the move to `_fehler` fails: the file is reprocessed and `max_attempts` restarts from 0 (pre-existing since v1.0.0) | – | done (R-M3-18) |
+| 20 | A regular file swapped for a symlink between `ReadDir` and `ReadFile` is still followed (low risk, local only) | – | done (R-M3-03, merged from R-M3-19) |
+| 21 | Three copies of "get or create state, `nextTry` = now + 2 min" (`interrupted`, `archiveAt`, `handleError`) | – | done (R-M2-09a) |
+| 22 | A German date followed by an underscore and a time (`Weekly 07.01.2026_08-45.txt`) is misparsed: `reDateISO` matches `2026_08-45`, `dateFromName` never tries `reDateDE`, the meeting date falls back to an estimate (pre-existing since v1.0.0, found by QA in R-M2-02). Mark decided at the M3 gate (2026-11-02): fix it | Mark | done (R-M3-20) |
+| 23 | Root tests still need exported `pipeline.FileState`, `States()`, `ErrUnterbrochen` and `config.Finalize` (e2e builds its config in code). Move tests into `internal/pipeline`, load e2e config from a file, then unexport | – | done (R-M4-04) |
+| 24 | Manual check at the next real run (launchd): a notification with ü/ö shows correctly and the Keychain token is still read. Under launchd `LANG` was already unset before R-M3-07; the new loss is `__CF_USER_TEXT_ENCODING`. Expected fine (argv is UTF-8). If umlauts are garbled, add `__CF_USER_TEXT_ENCODING` to the `minimalEnv` allowlist in `internal/notify` | Mark | open (R-M3-07) |
+| 25 | Optional, not required: existing `_archiv`/`_fehler` folders and the ledger keep their old permissions (meetingsync never changes them). To make them private: `chmod 700` on the folders, `chmod 600` on the ledger | Mark | open (R-M3-04) |
+| 26 | Optional, when switching to launchd: the installed plist does not have `ThrottleInterval` yet. Copy the template again to `~/Library/LaunchAgents/`, then `launchctl bootout` and `launchctl bootstrap` (see `docs/launchd.md`) | Mark | open (R-M3-10) |
+| 27 | Before the next rebuild of `~/bin`, add these two lines to `~/.config/meetingsync/config.yaml`: `my_role: Head of Engineering` and `example_name: Sascha`. Otherwise the prompt changes (no role, example name "Alex") | Mark | open (R-M3-11) |
+| 28 | CLAUDE.md "Retry" paragraph says all errors count against `max_attempts`; since R-M3-06 a note above the block cap goes to `_fehler` at once, without retry. CLAUDE.md is outside `docs/`, the coordinator routes the edit | Coordinator | done (R-M3-13 commit) |
+| 29 | Block-cap path (R-M3-06) re-runs the LLM every 2 min while the move to `_fehler` keeps failing (rare). Fix needs moving the notification. Accepted by coordinator | Coordinator | open (R-M3-18) |
+| 30 | After the rebuild of `~/bin` with R-M3-14: restart the service. An old running service has no folder lock and no ledger refresh, so `-file` plus the old service could create a second page (ADR 0013) | Mark | open |
+| 31 | Pre-existing, unchanged by R-M3-14: `-file` on a summary while its transcript is still in the export folder: the service still creates a page from the pair (only the primary hash is checked). Decision for Mark | Mark | open |
+| 32 | After the rebuild of `~/bin` with R-M3-17: add to `~/.config/meetingsync/config.yaml` under `notion:` the lines `notes_properties:` and `  source: Quelle`, then run `meetingsync -check`; no hint about the column should appear. Without them the protection is off | Mark | open |
+| 33 | Live test of R-M3-17 against real Notion (needs Mark's approval) | Mark | open |
+| 34 | Low: the reverse-DNS label `de.borukhov.meetingsync` and the repo owner name stay in the public repo. Assumed intentional, not confirmed (R-M4-01) | Mark | open |
+| 35 | End of project, after the merge of `refactor/architektur` into `main` and before the next release: run R-M4-02 (history rewrite, ADR 0011) after the coordinator's final go; then Mark force-pushes `main`, `refactor/architektur` (if it still exists) and tags, re-links the GitHub release; follow-up docs commit maps old to new hashes. Hash mapping (2026-11-09): commit hashes cited in docs before 2026-11-09 refer to the pre-squash history (b6af06d and c48e5f4 squashed into 6935655). The mapping docs commit after R-M4-02 maps them by commit subject (subjects are unique) via both rewrites; exception: c48e5f4 (subject "R-M0-05: Golden-Harness, Review-Fixes") maps to 6935655, whose subject is "R-M0-05: Golden-Harness". Delete `backup/vor-squash` before the rewrite (it points to the old HEAD) | Mark / Coordinator | open (R-M4-02) |
+| 36 | Optional: `-check` on a `Models()` timeout prints `LM Studio nicht erreichbar unter …: … context deadline exceeded`; the server accepted the connection but did not answer. Wrap `errors.Is(err, context.DeadlineExceeded)` as `keine Antwort innerhalb von 10 s` (cli). Found in R-M5-03 code review | Coordinator | open (optional) |

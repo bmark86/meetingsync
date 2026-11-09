@@ -1,0 +1,8 @@
+Konfiguration: <tmp>/config.yaml
+Ordner:   <tmp>/watch
+Archiv:   <tmp>/watch/_archiv
+Fehler:   <tmp>/watch/_fehler
+✓ Notion: Notes erreichbar (notes-ds)
+✓ Notion: Tasks erreichbar (tasks-ds)
+✓ Notion: 2 aktive Projekte
+✓ LM Studio: Modell "gemma-test" verfügbar

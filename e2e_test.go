@@ -15,6 +15,11 @@ import (
 	"testing"
 	"time"
 	"unicode/utf8"
+
+	"meetingsync/internal/cli"
+	"meetingsync/internal/config"
+
+	"go.yaml.in/yaml/v3"
 )
 
 // fakeServer simuliert LM Studio und die Notion-API in einem Server.
@@ -39,7 +44,7 @@ func (f *fakeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if strings.HasPrefix(r.URL.Path, "/v1/") && !strings.HasPrefix(r.URL.Path, "/v1/chat") && r.URL.Path != "/v1/models" {
 		if r.Header.Get("Authorization") != "Bearer secret-test" || r.Header.Get("Notion-Version") != "2025-09-03" {
-			http.Error(w, `{"code":"unauthorized","message":"bad headers"}`, 401)
+			http.Error(w, `{"code":"unauthorized","message":"bad headers"}`, http.StatusUnauthorized)
 			return
 		}
 	}
@@ -168,14 +173,44 @@ func checkPayload(t *testing.T, v any) {
 	walk(v)
 }
 
-func setup(t *testing.T, f *fakeServer) (*App, string) {
+// setup baut die App über die Verdrahtung von main (newEnv) mit Fakes. opts
+// passen Env vor Init an (Config, Logger, Mover, Dry-Run, Clients).
+func setup(t *testing.T, f *fakeServer, opts ...func(*cli.Env)) (*testApp, string) {
+	t.Helper()
+	return setupWith(t, f, nil, opts...)
+}
+
+// loadFromFile schreibt cfg als YAML nach t.TempDir() und lädt sie über
+// config.Load, wie das Binary: Ordner, Endungen und Prüfungen kommen aus Load.
+func loadFromFile(t *testing.T, cfg *config.Config) *config.Config {
+	t.Helper()
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, _, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return loaded
+}
+
+// setupWith ist setup mit eigenem Notion-Transport (nil: Standard).
+func setupWith(t *testing.T, f *fakeServer, rt http.RoundTripper, opts ...func(*cli.Env)) (*testApp, string) {
 	t.Helper()
 	srv := httptest.NewServer(f)
 	t.Cleanup(srv.Close)
 	t.Setenv("NOTION_TOKEN", "secret-test")
 
 	dir := t.TempDir()
-	cfg := defaultConfig()
+	cfg := config.Default()
+	cfg.MyName = "Mark"
+	cfg.MyRole = "Head of Engineering"
+	cfg.ExampleName = "Sascha"
 	cfg.WatchDir = dir
 	cfg.Notify = false
 	cfg.IncludeTranscript = true
@@ -185,21 +220,33 @@ func setup(t *testing.T, f *fakeServer) (*App, string) {
 	cfg.Notion.NotesDataSourceID = "notes-ds"
 	cfg.Notion.TasksDataSourceID = "tasks-ds"
 	cfg.Notion.ProjectsDataSourceID = "projects-ds"
-	if err := cfg.finalize(); err != nil {
+	cfg = loadFromFile(t, cfg)
+	loc, err := loadLocation(cfg.Timezone)
+	if err != nil {
 		t.Fatal(err)
 	}
 	logger := log.New(io.Discard, "", 0)
 	if testing.Verbose() {
 		logger = log.New(os.Stdout, "    ", 0)
 	}
-	app, err := NewApp(cfg, logger, false)
+	env, err := newEnv(cfg, loc, logger, false, rt)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := app.Init(context.Background()); err != nil {
+	env.Notifier = &fakeNotifier{}
+	for _, o := range opts {
+		o(&env)
+	}
+	app, err := startTestApp(context.Background(), env)
+	if err != nil {
 		t.Fatal(err)
 	}
 	return app, dir
+}
+
+func mustJSON(v any) string {
+	b, _ := json.MarshalIndent(v, "", "  ")
+	return string(b)
 }
 
 func writeOld(t *testing.T, path, content string, age time.Duration) {
@@ -233,6 +280,13 @@ func TestEndToEnd(t *testing.T) {
 	writeOld(t, filepath.Join(dir, "Meeting 2026-10-28 14-00.txt"), srtLikeText(), 5*time.Minute)
 	writeOld(t, filepath.Join(dir, "Meeting 2026-10-28 14-00 (1).txt"), "Zusammenfassung\n\nEs ging um die Pipeline. Cache kommt.\n", 5*time.Minute)
 
+	// Archivmonat wie in der App: mtime in der Config-Zeitzone
+	st, err := os.Stat(filepath.Join(dir, "Meeting 2026-10-28 14-00.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	month := st.ModTime().In(app.loc).Format("2006-01")
+
 	app.Pass(ctx, time.Now())
 
 	if len(f.pages) != 2 {
@@ -254,7 +308,7 @@ func TestEndToEnd(t *testing.T) {
 	if got := mustJSON(np["Projects"]); !strings.Contains(got, "proj-1") {
 		t.Errorf("Projekt nicht verknüpft: %s", got)
 	}
-	if got := mustJSON(np["Prüfen"]); !strings.Contains(got, "false") {
+	if got := mustJSON(np["Prüfen"]); !strings.Contains(got, "true") {
 		t.Errorf("Prüfen: %s", got)
 	}
 	body := strings.ReplaceAll(mustJSON(note["children"]), `\u0026`, "&")
@@ -287,7 +341,6 @@ func TestEndToEnd(t *testing.T) {
 	if left := remaining(t, dir); len(left) != 0 {
 		t.Errorf("Dateien nicht archiviert: %v", left)
 	}
-	month := time.Now().Format("2006-01")
 	archived, _ := os.ReadDir(filepath.Join(dir, "_archiv", month))
 	if len(archived) != 2 {
 		t.Errorf("Archiv enthält %d Dateien, erwartet 2", len(archived))
@@ -322,9 +375,10 @@ func TestWaitsForUnstableFiles(t *testing.T) {
 
 func TestOrphanSummaryAndFallbackAndLongPage(t *testing.T) {
 	f := &fakeServer{t: t, appends: map[string]int{}, rejectSchema: true, themesInReply: 40}
-	app, dir := setup(t, f)
-	app.cfg.OrphanSummaryMinutes = 1
-	app.cfg.Notion.CreateTasksFor = "none"
+	app, dir := setup(t, f, func(e *cli.Env) {
+		e.Cfg.OrphanSummaryMinutes = 1
+		e.Cfg.Notion.CreateTasksFor = "none"
+	})
 
 	writeOld(t, filepath.Join(dir, "Notiz.md"), "# Zusammenfassung\n\nNur Text ohne Zeitmarken.\n", 5*time.Minute)
 	app.Pass(context.Background(), time.Now())

@@ -1,0 +1,5 @@
+Konfiguration: <tmp>/config.yaml
+Ordner:   <tmp>/watch
+Archiv:   <tmp>/watch/_archiv
+Fehler:   <tmp>/watch/_fehler
+✗ Notion: Notes-Datenbank nicht lesbar: Notion HTTP 404 object_not_found: Could not find database with ID: notes-ds. Make sure the relevant pages and databases are shared with your integration. – Token gültig? Ist die Integration mit der Datenbank verbunden?
