@@ -75,7 +75,7 @@ Open user actions for Mark (details in the follow-ups below):
 
 | Action | Follow-up |
 | --- | --- |
-| Push the branch | – |
+| Force-push `refactor/architektur` (rewritten by the squash, 2026-11-09; see Release order step 1) | – |
 | Add `my_role` and `example_name` to `~/.config/meetingsync/config.yaml` before the rebuild | 27 |
 | Add `notes_properties.source: Quelle` under `notion:`, then run `meetingsync -check` | 32 |
 | Rebuild `~/bin`, restart the service (old service has no folder lock) | 30 |
@@ -89,7 +89,7 @@ Release order (version v2.0.0, Mark, 2026-11-06; upgrade notes: [releases/v2.0.0
 
 | Step | Who | Action |
 | --- | --- | --- |
-| 1 | Mark | Push `refactor/architektur`, merge it into `main` |
+| 1 | Mark | Force-push `refactor/architektur` (rewritten by the squash of b6af06d/c48e5f4 into 6935655, 2026-11-09), then merge it into `main` |
 | 2 | Coordinator | Run R-M4-02 (history rewrite) on the merged `main`; asks Mark for the go first (ADR 0011) |
 | 3 | Mark | Force-push `main`, tag `v2.0.0` on the new `main`, create the GitHub release from `docs/releases/v2.0.0.md`; the rewrite re-creates the `v1.0.0` tag |
 | 4 | Coordinator | Follow-up docs commit: map old to new commit hashes after the rewrite (follow-up 35) |
@@ -363,5 +363,5 @@ M6 exit ("files below exist, links checked, `docs/progress.md` current"): met fo
 | 32 | After the rebuild of `~/bin` with R-M3-17: add to `~/.config/meetingsync/config.yaml` under `notion:` the lines `notes_properties:` and `  source: Quelle`, then run `meetingsync -check`; no hint about the column should appear. Without them the protection is off | Mark | open |
 | 33 | Live test of R-M3-17 against real Notion (needs Mark's approval) | Mark | open |
 | 34 | Low: the reverse-DNS label `de.borukhov.meetingsync` and the repo owner name stay in the public repo. Assumed intentional, not confirmed (R-M4-01) | Mark | open |
-| 35 | End of project, after the merge of `refactor/architektur` into `main` and before the next release: run R-M4-02 (history rewrite, ADR 0011) after the coordinator's final go; then Mark force-pushes `main`, `refactor/architektur` (if it still exists) and tags, re-links the GitHub release; follow-up docs commit maps old to new hashes | Mark / Coordinator | open (R-M4-02) |
+| 35 | End of project, after the merge of `refactor/architektur` into `main` and before the next release: run R-M4-02 (history rewrite, ADR 0011) after the coordinator's final go; then Mark force-pushes `main`, `refactor/architektur` (if it still exists) and tags, re-links the GitHub release; follow-up docs commit maps old to new hashes. Hash mapping (2026-11-09): commit hashes cited in docs before 2026-11-09 refer to the pre-squash history (b6af06d and c48e5f4 squashed into 6935655). The mapping docs commit after R-M4-02 maps them by commit subject (subjects are unique) via both rewrites; exception: c48e5f4 (subject "R-M0-05: Golden-Harness, Review-Fixes") maps to 6935655, whose subject is "R-M0-05: Golden-Harness". Delete `backup/vor-squash` before the rewrite (it points to the old HEAD) | Mark / Coordinator | open (R-M4-02) |
 | 36 | Optional: `-check` on a `Models()` timeout prints `LM Studio nicht erreichbar unter …: … context deadline exceeded`; the server accepted the connection but did not answer. Wrap `errors.Is(err, context.DeadlineExceeded)` as `keine Antwort innerhalb von 10 s` (cli). Found in R-M5-03 code review | Coordinator | open (optional) |
