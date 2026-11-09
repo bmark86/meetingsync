@@ -1,6 +1,6 @@
 # Architecture and security review of meetingsync
 
-Date: 2026-11-01. Base: `v1.0.0` + `6ab0703` (`main`). Two reviews: architecture/code and security. Work plan: [refactoring plan](../superpowers/plans/2026-11-01-refactoring.md).
+Date: 2026-11-01. Base: `v1.0.0` + `f956aff` (`main`). Two reviews: architecture/code and security. Work plan: [refactoring plan](../superpowers/plans/2026-11-01-refactoring.md).
 
 ## 1. Summary and verdict
 
@@ -34,7 +34,7 @@ Date: 2026-11-01. Base: `v1.0.0` + `6ab0703` (`main`). Two reviews: architecture
 
 ## 3. Findings by severity
 
-Severity: K = critical, H = high, M = medium, N = low. Evidence refers to `6ab0703`.
+Severity: K = critical, H = high, M = medium, N = low. Evidence refers to `f956aff`.
 
 | ID | Severity | Area | Finding | Evidence | Fix direction |
 | --- | --- | --- | --- | --- | --- |

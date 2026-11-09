@@ -1,6 +1,6 @@
 # Refactoring plan for meetingsync
 
-Date: 2026-11-01 (decisions of 2026-11-01 and 2026-11-02 included). Source of truth for the coordinator. Base: `v1.0.0` + `6ab0703`.
+Date: 2026-11-01 (decisions of 2026-11-01 and 2026-11-02 included). Source of truth for the coordinator. Base: `v1.0.0` + `f956aff`.
 Finding IDs (A-xx, S-xx) and decisions (D1-D13): [review report](../../reviews/2026-11-01-architektur-und-security-review.md).
 
 ## 1. Goal, guardrails, non-goals
@@ -696,7 +696,7 @@ Status: **complete 2026-11-04** (R-M3-01 to R-M3-20, R-M3-19 merged into R-M3-03
 
 Goal: no real IDs or personal data in the public repo.
 Exit: `git grep` and `git log -p --all` without the three real IDs; tag `v1.0.0` on the cleaned commit; backup bundle exists.
-Status: **complete except R-M4-02, deferred by decision (2026-11-05, ADR 0011).** R-M4-01, R-M4-03, R-M4-04 done. Exit met for `git grep` on the current tree only; history, tag and bundle are open until R-M4-02 runs after the merge.
+Status: **complete 2026-11-09.** R-M4-01 to R-M4-04 done. Exit met locally (`git grep`, `git log -p --all`, tag, bundle); the remote follows with Mark's force-pushes (follow-up 35).
 
 #### R-M4-01 Placeholders
 - Goal: replace real Notion IDs with placeholders.
@@ -708,7 +708,7 @@ Status: **complete except R-M4-02, deferred by decision (2026-11-05, ADR 0011).*
 - Status: **done 2026-11-04.** Real data source IDs in `config.example.yaml` and `config.example.json` replaced by `00000000-0000-0000-0000-000000000000`; comments and README tell users to enter their own IDs (dashes optional) and to leave Tasks/Projects empty if unused. No test change needed. Code review and security review approved. The IDs remain in git history until R-M4-02.
 
 #### R-M4-02 Clean the git history ⚠ destructive
-- Status: **prepared 2026-11-05, deferred until after the merge of `refactor/architektur` into `main`** (before the next release). ADR 0011 written. Details of the decision: ADR 0011, OD-15.
+- Status: **done 2026-11-09** (after the merge into `main`, Mark's go). Backup bundle verified, `git filter-repo --force --replace-text` run, `git log -p --all | grep -c -F -f <ID list>` = 0, `make check` green on the new `main`, `origin` re-added. Mark's pushes are still open (follow-up 35). Details: ADR 0011, OD-15.
 ⚠ Behavior change, decided by Mark on 2026-11-01 (D2). Its own human approval right before it runs (AskUserQuestion by the coordinator), even if the plan is approved.
 - Goal: real IDs gone from all commits and tags.
 - Steps:
@@ -732,7 +732,7 @@ Status: **complete except R-M4-02, deferred by decision (2026-11-05, ADR 0011).*
 - Depends on: R-M3-11. Findings: A-20.
 - Model: sonnet, default with an effect on the prompt.
 - Reviews: CR, QA.
-- Status: **done 2026-11-04.** Code default `my_name` "Mark" -> "Max"; example configs and README show "Max". Finding: the golden harness config did not set `my_name` and relied on the old default (the plan assumed it did); it now sets `my_name: Mark` explicitly, as do `e2e_test.go` and `app_flow_test.go`. Golden byte-identical. Committed (85886b6), reviews passed.
+- Status: **done 2026-11-04.** Code default `my_name` "Mark" -> "Max"; example configs and README show "Max". Finding: the golden harness config did not set `my_name` and relied on the old default (the plan assumed it did); it now sets `my_name: Mark` explicitly, as do `e2e_test.go` and `app_flow_test.go`. Golden byte-identical. Committed (f63cd9b), reviews passed.
 
 #### R-M4-04 Root integration tests behind package boundaries
 - Goal: stop exporting test-only identifiers from production packages (follow-up of R-M2-10).
@@ -785,13 +785,13 @@ Status: **complete 2026-11-06.** Exit met for `docs/`: `architecture.md` and `te
 - Content: context, packages and dependency direction (Mermaid), runtime view of the flow (sequence), ledger states (state diagram), error and retry model, security model/trust boundaries (Mac, LM Studio, Notion, Keychain), launchd deployment. Max. ~2 pages.
 - Depends on: M5. Findings: A-21.
 - Model: sonnet (docs-writer). Reviews: CR, SR, QA.
-- Status: **done 2026-11-06** (commit 9f058ad). CR and SR approved, 11 minor fixes.
+- Status: **done 2026-11-06** (commit c3d91a3). CR and SR approved, 11 minor fixes.
 
 #### R-M6-02 docs/testing.md
 - Content: pyramid, golden tests and fakes, normalization, coverage targets, updating golden files on purpose (`-update`, review duty, ⚠ tasks only).
 - Depends on: M5. Findings: A-08, A-21.
 - Model: sonnet (docs-writer). Reviews: CR, QA.
-- Status: **done 2026-11-06** (commit 9f058ad). CR approved, 9 minor fixes. Review found the update command wrong; corrected to `go test . -run Golden -update` here, in ADR 0003 and in `golden_test.go`.
+- Status: **done 2026-11-06** (commit c3d91a3). CR approved, 9 minor fixes. Review found the update command wrong; corrected to `go test . -run Golden -update` here, in ADR 0003 and in `golden_test.go`.
 
 #### R-M6-03 README, CLAUDE.md, changelog, progress
 - Content: commands (`make build/lint/vuln/check`), toolchain (with a note: `GOTOOLCHAIN=local` or a blocked proxy.golang.org makes the first build fail, because go1.26.10 must be downloaded once), package structure in CLAUDE.md section "Ablauf" (flow), `-check` exit code and `-file` ledger behavior, changelog section for the release, progress.md cleaned up.
@@ -824,7 +824,7 @@ Parallel only with disjoint files and `isolation: "worktree"`.
 | P4 | R-M1-01 → R-M1-02 → R-M1-03; R-M1-04 → R-M1-05 → R-M1-07 | R-M1-06 (config.go, main.go) | All other M1 tasks change `app.go` → one after another (order: 01, 02, 03, 04, 05, 07) |
 | P5 | R-M2-01 → 02 → 03 → 04 → 05 → 06 → 07 → 08 → 09 → 10 | none | Every cut changes callers in `app.go` |
 | P6 | Lane Config: R-M3-09 → R-M3-01 → R-M3-02 → R-M3-11 → R-M3-15 (R-M3-15 also after R-M3-07) | Lane Files: R-M3-03 → R-M3-04 → R-M3-14; Lane HTTP: R-M3-05 → R-M3-06 → R-M3-08; Lane Processes: R-M3-07; Lane CLI: R-M3-13; R-M3-12 → R-M3-16 (sequential: same notification/log code and golden G16b) | Packages are disjoint after M2 |
-| P7 | R-M4-02 | nothing (no open branches) | The rewrite needs a quiet state; prepared 2026-11-05, runs once at the end after the merge into `main`, before the next release; the coordinator asks Mark for the go right before it runs |
+| P7 | R-M4-02 | nothing (no open branches) | The rewrite needs a quiet state; prepared 2026-11-05, executed 2026-11-09 after the merge into `main` with Mark's go |
 | P8 | R-M5-01 → R-M5-02 | R-M5-03, R-M4-03, R-M4-04 | |
 | P9 | R-M6-01 ∥ R-M6-02 → R-M6-03 | | |
 
@@ -898,7 +898,7 @@ All proposals are accepted ("decided: proposal") on 2026-11-01. Two points stay 
 | OD-21 | Switch to `log/slog` | decided: proposal: no → R-OPT-01 rejected | – |
 | OD-22 | D5: wording of the reason; does D5 also apply with `create_tasks_for=none`? | decided: proposal: it always applies (D5 is tied to `fuer_mich`, not to task creation); wording set in R-M3-12 | – |
 | OD-23 | To-do count "N To-dos für dich" (log, notification): all created tasks or only `fuer_mich` (progress #10) | decided: Mark, 2026-11-02: only `fuer_mich` → R-M3-16 (⚠, G16b) | – |
-| OD-24 | Squash the red commit `b6af06d` and `c48e5f4` before the merge to `main` | decided: Mark, 2026-11-02: yes, branch only (section 10) | merge |
+| OD-24 | Squash the red R-M0-05 commit and the following R-M0-05 review-fix commit into one before the merge to `main` (now 419e91b) | decided: Mark, 2026-11-02: yes, branch only (section 10) | merge |
 
 Details left to the tasks (not separate questions): exit code value in R-M3-13; whether `-file` also moves the file in R-M3-14 (needs Mark's consent); Keychain lookup order and service name in R-M3-15.
 
@@ -908,6 +908,6 @@ Decided by Mark on 2026-11-02 (OD-24). Applies before `refactor/architektur` is 
 
 | Step | Action | Check |
 | --- | --- | --- |
-| 1 | Squash the red commit `b6af06d` (R-M0-05 golden harness) and `c48e5f4` (R-M0-05 review fixes) into one commit. The later commits follow on top | `git log` shows one R-M0-05 commit; `make check` green on it |
+| 1 | Squash the red commit (R-M0-05 golden harness) and the R-M0-05 review-fix commit into one commit (now 419e91b). The later commits follow on top | `git log` shows one R-M0-05 commit; `make check` green on it |
 | 2 | Force-push the branch `refactor/architektur` only (`git push --force-with-lease`). Never force-push `main` | Remote branch equals the local branch |
 | 3 | Merge the branch into `main` | `make check` green on `main` |

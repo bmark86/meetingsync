@@ -1,6 +1,6 @@
 # 0011 Clean the git history
 
-Status: accepted (Mark, D2 2026-11-01; tool, timing and method 2026-11-05, OD-15). Prepared, not yet executed. R-M4-02.
+Status: accepted (Mark, D2 2026-11-01; tool, timing and method 2026-11-05, OD-15). Executed 2026-11-09. R-M4-02.
 
 ## Context
 - S-05: the 3 real data source IDs (Notes, Tasks, Projects) are in the public history, 15 occurrences, only in the old `config.example.yaml`/`.json`. None in commit messages or the tag message.
@@ -29,11 +29,17 @@ Status: accepted (Mark, D2 2026-11-01; tool, timing and method 2026-11-05, OD-15
 | Rewrite now, before the merge | Every later hash would change again and open branches would need rebasing; one rewrite at the end is enough |
 | Keep the history, placeholders only | IDs would stay public permanently; D2 decided to remove them |
 
+## Execution (2026-11-09, Mark's go)
+- Before: `refactor/architektur` merged into `main` (merge commit); backup bundle `~/Backups/meetingsync-vor-rewrite.bundle` created and verified (all refs incl. old `main`, `refactor/architektur`, `backup/vor-squash`, tag `v1.0.0`); local branches `backup/vor-squash` and `refactor/architektur` deleted.
+- `git filter-repo --force --replace-text` (a40bce548d2c): the 3 real IDs replaced by the placeholder in all commits and tag `v1.0.0`.
+- Verified: `git log -p --all | grep -c -F -f <ID list>` = 0 (before: 15 on `main`, 9 in `v1.0.0`); tag messages 0; reflog empty; old objects gone; `make check` green on the new `main`; `v1.0.0` re-written and contained in `main`. `origin` re-added. Commit map: `~/Backups/meetingsync-commit-map.txt` (outside the repo).
+- Still to do by Mark: `git push --force origin main`, `git push --force origin v1.0.0`, `git push origin --delete refactor/architektur`, tag `v2.0.0`, GitHub release, check the `v1.0.0` release link.
+
 ## Consequences
 - All commit hashes change, tag `v1.0.0` moves to the matching new commit; the GitHub release must be re-linked and `docs/releases/v1.0.0.md` checked.
 - In-place rewrite has no untouched original: recovery relies on the bundle only.
-- Until the rewrite, the IDs remain in public history.
-- Docs carry stale hashes between the rewrite and the follow-up docs commit.
+- Until Mark force-pushes, the IDs remain in the public remote history.
+- Docs carried stale hashes between the rewrite and the follow-up docs commit; mapped on 2026-11-09 by commit subject.
 
 ## Residual risks
 - GitHub may keep old SHAs reachable in caches; removal only via GitHub Support.

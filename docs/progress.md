@@ -2,7 +2,7 @@
 
 | ID | Title | Status | Date |
 | --- | --- | --- | --- |
-| T1 | YAML config | done (bf32c03) | 2026-10-31 |
+| T1 | YAML config | done (92f2a8f) | 2026-10-31 |
 | T2 | Commented example config | done | 2026-10-31 |
 | T6 | Retry limit for transient errors | done | 2026-11-01 |
 | R-PLAN | Architecture/security review + refactoring plan (2026-11-01) | done (report and plan written; 52 tasks planned) | 2026-11-01 |
@@ -57,31 +57,31 @@
 | R-M3-17 ⚠ | No duplicate page after an ambiguous `CreatePage` failure (OD-05 residual risk, follow-up 15): `ErrUnklar` for 5xx, `*url.Error`, unreadable/unparsable 2xx; marker in Notes column `notes_properties.source` (empty = off); lookup of the stored marker (ledger `verworfen`) before the next create; found = reuse page; nothing found within 5 min = wait; lookup error = failed attempt; LLM result cached in memory. Decisions: Mark (M3 gate 2026-11-02): text column; Mark (2026-11-04, privacy): marker `<file name> · <mtime>`, no content hash in Notion. Golden unchanged. Security review approved after fix rounds 1 and 2. ADR 0004 updated. Residual risks: ADR 0004. Live test against real Notion still open (needs Mark's approval) | done | 2026-11-04 |
 | R-M3-14 ⚠ | `-file` writes a ledger entry (D8, OD-18, A-14): `begonnen` before `CreatePage`, `fertig` after, `verworfen` on a failed `CreatePage`; the file is not moved (Mark, 2026-11-04), the service archives it later as already processed (`↺ … schon verarbeitet → Archiv`); files outside the export folder stay. `-file` always processes the given file, also if its hash is known (coordinator). `-dry-run -file` unchanged (G09). Mutual exclusion (coordinator): advisory `flock` on the export folder (`internal/ledger/lock.go`, no lock file); service pass skipped while held, `-file` waits; service reads foreign ledger lines per pass (`Ledger.Refresh`). Golden G09b added, rest byte-identical; code review approved, fix round 1 done. ADR 0013. Residual risks: ADR 0013 | done | 2026-11-04 |
 | R-M4-01 | Real Notion data source IDs replaced by placeholders in `config.example.yaml`/`.json` (S-05, A-20); comments and README say to enter own IDs, Tasks/Projects empty if unused. No test change. Code and security review approved. IDs stay in git history until R-M4-02 | done | 2026-11-04 |
-| R-M4-02 ⚠ | Git history cleanup (S-05) prepared, not executed. Decisions: Mark (2026-11-05, OD-15): `git filter-repo --replace-text`, in place (no fresh clone), one run at the end after the merge into `main` and before the next release, backup bundle first, Mark force-pushes. Plan step "fresh clone" replaced. Facts: 3 real IDs, 15 occurrences, only in old example configs. The coordinator asks Mark for the go right before it runs. ADR 0011. Residual risk: GitHub caches | prepared, deferred (after merge) | 2026-11-05 |
-| R-M4-03 | Personal defaults (A-20): code default of `my_name` "Mark" -> "Max" (`internal/config`); example configs and README show "Max". Golden harness, `e2e_test.go`, `app_flow_test.go` set `my_name: Mark` explicitly (golden config relied on the old default, found during the task); golden byte-identical. Mark's config keeps `my_name: Mark` (OD-14b). Committed (85886b6); reviews passed. | done | 2026-11-04 |
+| R-M4-02 ⚠ | Git history cleanup (S-05), executed 2026-11-09 after the merge into `main` with Mark's go (facts: follow-up 35, ADR 0011); Mark's pushes open. Decisions: Mark (2026-11-05, OD-15): `git filter-repo --replace-text`, in place (no fresh clone), one run at the end after the merge into `main` and before the next release, backup bundle first, Mark force-pushes. Plan step "fresh clone" replaced. Facts: 3 real IDs, 15 occurrences, only in old example configs. ADR 0011. Residual risk: GitHub caches | done | 2026-11-09 |
+| R-M4-03 | Personal defaults (A-20): code default of `my_name` "Mark" -> "Max" (`internal/config`); example configs and README show "Max". Golden harness, `e2e_test.go`, `app_flow_test.go` set `my_name: Mark` explicitly (golden config relied on the old default, found during the task); golden byte-identical. Mark's config keeps `my_name: Mark` (OD-14b). Committed (f63cd9b); reviews passed. | done | 2026-11-04 |
 | R-M4-04 | Root integration tests behind package boundaries: 12 root tests that read pipeline internals moved unchanged by name to `internal/pipeline/moved_root_test.go` (now on the pipeline fakes, equivalent assertions). Unexported `pipeline.FileState`, `ErrUnterbrochen`, `config.Finalize`; `Pipeline.States()` removed. `e2e_test.go` and `internal/cli/cli_test.go` write a temp YAML and load it via `config.Load`. 581 test runs before and after; golden byte-identical; `make check` exit 0. CR approved | done | 2026-11-04 |
 | R-M5-01 | Read content only when processing (A-10, closed): `watch.List` reads only on a cache miss, `pipeline.loadContent` reads in `handle` (skip pass if read fails, length != listed size or file changed); summary partner read only when used. 0 reads for backoff and unchanged known files (counting fake FS). New logs: `<name> nicht lesbar: <err>`, `<name> nicht lesbar oder geändert → ohne Zusammenfassung als Kontext` (summary archived with transcript, never an orphan). Golden unchanged; `make check` green. Decision: coordinator (error-path changes). CR and SR approved. Residual risks: same-size+same-mtime change not detected; optional idea: `os.SameFile` | done | 2026-11-05 |
 | R-M5-02 | Bound the maps (A-19, closed): pipeline prunes `warned`, classification cache and per-file state to `watch.Lister.Seen` each pass (empty readable folder prunes all; `ReadDir` error prunes nothing); global warn keys kept via `globalWarnKeys`; ledger hit deletes state. Decisions: coordinator: states with `ambiguousCreate`/`giveUp` never pruned (duplicate-page risk, ADR 0004; deviation: they stay until restart for files that never return); vanished-and-returned file restarts `max_attempts`. Developer opus instead of sonnet (interaction with R-M3-17/18). Golden unchanged; `make check` green; tests 592 → 601. CR approved | done | 2026-11-05 |
-| R-M5-03 | Own timeout for `Models()` (A-15, timeout part): `Models()` (only used by `-check`) derives a 10 s context timeout (Mark, 2026-11-05) from the caller's context (`modelsTimeout` in `internal/llm/client.go`). Before, only `llm.timeout_minutes` (default 30 min) applied, so `-check` could hang when LM Studio accepts the connection but never answers. Chat and extraction requests unchanged. On timeout `-check` shows the usual `✗ LM Studio nicht erreichbar unter …` line; no new message text. Test with a hanging fake server; golden unchanged; `make check` green; test runs 601 → 602. Developer haiku. Code review approved | done (a217b4b) | 2026-11-06 |
-| R-M6-01 | `docs/architecture.md`: context, packages and dependency direction, runtime sequence, ledger states, error and retry model, trust boundaries, launchd (A-21). CR and SR approved, 11 minor fixes | done (9f058ad) | 2026-11-06 |
-| R-M6-02 | `docs/testing.md`: test pyramid, golden tests and fakes, normalization, coverage targets, updating golden files (A-08, A-21). CR approved, 9 minor fixes. Review found the documented update command wrong: `testing.md`, the plan and the `golden_test.go` comments use `go test . -run Golden -update` (ADR 0003 fixed in R-M6-03) | done (9f058ad) | 2026-11-06 |
+| R-M5-03 | Own timeout for `Models()` (A-15, timeout part): `Models()` (only used by `-check`) derives a 10 s context timeout (Mark, 2026-11-05) from the caller's context (`modelsTimeout` in `internal/llm/client.go`). Before, only `llm.timeout_minutes` (default 30 min) applied, so `-check` could hang when LM Studio accepts the connection but never answers. Chat and extraction requests unchanged. On timeout `-check` shows the usual `✗ LM Studio nicht erreichbar unter …` line; no new message text. Test with a hanging fake server; golden unchanged; `make check` green; test runs 601 → 602. Developer haiku. Code review approved | done (0280ed7) | 2026-11-06 |
+| R-M6-01 | `docs/architecture.md`: context, packages and dependency direction, runtime sequence, ledger states, error and retry model, trust boundaries, launchd (A-21). CR and SR approved, 11 minor fixes | done (c3d91a3) | 2026-11-06 |
+| R-M6-02 | `docs/testing.md`: test pyramid, golden tests and fakes, normalization, coverage targets, updating golden files (A-08, A-21). CR approved, 9 minor fixes. Review found the documented update command wrong: `testing.md`, the plan and the `golden_test.go` comments use `go test . -run Golden -update` (ADR 0003 fixed in R-M6-03) | done (c3d91a3) | 2026-11-06 |
 | R-M6-03 | README, CLAUDE.md, changelog and progress brought up to date: Unreleased changelog intro added and entries reordered (misplaced duplicate R-M2-08 entry removed from 1.0.0), M6 summary and refactoring status here, update command corrected in ADR 0003. README and CLAUDE.md edited by a parallel task. Code review CHANGES_REQUIRED, fixed in round 1 (findings 1–6); finding 7 accepted (make targets documented in CLAUDE.md only, README keeps plain go commands); finding 8 moot (M6 marked complete at commit time after verification). Commit follows | done | 2026-11-06 |
 
-## Refactoring status (2026-11-06)
+## Refactoring status (2026-11-09)
 
-Branch `refactor/architektur`. M0 to M6 are complete except R-M4-02 (git history cleanup), which is deferred until after the merge into `main` (Mark, 2026-11-05, ADR 0011). The M4 exit is therefore only met for the current tree.
+M0 to M6 are complete, including R-M4-02 (git history cleanup, executed 2026-11-09 after the merge into `main`, ADR 0011). Remaining: Mark's pushes and the release (follow-up 35).
 
 Open user actions for Mark (details in the follow-ups below):
 
 | Action | Follow-up |
 | --- | --- |
-| Force-push `refactor/architektur` (rewritten by the squash, 2026-11-09; see Release order step 1) | – |
+| Force-push `main` and `v1.0.0`, delete `refactor/architektur` on GitHub (see Release order steps 4 to 6) | 35 |
 | Add `my_role` and `example_name` to `~/.config/meetingsync/config.yaml` before the rebuild | 27 |
 | Add `notes_properties.source: Quelle` under `notion:`, then run `meetingsync -check` | 32 |
 | Rebuild `~/bin`, restart the service (old service has no folder lock) | 30 |
 | Optional: LLM key in the Keychain (`llm.api_key_keychain_service`) | R-M3-15 |
 | Approve and run the live test of R-M3-17 against real Notion | 33 |
-| Release, in this order (see below): merge, history rewrite, force-push, tag v2.0.0, GitHub release | 35 |
+| Release, remaining steps (see below): force-pushes, tag v2.0.0, GitHub release, check the v1.0.0 release | 35 |
 | Decide: `-file` on a summary with its transcript still in the folder; reverse-DNS label and repo owner name in the public repo | 31, 34 |
 | Earlier, still open: config migration to YAML, one week of manual testing, GitHub settings (Dependabot alerts, branch protection), `begonnen` lines / `_fehler` note after a crash, umlaut and Keychain check under launchd, optional `chmod` on `_archiv`/`_fehler`/ledger, plist `ThrottleInterval` | 3, 4, 9, 14, 24, 25, 26 |
 
@@ -89,10 +89,14 @@ Release order (version v2.0.0, Mark, 2026-11-06; upgrade notes: [releases/v2.0.0
 
 | Step | Who | Action |
 | --- | --- | --- |
-| 1 | Mark | Force-push `refactor/architektur` (rewritten by the squash of b6af06d/c48e5f4 into 6935655, 2026-11-09), then merge it into `main` |
-| 2 | Coordinator | Run R-M4-02 (history rewrite) on the merged `main`; asks Mark for the go first (ADR 0011) |
-| 3 | Mark | Force-push `main`, tag `v2.0.0` on the new `main`, create the GitHub release from `docs/releases/v2.0.0.md`; the rewrite re-creates the `v1.0.0` tag |
-| 4 | Coordinator | Follow-up docs commit: map old to new commit hashes after the rewrite (follow-up 35) |
+| 1 | Mark | done 2026-11-09: `refactor/architektur` merged into `main` (merge commit) |
+| 2 | Coordinator | done 2026-11-09: R-M4-02 history rewrite on the merged `main` (Mark's go, ADR 0011) |
+| 3 | Coordinator | done 2026-11-09: follow-up docs commit maps old to new commit hashes (follow-up 35) |
+| 4 | Mark | open: `git push --force origin main` |
+| 5 | Mark | open: `git push --force origin v1.0.0` (tag re-written by the rewrite) |
+| 6 | Mark | open: `git push origin --delete refactor/architektur` (merged branch, Mark's decision) |
+| 7 | Mark | open: tag `v2.0.0` on the new `main`, create the GitHub release from `docs/releases/v2.0.0.md` |
+| 8 | Mark | open: check the `v1.0.0` GitHub release still points to the re-pushed tag |
 
 ## M1 summary (complete 2026-11-02: R-M1-01 to R-M1-07 + R-M1-EXIT)
 
@@ -184,7 +188,7 @@ Next: M3 (gate passed 2026-11-02; complete 2026-11-04, see M3 summary).
 
 ## M3 summary (complete 2026-11-04: R-M3-01 to R-M3-20; R-M3-19 merged into R-M3-03)
 
-Branch `refactor/architektur`, HEAD 1c8eb44. Exit open: live test of R-M3-17 against real Notion needs Mark's approval (follow-up 33).
+Branch `refactor/architektur`, HEAD acc1b60. Exit open: live test of R-M3-17 against real Notion needs Mark's approval (follow-up 33).
 
 | Finding | Closed by |
 | --- | --- |
@@ -218,7 +222,7 @@ ADRs written in M3:
 | 0014 | `llm.api_key` from the Keychain | R-M3-15 |
 | 0004 (updated) | Ambiguous `CreatePage` failure, residual risks | R-M3-17 |
 
-ADR 0011 (git history cleanup, R-M4-02) is written but the rewrite is deferred.
+ADR 0011 (git history cleanup, R-M4-02) was executed 2026-11-09.
 
 Golden changes made on purpose (all other golden files byte-identical):
 
@@ -281,37 +285,37 @@ Actions for Mark around the next rebuild of `~/bin` (`go build -o ~/bin/meetings
 | Earlier, still open | Config migration to YAML, one week of manual testing, GitHub settings | 3, 4, 9 |
 | M3 exit | Approve the live test of R-M3-17 against real Notion | 33 |
 
-## M4 summary (R-M4-01, -03, -04 done 2026-11-04; R-M4-02 prepared, deferred by decision 2026-11-05)
+## M4 summary (complete 2026-11-09: R-M4-01 to R-M4-04)
 
-Branch `refactor/architektur`, HEAD 50dcfdf.
+Branch `refactor/architektur`, HEAD dc7e692 (before the merge).
 
 | Task | Result | Commit |
 | --- | --- | --- |
-| R-M4-01 | Placeholder IDs (`00000000-0000-0000-0000-000000000000`) in `config.example.yaml`/`.json` (S-05, A-20) | a79fbd5 |
-| R-M4-03 | Neutral `my_name` default "Max" instead of "Mark" (A-20); golden config sets `my_name: Mark` explicitly | 85886b6 |
-| R-M4-04 | 12 root tests moved into `internal/pipeline`; `FileState`, `ErrUnterbrochen`, `config.Finalize` unexported, `States()` removed; 581 test runs before and after; golden unchanged | 418d407 |
-| R-M4-02 | Prepared, not executed: ADR 0011, replacement list, `git filter-repo` installed. Runs once after the merge into `main`, before the next release (follow-up 35) | 50dcfdf |
+| R-M4-01 | Placeholder IDs (`00000000-0000-0000-0000-000000000000`) in `config.example.yaml`/`.json` (S-05, A-20) | 4d5b5b8 |
+| R-M4-03 | Neutral `my_name` default "Max" instead of "Mark" (A-20); golden config sets `my_name: Mark` explicitly | f63cd9b |
+| R-M4-04 | 12 root tests moved into `internal/pipeline`; `FileState`, `ErrUnterbrochen`, `config.Finalize` unexported, `States()` removed; 581 test runs before and after; golden unchanged | 1b92cf0 |
+| R-M4-02 | Done 2026-11-09: history rewritten with `git filter-repo --replace-text` after the merge into `main`; the 3 real IDs are gone from all commits and the tag `v1.0.0` (ADR 0011, follow-up 35) | – (history rewrite) |
 
 M4 exit ("`git grep` and `git log -p --all` without the three real IDs; tag `v1.0.0` on the cleaned commit; backup bundle exists"):
 
 | Part | Status |
 | --- | --- |
 | `git grep` without the real IDs (current tree) | met (R-M4-01) |
-| `git log -p --all` without the real IDs | open: the 3 real IDs stay in history until R-M4-02; risk accepted by Mark (2026-11-05) |
-| Tag `v1.0.0` on the cleaned commit | open (R-M4-02) |
-| Backup bundle exists | open (R-M4-02 step 3) |
+| `git log -p --all` without the real IDs | met locally (2026-11-09): `git log -p --all \| grep -c -F -f <ID list>` = 0 (before: 15 on `main`, 9 in `v1.0.0`); tag messages 0 |
+| Tag `v1.0.0` on the cleaned commit | met locally: re-written by filter-repo, contained in `main`; GitHub copy follows with Mark's force-push |
+| Backup bundle exists | met: `~/Backups/meetingsync-vor-rewrite.bundle`, verified, all refs |
 
-M4 is complete except R-M4-02, deferred by decision (Mark, 2026-11-05, ADR 0011). The exit criterion is not fully met.
+M4 is complete. The remote still holds the old history until Mark force-pushes (follow-up 35).
 
 ## M5 summary (complete 2026-11-06: R-M5-01 to R-M5-03)
 
-Branch `refactor/architektur`, HEAD a217b4b.
+Branch `refactor/architektur`, HEAD 0280ed7.
 
 | Task | Result | Commit |
 | --- | --- | --- |
-| R-M5-01 | Content read only on a classification cache miss and in `handle` (A-10); 0 reads for backoff and unchanged files | c2ab737 |
-| R-M5-02 | `warned`, classification cache and per-file state pruned to the current folder listing (A-19) | 941b499 |
-| R-M5-03 | `Models()` has its own 10 s timeout (A-15, timeout part); tests 601 → 602 | a217b4b |
+| R-M5-01 | Content read only on a classification cache miss and in `handle` (A-10); 0 reads for backoff and unchanged files | 50eef0e |
+| R-M5-02 | `warned`, classification cache and per-file state pruned to the current folder listing (A-19) | 4687b01 |
+| R-M5-03 | `Models()` has its own 10 s timeout (A-15, timeout part); tests 601 → 602 | 0280ed7 |
 
 M5 exit ("A-10, A-19 closed; golden unchanged"): met. A-10 (R-M5-01) and A-19 (R-M5-02) are closed; golden was unchanged in all three tasks. A-15 is not in the exit line; per the finding table above its parts are covered by R-M2-01, R-M2-05 (error types), R-M3-05 (status check) and R-M5-03 (timeout). Code review of R-M5-03 is approved.
 
@@ -319,8 +323,8 @@ M5 exit ("A-10, A-19 closed; golden unchanged"): met. A-10 (R-M5-01) and A-19 (R
 
 | Task | Result | Commit |
 | --- | --- | --- |
-| R-M6-01 | `docs/architecture.md` (A-21); CR and SR approved, 11 minor fixes | 9f058ad |
-| R-M6-02 | `docs/testing.md` (A-08, A-21); CR approved, 9 minor fixes; update command `go test . -run Golden -update` in `testing.md` and the `golden_test.go` comments | 9f058ad |
+| R-M6-01 | `docs/architecture.md` (A-21); CR and SR approved, 11 minor fixes | c3d91a3 |
+| R-M6-02 | `docs/testing.md` (A-08, A-21); CR approved, 9 minor fixes; update command `go test . -run Golden -update` in `testing.md` and the `golden_test.go` comments | c3d91a3 |
 | R-M6-03 | README, CLAUDE.md, changelog (intro added, entries reordered; misplaced duplicate R-M2-08 entry removed from 1.0.0), progress cleanup; update command corrected in ADR 0003. Code review CHANGES_REQUIRED, fixed in round 1 (findings 1–6); finding 7 accepted (make targets documented in CLAUDE.md only, README keeps plain go commands); finding 8 moot (M6 marked complete at commit time after verification) | follows |
 
 M6 exit ("files below exist, links checked, `docs/progress.md` current"): met for `docs/`. `architecture.md` and `testing.md` exist, relative links in `docs/*.md` and `docs/adr/*.md` were checked, this file is current. README and CLAUDE.md changes of R-M6-03 were code-reviewed together with the docs; findings fixed in round 1.
@@ -363,5 +367,5 @@ M6 exit ("files below exist, links checked, `docs/progress.md` current"): met fo
 | 32 | After the rebuild of `~/bin` with R-M3-17: add to `~/.config/meetingsync/config.yaml` under `notion:` the lines `notes_properties:` and `  source: Quelle`, then run `meetingsync -check`; no hint about the column should appear. Without them the protection is off | Mark | open |
 | 33 | Live test of R-M3-17 against real Notion (needs Mark's approval) | Mark | open |
 | 34 | Low: the reverse-DNS label `de.borukhov.meetingsync` and the repo owner name stay in the public repo. Assumed intentional, not confirmed (R-M4-01) | Mark | open |
-| 35 | End of project, after the merge of `refactor/architektur` into `main` and before the next release: run R-M4-02 (history rewrite, ADR 0011) after the coordinator's final go; then Mark force-pushes `main`, `refactor/architektur` (if it still exists) and tags, re-links the GitHub release; follow-up docs commit maps old to new hashes. Hash mapping (2026-11-09): commit hashes cited in docs before 2026-11-09 refer to the pre-squash history (b6af06d and c48e5f4 squashed into 6935655). The mapping docs commit after R-M4-02 maps them by commit subject (subjects are unique) via both rewrites; exception: c48e5f4 (subject "R-M0-05: Golden-Harness, Review-Fixes") maps to 6935655, whose subject is "R-M0-05: Golden-Harness". Delete `backup/vor-squash` before the rewrite (it points to the old HEAD) | Mark / Coordinator | open (R-M4-02) |
+| 35 | R-M4-02 executed 2026-11-09 (Mark's go) after `refactor/architektur` was merged into `main`: backup bundle `~/Backups/meetingsync-vor-rewrite.bundle` created and verified (all refs); `git filter-repo --force --replace-text` (a40bce548d2c) replaced the 3 real IDs by the placeholder in all commits and tag `v1.0.0`; `git log -p --all \| grep -c -F -f <ID list>` = 0, tag messages 0, reflog empty, old objects gone; `make check` green on the new `main`; `origin` re-added; commit map at `~/Backups/meetingsync-commit-map.txt` (outside the repo); local branches `backup/vor-squash` and `refactor/architektur` deleted. Hash mapping: commit hashes in docs now refer to the rewritten history (the two R-M0-05 commits were squashed into one earlier, now 419e91b). **Still to do by Mark:** `git push --force origin main`, `git push --force origin v1.0.0`, `git push origin --delete refactor/architektur`, then tag `v2.0.0` on the new `main` and create the GitHub release from `docs/releases/v2.0.0.md`; check the `v1.0.0` GitHub release still points to the re-pushed tag. Residual risk: GitHub may keep old SHAs in caches (only GitHub Support can purge) | Mark | open (Mark's pushes) |
 | 36 | Optional: `-check` on a `Models()` timeout prints `LM Studio nicht erreichbar unter …: … context deadline exceeded`; the server accepted the connection but did not answer. Wrap `errors.Is(err, context.DeadlineExceeded)` as `keine Antwort innerhalb von 10 s` (cli). Found in R-M5-03 code review | Coordinator | open (optional) |
